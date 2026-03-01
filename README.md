@@ -115,10 +115,9 @@ Si quieres desplegar API + bot desde el mismo repo en Render, ya existe:
 
 - [render.yaml](/c:/Users/lahue/Desktop/TheHundred/render.yaml)
 
-Ese blueprint define:
+Ahora mismo ese blueprint define solo:
 
 1. `thehundred-api` como `Web Service`
-2. `thehundred-bot` como `Background Worker`
 
 ### Scripts preparados
 
@@ -127,7 +126,8 @@ Ese blueprint define:
 
 ### Importante
 
-- la API y el bot van como servicios separados, no como uno solo
+- el blueprint actual de Render despliega solo la API
+- el bot queda fuera de Render en esta configuracion
 - la web sigue yendo en Vercel
 - en Render solo debes completar los secretos marcados con `sync: false`
 
