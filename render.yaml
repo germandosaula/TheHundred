@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: thehundred-api
+    runtime: node
+    rootDir: .
+    buildCommand: npm install && npm run build --workspace @thehundred/api
+    startCommand: npm run start:api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: REPOSITORY_PROVIDER
+        value: supabase
+      - key: APP_BASE_URL
+        value: https://www.thehundredalbion.com
+      - key: DISCORD_REDIRECT_URI
+        value: https://api.thehundredalbion.com/auth/discord/callback
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_SCOPES
+        value: identify guilds
+
+  - type: worker
+    name: thehundred-bot
+    runtime: node
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run start:bot
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: REPOSITORY_PROVIDER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: DISCORD_ROLE_TRIAL_ID
+        sync: false
+      - key: DISCORD_ROLE_CORE_ID
+        sync: false
+      - key: DISCORD_ROLE_BENCHED_ID
+        sync: false
+      - key: DISCORD_RECRUITMENT_CATEGORY_ID
+        sync: false
+      - key: DISCORD_COUNCIL_ROLE_IDS
+        sync: false
+      - key: DISCORD_SYNC_INTERVAL_MS
+        value: 30000
