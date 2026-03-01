@@ -1,0 +1,23 @@
+{
+  "name": "the-hundred",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:api": "npm run dev --workspace @thehundred/api",
+    "dev:web": "npm run dev --workspace @thehundred/web",
+    "dev:bot": "npm run dev --workspace @thehundred/bot",
+    "typecheck": "npm run typecheck --workspaces",
+    "supabase:login": "npx supabase login",
+    "supabase:link": "npx supabase link",
+    "supabase:push": "npx supabase db push",
+    "supabase:pull": "npx supabase db pull"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

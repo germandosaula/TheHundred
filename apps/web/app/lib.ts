@@ -1,0 +1,196 @@
+import { cookies } from "next/headers";
+
+const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
+
+export interface SlotsData {
+  slotsOpen: number;
+  memberCap: number;
+}
+
+export interface MeData {
+  id: string;
+  displayName: string;
+  role: string;
+  avatarUrl?: string;
+}
+
+export interface RankingEntry {
+  memberId: string;
+  points: number;
+}
+
+export interface CtaEntry {
+  id: string;
+  title: string;
+  datetimeUtc: string;
+  status: string;
+  compId?: string;
+  compName?: string;
+  signupChannelId?: string;
+  signupMessageId?: string;
+  signupParties: Array<{
+    partyKey: string;
+    partyName: string;
+    slots: Array<{
+      slotKey: string;
+      role: string;
+      label: string;
+      weaponName: string;
+      playerName?: string;
+    }>;
+  }>;
+  signupCategories: Array<{
+    role: string;
+    slots: Array<{
+      slotKey: string;
+      label: string;
+      weaponName: string;
+      reactionEmoji?: string;
+      playerName?: string;
+    }>;
+  }>;
+}
+
+export interface MemberEntry {
+  id: string;
+  userId: string;
+  displayName: string;
+  discordId: string;
+  avatarUrl?: string;
+  status: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+  discordRoleStatus?: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+  discordRoleSyncedAt?: string;
+}
+
+export interface AssignableCompPlayerEntry {
+  id: string;
+  userId: string;
+  displayName: string;
+  discordId: string;
+  avatarUrl?: string;
+  status: "TRIAL" | "CORE" | "BENCHED";
+  discordRoleStatus?: "TRIAL" | "CORE" | "BENCHED";
+}
+
+export interface AuthStartData {
+  authorizationUrl: string;
+}
+
+export interface CompSlotEntry {
+  id: string;
+  position: number;
+  label: string;
+  playerUserId?: string;
+  playerName: string;
+  role: string;
+  weaponId: string;
+  weaponName: string;
+  notes: string;
+}
+
+export interface CompPartyEntry {
+  key: string;
+  name: string;
+  position: number;
+  slots: CompSlotEntry[];
+}
+
+export interface CompEntry {
+  id: string;
+  name: string;
+  createdBy: string;
+  updatedAt: string;
+  parties: CompPartyEntry[];
+}
+
+export async function getSessionToken(): Promise<string | undefined> {
+  return (await cookies()).get("th_session")?.value;
+}
+
+export async function getDiscordId(): Promise<string | undefined> {
+  return (await cookies()).get("th_discord_id")?.value;
+}
+
+export async function getJson<T>(
+  path: string,
+  sessionToken?: string,
+  discordId?: string
+): Promise<T | null> {
+  try {
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      cache: "no-store",
+      headers:
+        sessionToken || discordId
+          ? {
+              ...(sessionToken ? { "x-session-token": sessionToken } : {}),
+              ...(discordId ? { "x-discord-id": discordId } : {})
+            }
+          : undefined
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function getLandingData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+  const [slots, authStart, me] = await Promise.all([
+    getJson<SlotsData>("/public/slots"),
+    getJson<AuthStartData>("/auth/discord/start"),
+    getJson<MeData>("/me", sessionToken, discordId)
+  ]);
+
+  return { sessionToken, slots, authStart, me };
+}
+
+export async function getPrivateDashboardData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, ranking, ctas, slots] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<RankingEntry[]>("/ranking", sessionToken, discordId),
+    getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
+    getJson<SlotsData>("/public/slots")
+  ]);
+
+  const canReadMembers = me?.role === "OFFICER" || me?.role === "ADMIN";
+  const members = canReadMembers
+    ? await getJson<MemberEntry[]>("/members", sessionToken, discordId)
+    : null;
+
+  return {
+    sessionToken,
+    me,
+    ranking,
+    ctas,
+    members,
+    slots,
+    hasPrivateAccess: Boolean(ranking && ctas)
+  };
+}
+
+export async function getPrivateCompsData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, comps, assignablePlayers] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<CompEntry[]>("/comps", sessionToken, discordId),
+    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+  ]);
+
+  return {
+    sessionToken,
+    me,
+    comps: comps ?? [],
+    assignablePlayers: assignablePlayers ?? []
+  };
+}
