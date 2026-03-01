@@ -19,6 +19,96 @@ Monorepo inicial para la plataforma Web + API + Discord Bot definida en el RFC v
 3. `npm run dev:web`
 4. `npm run dev:bot`
 
+## Deploy en Vercel
+
+La parte preparada para Vercel es `apps/web`.
+
+`apps/api` y `apps/bot` no deben desplegarse en Vercel tal como estan ahora:
+- `apps/api` es un servidor Node propio
+- `apps/bot` es un proceso persistente de Discord
+
+### Configuracion recomendada
+
+1. Crear un proyecto nuevo en Vercel apuntando a este repo
+2. En `Root Directory` seleccionar `apps/web`
+3. Framework: `Next.js`
+4. Instalar dependencias con el comportamiento por defecto de Vercel
+
+### Variable necesaria en Vercel
+
+En el proyecto de Vercel define:
+
+- `API_BASE_URL=https://api.thehundredalbion.com`
+
+Ejemplo:
+
+- `API_BASE_URL=https://api.thehundredalbion.com`
+
+La web usa esa variable para consultar:
+- `/me`
+- `/ranking`
+- `/ctas`
+- `/comps`
+- `/members`
+
+Si `API_BASE_URL` apunta a `localhost`, el deploy de Vercel no funcionara.
+
+### Archivo util
+
+- `apps/web/.env.example`: ejemplo minimo para la web
+- `apps/web/vercel.json`: metadata basica para el proyecto Next de Vercel
+
+## Deploy de la API
+
+La API esta preparada para desplegarse en un host Node separado como Railway, Render o Fly.io.
+
+### Recomendacion de dominios
+
+- Web: `https://www.thehundredalbion.com`
+- API: `https://api.thehundredalbion.com`
+
+### Ajustes ya preparados
+
+- `apps/api/src/config.ts` ya soporta `PORT`, que es lo normal en hosts gestionados
+- `apps/api/package.json` ya expone `npm run start`
+- `package.json` raiz ya expone `npm run start:api`
+- `apps/api/.env.production.example` contiene el ejemplo de produccion
+
+### Variables de produccion para la API
+
+Usa como base [apps/api/.env.production.example](/c:/Users/lahue/Desktop/TheHundred/apps/api/.env.production.example):
+
+- `PORT=3001`
+- `APP_BASE_URL=https://www.thehundredalbion.com`
+- `REPOSITORY_PROVIDER=supabase`
+- `SUPABASE_URL=...`
+- `SUPABASE_SERVICE_ROLE_KEY=...`
+- `DISCORD_CLIENT_ID=...`
+- `DISCORD_CLIENT_SECRET=...`
+- `DISCORD_REDIRECT_URI=https://api.thehundredalbion.com/auth/discord/callback`
+- `DISCORD_SCOPES=identify guilds`
+
+### Comando de arranque
+
+En Railway / Render / Fly puedes usar:
+
+- `npm run start:api`
+
+### Discord OAuth en produccion
+
+En el portal de Discord debes cambiar el redirect URI a:
+
+- `https://api.thehundredalbion.com/auth/discord/callback`
+
+Y la web desplegada debe usar:
+
+- `API_BASE_URL=https://api.thehundredalbion.com`
+
+### DNS recomendado
+
+- `www.thehundredalbion.com` -> Vercel
+- `api.thehundredalbion.com` -> host de la API
+
 ## Supabase Link
 
 1. Crear un proyecto en Supabase

@@ -12,7 +12,7 @@ export interface ApiConfig {
 
 export function loadApiConfig(): ApiConfig {
   return {
-    port: Number(process.env.API_PORT ?? 3001),
+    port: Number(process.env.PORT ?? process.env.API_PORT ?? 3001),
     appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
     repositoryProvider: process.env.REPOSITORY_PROVIDER === "supabase" ? "supabase" : "memory",
     supabaseUrl: process.env.SUPABASE_URL ?? "",

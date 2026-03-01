@@ -11,6 +11,7 @@
     "dev:api": "npm run dev --workspace @thehundred/api",
     "dev:web": "npm run dev --workspace @thehundred/web",
     "dev:bot": "npm run dev --workspace @thehundred/bot",
+    "start:api": "npm run start --workspace @thehundred/api",
     "typecheck": "npm run typecheck --workspaces",
     "supabase:login": "npx supabase login",
     "supabase:link": "npx supabase link",
