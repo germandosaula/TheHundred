@@ -24,7 +24,14 @@ const auth = createAuthServices(repository, config);
 
 const server = createServer(async (request, response) => {
   try {
-    return send(response, await routeRequest(request, services, auth, { appBaseUrl: config.appBaseUrl }));
+    return send(
+      response,
+      await routeRequest(request, services, auth, {
+        appBaseUrl: config.appBaseUrl,
+        cookieDomain: config.cookieDomain,
+        secureCookies: config.secureCookies
+      })
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return send(response, json({ error: message }, 400));

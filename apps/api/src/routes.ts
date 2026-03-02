@@ -18,7 +18,7 @@ export async function routeRequest(
   request: IncomingMessage,
   services: ApiServices,
   auth: AuthServices,
-  options: { appBaseUrl: string }
+  options: { appBaseUrl: string; cookieDomain?: string; secureCookies: boolean }
 ): Promise<ResponsePayload> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const method = request.method ?? "GET";
@@ -56,8 +56,16 @@ export async function routeRequest(
     }
 
     if (url.searchParams.get("redirect") !== "0") {
-      const sessionCookie = `th_session=${result.sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200`;
-      const discordIdCookie = `th_discord_id=${result.discordUser.id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`;
+      const sessionCookie = createCookie("th_session", result.sessionToken, {
+        maxAge: 43200,
+        domain: options.cookieDomain,
+        secure: options.secureCookies
+      });
+      const discordIdCookie = createCookie("th_discord_id", result.discordUser.id, {
+        maxAge: 2592000,
+        domain: options.cookieDomain,
+        secure: options.secureCookies
+      });
       return redirect(callbackUrl.toString(), {
         cookies: [sessionCookie, discordIdCookie]
       });
@@ -172,4 +180,28 @@ export async function routeRequest(
   }
 
   return json({ error: "Not found" }, 404);
+}
+
+function createCookie(
+  name: string,
+  value: string,
+  options: { maxAge: number; domain?: string; secure: boolean }
+): string {
+  const parts = [
+    `${name}=${value}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${options.maxAge}`
+  ];
+
+  if (options.domain) {
+    parts.push(`Domain=${options.domain}`);
+  }
+
+  if (options.secure) {
+    parts.push("Secure");
+  }
+
+  return parts.join("; ");
 }
