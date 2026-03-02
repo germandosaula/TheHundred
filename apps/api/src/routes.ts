@@ -29,7 +29,7 @@ export async function routeRequest(
   }
 
   if (method === "GET" && url.pathname === "/auth/discord/start") {
-    return json({ authorizationUrl: auth.getAuthorizationUrl(url.searchParams.get("state") ?? undefined) });
+    return json({ authorizationUrl: auth.getAuthorizationUrl() });
   }
 
   if (method === "GET" && url.pathname === "/auth/discord/callback") {
@@ -38,7 +38,17 @@ export async function routeRequest(
       return json({ error: "code is required" }, 400);
     }
 
-    const result = await auth.handleDiscordCallback(code);
+    let result;
+
+    try {
+      result = await auth.handleDiscordCallback(code, url.searchParams.get("state"));
+    } catch (error) {
+      const callbackUrl = new URL("/auth/discord/callback", options.appBaseUrl);
+      const message = error instanceof Error ? error.message : "Unknown Discord OAuth error";
+      callbackUrl.searchParams.set("error", message);
+      return redirect(callbackUrl.toString());
+    }
+
     const callbackUrl = new URL("/auth/discord/callback", options.appBaseUrl);
     callbackUrl.searchParams.set("session_token", result.sessionToken);
     callbackUrl.searchParams.set("discord_id", result.discordUser.id);

@@ -20,9 +20,9 @@ interface DiscordIdentity {
 }
 
 export interface AuthServices {
-  getAuthorizationUrl(state?: string): string;
+  getAuthorizationUrl(): string;
   resolveCurrentUser(request: IncomingMessage): Promise<User | null>;
-  handleDiscordCallback(code: string): Promise<{
+  handleDiscordCallback(code: string, state?: string | null): Promise<{
     discordUser: DiscordIdentity & { avatarUrl?: string };
     linkedUser: User | null;
     sessionToken: string;
@@ -40,12 +40,18 @@ export function createAuthServices(
   config: ApiConfig
 ): AuthServices {
   const sessions = new Map<string, SessionRecord>();
+  const oauthStates = new Map<string, number>();
+  const authorizationCodes = new Map<string, { status: "pending" | "used"; expiresAt: number }>();
 
   return {
-    getAuthorizationUrl(state = "dev-state") {
+    getAuthorizationUrl() {
       if (!config.discordClientId) {
         throw new DomainError("DISCORD_CLIENT_ID is not configured");
       }
+
+      pruneExpiredEntries(oauthStates);
+      const state = randomUUID();
+      oauthStates.set(state, Date.now() + 1000 * 60 * 10);
 
       const url = new URL("https://discord.com/oauth2/authorize");
       url.searchParams.set("client_id", config.discordClientId);
@@ -95,17 +101,25 @@ export function createAuthServices(
       return null;
     },
 
-    async handleDiscordCallback(code) {
+    async handleDiscordCallback(code, state) {
       if (!config.discordClientId || !config.discordClientSecret) {
         throw new DomainError("Discord OAuth credentials are not fully configured");
       }
+
+      validateOauthState(oauthStates, state);
+      markAuthorizationCodePending(authorizationCodes, code);
 
       const tokens = await exchangeDiscordCode({
         code,
         clientId: config.discordClientId,
         clientSecret: config.discordClientSecret,
         redirectUri: config.discordRedirectUri
+      }).catch((error) => {
+        authorizationCodes.delete(code);
+        throw error;
       });
+
+      markAuthorizationCodeUsed(authorizationCodes, code);
       const discordUser = await fetchDiscordIdentity(tokens.access_token);
       const avatarUrl = getDiscordAvatarUrl(discordUser);
       const linkedUser = await repository.getUserByDiscordId(discordUser.id);
@@ -198,7 +212,19 @@ async function exchangeDiscordCode(args: {
   });
 
   if (!response.ok) {
-    throw new DomainError(`Discord token exchange failed with status ${response.status}`);
+    const responseBody = await response.text();
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      const retryMessage = retryAfter ? ` Retry after ${retryAfter} seconds.` : "";
+      throw new DomainError(`Discord OAuth is rate limited.${retryMessage}`);
+    }
+
+    throw new DomainError(
+      `Discord token exchange failed with status ${response.status}${
+        responseBody ? `: ${truncateForError(responseBody)}` : ""
+      }`
+    );
   }
 
   return (await response.json()) as DiscordTokenResponse;
@@ -224,4 +250,65 @@ function getDiscordAvatarUrl(user: DiscordIdentity): string | undefined {
   }
 
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
+}
+
+function validateOauthState(states: Map<string, number>, state?: string | null): void {
+  pruneExpiredEntries(states);
+
+  if (!state) {
+    throw new DomainError("Missing OAuth state");
+  }
+
+  const expiresAt = states.get(state);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    throw new DomainError("Invalid or expired OAuth state");
+  }
+
+  states.delete(state);
+}
+
+function markAuthorizationCodePending(
+  codes: Map<string, { status: "pending" | "used"; expiresAt: number }>,
+  code: string
+): void {
+  pruneExpiredEntries(codes);
+
+  const existing = codes.get(code);
+  if (existing?.status === "pending") {
+    throw new DomainError("Authorization code is already being processed");
+  }
+
+  if (existing?.status === "used") {
+    throw new DomainError("Authorization code has already been used");
+  }
+
+  codes.set(code, {
+    status: "pending",
+    expiresAt: Date.now() + 1000 * 60 * 10
+  });
+}
+
+function markAuthorizationCodeUsed(
+  codes: Map<string, { status: "pending" | "used"; expiresAt: number }>,
+  code: string
+): void {
+  codes.set(code, {
+    status: "used",
+    expiresAt: Date.now() + 1000 * 60 * 10
+  });
+}
+
+function pruneExpiredEntries<T>(entries: Map<string, T | number>): void {
+  const now = Date.now();
+
+  for (const [key, value] of entries.entries()) {
+    const expiresAt = typeof value === "number" ? value : (value as { expiresAt: number }).expiresAt;
+    if (expiresAt <= now) {
+      entries.delete(key);
+    }
+  }
+}
+
+function truncateForError(value: string): string {
+  return value.length > 160 ? `${value.slice(0, 157)}...` : value;
 }
