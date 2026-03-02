@@ -58,7 +58,6 @@ export function createAuthServices(
       url.searchParams.set("response_type", "code");
       url.searchParams.set("redirect_uri", config.discordRedirectUri);
       url.searchParams.set("scope", config.discordScopes.join(" "));
-      url.searchParams.set("prompt", "consent");
       url.searchParams.set("state", state);
       return url.toString();
     },
