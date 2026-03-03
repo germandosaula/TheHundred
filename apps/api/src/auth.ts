@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { DatabaseRepository } from "@thehundred/db";
 import { DomainError, type User } from "@thehundred/domain";
 import type { ApiConfig } from "./config.ts";
@@ -40,7 +40,6 @@ export function createAuthServices(
   config: ApiConfig
 ): AuthServices {
   const sessions = new Map<string, SessionRecord>();
-  const oauthStates = new Map<string, number>();
   const authorizationCodes = new Map<string, { status: "pending" | "used"; expiresAt: number }>();
 
   return {
@@ -49,9 +48,7 @@ export function createAuthServices(
         throw new DomainError("DISCORD_CLIENT_ID is not configured");
       }
 
-      pruneExpiredEntries(oauthStates);
-      const state = randomUUID();
-      oauthStates.set(state, Date.now() + 1000 * 60 * 10);
+      const state = createOauthState(config.discordClientSecret);
 
       const url = new URL("https://discord.com/oauth2/authorize");
       url.searchParams.set("client_id", config.discordClientId);
@@ -105,7 +102,7 @@ export function createAuthServices(
         throw new DomainError("Discord OAuth credentials are not fully configured");
       }
 
-      validateOauthState(oauthStates, state);
+      validateOauthState(config.discordClientSecret, state);
       markAuthorizationCodePending(authorizationCodes, code);
 
       const tokens = await exchangeDiscordCode({
@@ -251,19 +248,33 @@ function getDiscordAvatarUrl(user: DiscordIdentity): string | undefined {
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
 }
 
-function validateOauthState(states: Map<string, number>, state?: string | null): void {
-  pruneExpiredEntries(states);
-
+function validateOauthState(secret: string, state?: string | null): void {
   if (!state) {
     throw new DomainError("Missing OAuth state");
   }
 
-  const expiresAt = states.get(state);
-  if (!expiresAt || expiresAt <= Date.now()) {
+  const parts = state.split(".");
+  if (parts.length !== 3) {
     throw new DomainError("Invalid or expired OAuth state");
   }
 
-  states.delete(state);
+  const [issuedAtRaw, nonce, signature] = parts;
+  const issuedAt = Number(issuedAtRaw);
+  if (!Number.isFinite(issuedAt) || !nonce || !signature) {
+    throw new DomainError("Invalid or expired OAuth state");
+  }
+
+  if (issuedAt + 1000 * 60 * 10 <= Date.now()) {
+    throw new DomainError("Invalid or expired OAuth state");
+  }
+
+  const expectedSignature = signOauthState(secret, `${issuedAtRaw}.${nonce}`);
+  const received = Buffer.from(signature);
+  const expected = Buffer.from(expectedSignature);
+
+  if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
+    throw new DomainError("Invalid or expired OAuth state");
+  }
 }
 
 function markAuthorizationCodePending(
@@ -310,4 +321,15 @@ function pruneExpiredEntries<T>(entries: Map<string, T | number>): void {
 
 function truncateForError(value: string): string {
   return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+}
+
+function createOauthState(secret: string): string {
+  const issuedAt = Date.now().toString();
+  const nonce = randomUUID();
+  const payload = `${issuedAt}.${nonce}`;
+  return `${payload}.${signOauthState(secret, payload)}`;
+}
+
+function signOauthState(secret: string, payload: string): string {
+  return createHmac("sha256", secret).update(payload).digest("hex");
 }
