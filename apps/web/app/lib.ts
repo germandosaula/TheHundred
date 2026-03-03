@@ -19,6 +19,82 @@ export interface RankingEntry {
   points: number;
 }
 
+export interface BattleEntry {
+  id: string;
+  startTime: string;
+  endTime?: string;
+  clusterName?: string;
+  totalPlayers: number;
+  totalKills: number;
+  totalFame: number;
+  guildId: string;
+  guildName: string;
+  guildPlayers: number;
+  guildKills: number;
+  guildDeaths: number;
+  guilds: string[];
+  alliances: string[];
+  opponentGuilds: string[];
+}
+
+export interface BattleAllianceEntry {
+  name: string;
+  players: number;
+  kills: number;
+  deaths: number;
+  avgIp?: number;
+  fame: number;
+}
+
+export interface BattleGuildEntry {
+  name: string;
+  allianceName?: string;
+  players: number;
+  kills: number;
+  deaths: number;
+  avgIp?: number;
+  fame: number;
+}
+
+export interface BattlePlayerEntry {
+  id: string;
+  name: string;
+  guildName?: string;
+  allianceName?: string;
+  ip?: number;
+  damage: number;
+  heal: number;
+  kills: number;
+  deaths: number;
+  fame: number;
+  weaponName?: string;
+  weaponIconName?: string;
+}
+
+export interface BattleTopEntry {
+  playerName: string;
+  guildName?: string;
+  allianceName?: string;
+  value: number;
+}
+
+export interface BattleDetailEntry extends BattleEntry {
+  alliancesSummary: BattleAllianceEntry[];
+  guildsSummary: BattleGuildEntry[];
+  players: BattlePlayerEntry[];
+  topKills?: BattleTopEntry;
+  topHeal?: BattleTopEntry;
+  topDamage?: BattleTopEntry;
+  topDeathFame?: BattleTopEntry;
+}
+
+export interface BattlesData {
+  guildId?: string;
+  guildName?: string;
+  minGuildPlayers: number;
+  battles: BattleEntry[];
+}
+
 export interface CtaEntry {
   id: string;
   title: string;
@@ -37,6 +113,7 @@ export interface CtaEntry {
       label: string;
       weaponName: string;
       playerName?: string;
+      playerUserId?: string;
     }>;
   }>;
   signupCategories: Array<{
@@ -165,6 +242,9 @@ export async function getPrivateDashboardData() {
   const members = canReadMembers
     ? await getJson<MemberEntry[]>("/members", sessionToken, discordId)
     : null;
+  const assignablePlayers = canReadMembers
+    ? await getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+    : null;
 
   return {
     sessionToken,
@@ -172,6 +252,7 @@ export async function getPrivateDashboardData() {
     ranking,
     ctas,
     members,
+    assignablePlayers: assignablePlayers ?? [],
     slots,
     hasPrivateAccess: Boolean(ranking && ctas)
   };
@@ -192,5 +273,34 @@ export async function getPrivateCompsData() {
     me,
     comps: comps ?? [],
     assignablePlayers: assignablePlayers ?? []
+  };
+}
+
+export async function getPrivateBattlesData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, battles] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<BattlesData>("/battles", sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    battles
+  };
+}
+
+export async function getPrivateBattleDetailData(battleId: string) {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+  const [me, battle] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<BattleDetailEntry>(`/battles/${battleId}`, sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    battle
   };
 }

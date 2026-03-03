@@ -5,6 +5,7 @@ import type { AuthServices } from "./auth.ts";
 import { createRequestContext, requireAuthenticatedUser } from "./request-context.ts";
 import {
   requireCreateCtaPayload,
+  requireAssignCtaSlotPayload,
   requireMemberStatusPayload,
   requireRegisterPayload,
   requireSaveCompPayload,
@@ -30,6 +31,50 @@ export async function routeRequest(
 
   if (method === "GET" && url.pathname === "/auth/discord/start") {
     return json({ authorizationUrl: auth.getAuthorizationUrl() });
+  }
+
+  if (method === "GET" && url.pathname === "/auth/dev-login") {
+    const isLocalApp = options.appBaseUrl.startsWith("http://localhost:");
+    if (!isLocalApp) {
+      return json({ error: "Not found" }, 404);
+    }
+
+    const discordId = url.searchParams.get("discord_id")?.trim();
+    if (!discordId) {
+      return json({ error: "discord_id is required" }, 400);
+    }
+
+    const result = await auth.createDevSession(discordId);
+    const callbackUrl = new URL("/auth/discord/callback", options.appBaseUrl);
+    callbackUrl.searchParams.set("session_token", result.sessionToken);
+    callbackUrl.searchParams.set("discord_id", result.discordUser.id);
+    callbackUrl.searchParams.set(
+      "discord_name",
+      result.discordUser.global_name ?? result.discordUser.username
+    );
+    callbackUrl.searchParams.set("linked", result.linkedUser ? "1" : "0");
+    if (result.linkedUser) {
+      callbackUrl.searchParams.set("role", result.linkedUser.role);
+      callbackUrl.searchParams.set("display_name", result.linkedUser.displayName);
+    }
+    if (result.discordUser.avatarUrl) {
+      callbackUrl.searchParams.set("avatar_url", result.discordUser.avatarUrl);
+    }
+
+    const sessionCookie = createCookie("th_session", result.sessionToken, {
+      maxAge: 43200,
+      domain: options.cookieDomain,
+      secure: options.secureCookies
+    });
+    const discordIdCookie = createCookie("th_discord_id", result.discordUser.id, {
+      maxAge: 2592000,
+      domain: options.cookieDomain,
+      secure: options.secureCookies
+    });
+
+    return redirect(callbackUrl.toString(), {
+      cookies: [sessionCookie, discordIdCookie]
+    });
   }
 
   if (method === "GET" && url.pathname === "/auth/discord/callback") {
@@ -116,6 +161,29 @@ export async function routeRequest(
     return json(await services.getRanking());
   }
 
+  if (method === "GET" && url.pathname === "/battles") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    console.log("[battles] GET /battles", {
+      userId: currentUser.id,
+      role: currentUser.role
+    });
+    return json(await services.listBattles(currentUser));
+  }
+
+  if (method === "GET" && url.pathname.match(/^\/battles\/[^/]+$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const battleId = url.pathname.split("/")[2];
+    const battle = await services.getBattleDetail(currentUser, battleId);
+
+    if (!battle) {
+      return json({ error: "Battle not found" }, 404);
+    }
+
+    return json(battle);
+  }
+
   if (method === "GET" && url.pathname === "/comps") {
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
@@ -140,6 +208,14 @@ export async function routeRequest(
     await services.requirePrivateAccess(currentUser);
     const ctaId = url.pathname.split("/")[2];
     return json(await services.finalizeCta(currentUser, ctaId));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/slots$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    const payload = requireAssignCtaSlotPayload(await parseBody(request));
+    return json(await services.assignCtaSlot(currentUser, { ctaId, ...payload }));
   }
 
   if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/status$/)) {

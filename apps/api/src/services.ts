@@ -1,4 +1,5 @@
 import type { DatabaseRepository } from "@thehundred/db";
+import type { GuildBattleDetail, GuildBattleSummary, KillboardClient } from "@thehundred/killboard";
 import {
   assertOfficerOrAdmin,
   DomainError,
@@ -46,6 +47,7 @@ export interface ApiServices {
             label: string;
             weaponName: string;
             playerName?: string;
+            playerUserId?: string;
           }>;
         }>;
         signupCategories: Array<{
@@ -74,14 +76,35 @@ export interface ApiServices {
     actor: User,
     input: Parameters<DatabaseRepository["saveComp"]>[0]
   ): Promise<Awaited<ReturnType<DatabaseRepository["saveComp"]>>>;
+  assignCtaSlot(
+    actor: User,
+    input: { ctaId: string; slotKey: string; playerUserId?: string }
+  ): Promise<{ ok: true }>;
+  listBattles(
+    actor: User
+  ): Promise<{
+    guildId?: string;
+    guildName?: string;
+    minGuildPlayers: number;
+    battles: GuildBattleSummary[];
+  }>;
+  getBattleDetail(
+    actor: User,
+    battleId: string
+  ): Promise<GuildBattleDetail | null>;
   deleteComp(actor: User, compId: string): Promise<{ deleted: true; compId: string }>;
 }
 
 export function createApiServices(
   repository: DatabaseRepository,
+  killboard: KillboardClient,
   options: {
     repositoryProvider: "memory" | "supabase";
     supabaseConfigured: boolean;
+    albionBattlesGuildId?: string;
+    albionBattlesGuildName?: string;
+    albionBattlesMinGuildPlayers: number;
+    albionBattlesLimit: number;
   }
 ): ApiServices {
   const compRoleOrder = ["Tank", "Healer", "Support", "Melee", "Ranged", "Battlemount"];
@@ -189,13 +212,15 @@ export function createApiServices(
 
     async listCtas() {
       const ctas = await repository.getCtas();
-      const [comps, signups] = await Promise.all([
+      const [comps, signups, members] = await Promise.all([
         repository.getComps(),
-        Promise.all(ctas.map((cta) => repository.getCtaSignups(cta.id)))
+        Promise.all(ctas.map((cta) => repository.getCtaSignups(cta.id))),
+        repository.getMembers()
       ]);
 
       const compsById = new Map(comps.map((comp) => [comp.id, comp]));
       const signupsByCtaId = new Map<string, Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>>();
+      const membersById = new Map(members.map((member) => [member.id, member]));
 
       ctas.forEach((cta, index) => {
         signupsByCtaId.set(cta.id, signups[index] ?? []);
@@ -217,7 +242,8 @@ export function createApiServices(
                   role: slot.role,
                   label: slot.label,
                   weaponName: slot.weaponName,
-                  playerName: signup?.playerName
+                  playerName: signup?.playerName,
+                  playerUserId: signup ? membersById.get(signup.memberId)?.userId : undefined
                 };
               })
             }))
@@ -265,6 +291,78 @@ export function createApiServices(
 
     async getRanking() {
       return repository.getRanking();
+    },
+
+    async listBattles(actor) {
+      const actorMember = await repository.getMemberByUserId(actor.id);
+      if (!memberHasPrivateAccess(actorMember)) {
+        throw new DomainError(
+          "Private dashboard access requires guild recruitment approval via Discord"
+        );
+      }
+
+      const guildId = options.albionBattlesGuildId?.trim() || undefined;
+      const guildName = options.albionBattlesGuildName?.trim() || undefined;
+
+       console.log("[battles] config", {
+        guildId,
+        guildName,
+        minGuildPlayers: options.albionBattlesMinGuildPlayers,
+        limit: options.albionBattlesLimit
+      });
+
+      if (!guildId && !guildName) {
+        console.log("[battles] skipped: no guild configured");
+        return {
+          guildId: undefined,
+          guildName: undefined,
+          minGuildPlayers: options.albionBattlesMinGuildPlayers,
+          battles: []
+        };
+      }
+
+      const result = await killboard.fetchRecentGuildBattles({
+        guildId,
+        guildName,
+        minGuildPlayers: options.albionBattlesMinGuildPlayers,
+        limit: options.albionBattlesLimit
+      });
+      const battles = result.battles;
+
+      console.log("[battles] result", {
+        guildId: result.guildId ?? guildId,
+        guildName: battles[0]?.guildName ?? guildName,
+        count: battles.length
+      });
+
+      return {
+        guildId: result.guildId ?? guildId,
+        guildName: battles[0]?.guildName ?? guildName,
+        minGuildPlayers: options.albionBattlesMinGuildPlayers,
+        battles
+      };
+    },
+
+    async getBattleDetail(actor, battleId) {
+      const actorMember = await repository.getMemberByUserId(actor.id);
+      if (!memberHasPrivateAccess(actorMember)) {
+        throw new DomainError(
+          "Private dashboard access requires guild recruitment approval via Discord"
+        );
+      }
+
+      const guildId = options.albionBattlesGuildId?.trim() || undefined;
+      const guildName = options.albionBattlesGuildName?.trim() || undefined;
+
+      if (!guildId && !guildName) {
+        return null;
+      }
+
+      return killboard.fetchGuildBattleDetail({
+        battleId,
+        guildId,
+        guildName
+      });
     },
 
     async createCta(actor, title, datetimeUtc) {
@@ -348,6 +446,84 @@ export function createApiServices(
         ...input,
         createdBy: input.createdBy || actor.id
       });
+    },
+
+    async assignCtaSlot(actor, input) {
+      assertOfficerOrAdmin(actor.role);
+
+      const cta = await repository.getCtaById(input.ctaId);
+      if (!cta) {
+        throw new Error("CTA not found");
+      }
+
+      if (!cta.compId) {
+        throw new DomainError("CTA does not have a linked composition");
+      }
+
+      const comp = await repository.getCompById(cta.compId);
+      if (!comp) {
+        throw new Error("Comp not found");
+      }
+
+      const targetSlot = comp.parties
+        .flatMap((party) =>
+          party.slots.map((slot) => ({
+            slotKey: `${party.key}:${slot.position}`,
+            role: slot.role,
+            label: slot.label,
+            weaponName: slot.weaponName
+          }))
+        )
+        .find((slot) => slot.slotKey === input.slotKey);
+
+      if (!targetSlot) {
+        throw new DomainError("CTA slot not found");
+      }
+
+      const signups = await repository.getCtaSignups(cta.id);
+      const existingSlotSignup = signups.find((signup) => signup.slotKey === input.slotKey);
+      if (existingSlotSignup) {
+        await repository.deleteCtaSignup(cta.id, existingSlotSignup.memberId);
+        await repository.deleteAttendance(cta.id, existingSlotSignup.memberId);
+      }
+
+      if (!input.playerUserId) {
+        return { ok: true };
+      }
+
+      const member = await repository.getMemberByUserId(input.playerUserId);
+      if (!member) {
+        throw new DomainError("Member not found for selected player");
+      }
+
+      const user = await repository.getUserById(input.playerUserId);
+      if (!user) {
+        throw new DomainError("User not found for selected player");
+      }
+
+      const existingMemberSignup = signups.find((signup) => signup.memberId === member.id);
+      if (existingMemberSignup && existingMemberSignup.slotKey !== input.slotKey) {
+        await repository.deleteCtaSignup(cta.id, member.id);
+        await repository.deleteAttendance(cta.id, member.id);
+      }
+
+      await repository.upsertCtaSignup({
+        ctaId: cta.id,
+        memberId: member.id,
+        role: targetSlot.role,
+        slotKey: targetSlot.slotKey,
+        slotLabel: targetSlot.label,
+        weaponName: targetSlot.weaponName,
+        playerName: user.displayName
+      });
+      await repository.upsertAttendance({
+        ctaId: cta.id,
+        memberId: member.id,
+        decision: "YES",
+        state: "ABSENT"
+      });
+
+      return { ok: true };
     },
 
     async deleteComp(actor, compId) {

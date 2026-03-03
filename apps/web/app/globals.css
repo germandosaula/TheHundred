@@ -1301,6 +1301,486 @@ li {
   gap: 18px;
 }
 
+.battle-list {
+  display: grid;
+  gap: 18px;
+}
+
+.battle-card {
+  position: relative;
+  display: grid;
+  gap: 22px;
+}
+
+.battle-card-link {
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.battle-card-link:hover {
+  transform: translateY(-2px);
+  border-color: rgba(240, 200, 90, 0.24);
+  background: rgba(10, 18, 32, 0.92);
+}
+
+.battle-card-link-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: 32px;
+}
+
+.battle-card > *:not(.battle-card-link-overlay) {
+  position: relative;
+  z-index: 1;
+}
+
+.battle-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.battle-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.battle-stat {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.battle-stat span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.battle-stat strong {
+  font-size: 1rem;
+}
+
+.battle-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+@media (max-width: 1100px) {
+  .battle-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.battle-detail-page {
+  align-content: start;
+}
+
+.battle-detail-hero h1 {
+  margin: 10px 0 0;
+  font-size: clamp(2.6rem, 5vw, 4.8rem);
+  line-height: 0.95;
+}
+
+.battle-top-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.battle-top-card {
+  display: grid;
+  gap: 10px;
+  min-height: 172px;
+  border-radius: 24px;
+}
+
+.battle-top-card.red {
+  border-color: rgba(255, 92, 109, 0.64);
+}
+
+.battle-top-card.cyan {
+  border-color: rgba(0, 232, 217, 0.54);
+}
+
+.battle-top-card.purple {
+  border-color: rgba(178, 101, 255, 0.54);
+}
+
+.battle-top-card.muted {
+  border-color: rgba(124, 145, 189, 0.36);
+}
+
+.battle-composition-card {
+  display: grid;
+  gap: 16px;
+}
+
+.battle-composition-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.72fr) minmax(0, 1.28fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.battle-composition-chart {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+
+.battle-pie-wrap {
+  position: relative;
+  width: min(100%, 320px);
+}
+
+.battle-pie {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.battle-pie-segment {
+  cursor: pointer;
+  transition: transform 180ms ease, opacity 180ms ease;
+  transform-origin: 100px 100px;
+}
+
+.battle-pie-segment:hover,
+.battle-pie-segment.active {
+  transform: scale(1.03);
+  opacity: 0.96;
+}
+
+.battle-pie-tooltip {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  min-width: 132px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(6, 17, 45, 0.92);
+  pointer-events: none;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+.battle-pie-tooltip span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.battle-pie-tooltip strong {
+  font-size: 1.05rem;
+}
+
+.battle-composition-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.battle-role-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.battle-role-tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 8px;
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.battle-role-tab.active {
+  background: rgba(255, 255, 255, 0.92);
+  color: #0b1736;
+}
+
+.battle-weapon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 18px;
+  align-items: start;
+}
+
+.battle-weapon-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.battle-weapon-card-icon {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.battle-weapon-card-count {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.battle-scope-select select {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+@media (max-width: 1280px) {
+  .battle-composition-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .battle-weapon-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .battle-role-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .battle-weapon-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.battle-top-card strong {
+  font-size: 1.1rem;
+}
+
+.battle-top-meta {
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+
+.battle-top-value {
+  margin-top: auto;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 4vw, 3.8rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.battle-top-card.red .battle-top-value {
+  color: #ff5c6d;
+}
+
+.battle-top-card.cyan .battle-top-value {
+  color: #00e8d9;
+}
+
+.battle-top-card.purple .battle-top-value {
+  color: #b265ff;
+}
+
+.battle-top-card.muted .battle-top-value {
+  color: #7c91bd;
+}
+
+.battle-detail-summaries {
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  display: grid;
+  gap: 18px;
+}
+
+.battle-table-card {
+  display: grid;
+  gap: 18px;
+}
+
+.battle-table-head h3 {
+  margin: 0;
+  color: #bac6de;
+  font-size: 1.6rem;
+}
+
+.battle-search {
+  display: inline-flex;
+  align-items: center;
+  min-width: min(100%, 280px);
+}
+
+.battle-search input {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 18px;
+  border: 1px solid rgba(136, 156, 196, 0.22);
+  border-radius: 18px;
+  outline: none;
+  color: #91a0be;
+  font: inherit;
+  background: rgba(8, 16, 31, 0.72);
+}
+
+.battle-table-shell {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+}
+
+.battle-table {
+  display: grid;
+}
+
+.battle-table-summary {
+  background: rgba(6, 12, 26, 0.5);
+}
+
+.battle-table-players {
+  grid-template-columns: minmax(240px, 1.4fr) minmax(160px, 1fr) minmax(140px, 0.8fr) 90px 100px 100px 100px 100px 120px;
+  background: rgba(6, 12, 26, 0.5);
+}
+
+.battle-table-header,
+.battle-table-cell {
+  min-width: 0;
+  padding: 22px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.battle-table-header {
+  color: #8ea0c3;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.battle-sort-button {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.battle-sort-button.active {
+  color: var(--ink);
+}
+
+.battle-table-cell {
+  color: var(--ink);
+  font-size: 0.98rem;
+}
+
+.battle-name-cell,
+.battle-player-cell {
+  font-family: var(--font-ui);
+  font-size: 1rem;
+}
+
+.battle-player-cell {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.battle-player-weapon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.battle-player-weapon.placeholder {
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.battle-player-name {
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
+}
+
+.battle-value.blue {
+  color: #55a5ff;
+}
+
+.battle-value.red {
+  color: #ff6a75;
+}
+
+.battle-value.pink {
+  color: #ff71c7;
+}
+
+.battle-value.gold {
+  color: #ffcf38;
+}
+
+.battle-value.cyan {
+  color: #00e8d9;
+}
+
+.battle-value.purple {
+  color: #b265ff;
+}
+
+.battle-detail-footer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.battle-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.battle-pagination-meta {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.battle-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.battle-page-button {
+  min-height: 42px;
+  padding: 0 16px;
+}
+
 .cta-board {
   display: grid;
   gap: 24px;
@@ -1352,6 +1832,16 @@ li {
   width: 100%;
 }
 
+.cta-party-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px;
+}
+
+.cta-list-column {
+  align-content: start;
+}
+
 .cta-list-row {
   display: grid;
   grid-template-columns: 78px 120px minmax(220px, 0.9fr) minmax(280px, 1fr) minmax(180px, auto);
@@ -1361,9 +1851,26 @@ li {
   border-top: 1px solid var(--line);
 }
 
+.cta-list-row-editable {
+  grid-template-columns: minmax(210px, 1fr) 56px minmax(180px, 220px);
+  justify-content: start;
+}
+
 .cta-list-row:first-child {
   padding-top: 0;
   border-top: 0;
+}
+
+.cta-slot-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.cta-slot-meta .status-badge {
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .cta-slot-row {
@@ -1384,6 +1891,23 @@ li {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+
+.cta-slot-weapon {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cta-slot-weapon-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px;
+  flex: 0 0 auto;
 }
 
 .cta-slot-copy strong {
@@ -1517,7 +2041,11 @@ li {
 
   .comp-header-grid,
   .comp-summary,
+  .battle-stats-grid,
+  .battle-top-grid,
+  .battle-detail-footer-grid,
   .cta-signup-grid,
+  .cta-party-grid,
   .cta-list-row {
     grid-template-columns: 1fr;
   }
@@ -1618,6 +2146,8 @@ li {
 
   .member-summary,
   .table-row,
+  .battle-card .section-row,
+  .battle-table-head,
   .cta-board-top,
   .cta-slot-row,
   .signal-list li,
@@ -1637,5 +2167,13 @@ li {
 
   .member-actions {
     grid-template-columns: 1fr;
+  }
+
+  .battle-detail-summaries {
+    grid-template-columns: 1fr;
+  }
+
+  .battle-table-shell {
+    overflow-x: auto;
   }
 }

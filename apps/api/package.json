@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@thehundred/db": "0.1.0",
-    "@thehundred/domain": "0.1.0"
+    "@thehundred/domain": "0.1.0",
+    "@thehundred/killboard": "0.1.0"
   }
 }

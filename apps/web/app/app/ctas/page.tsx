@@ -4,11 +4,12 @@ import { CtasLiveRefresh } from "./CtasLiveRefresh";
 import { CtaBoard } from "./CtaBoard";
 
 export default async function CtasPage() {
-  const { me, ctas } = await getPrivateDashboardData();
+  const { me, ctas, assignablePlayers } = await getPrivateDashboardData();
 
   if (!me) {
     redirect("/");
   }
+  const canEdit = me.role === "OFFICER" || me.role === "ADMIN";
 
   const visibleCtas = ctas?.filter((cta) => cta.status !== "FINALIZED") ?? [];
 
@@ -38,7 +39,7 @@ export default async function CtasPage() {
       ) : visibleCtas.length > 0 ? (
         <div className="cta-board-list">
           {visibleCtas.map((cta) => (
-            <CtaBoard cta={cta} key={cta.id} />
+            <CtaBoard assignablePlayers={assignablePlayers} canEdit={canEdit} cta={cta} key={cta.id} />
           ))}
         </div>
       ) : (

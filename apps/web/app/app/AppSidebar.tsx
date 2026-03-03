@@ -22,10 +22,11 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
     { href: "/app", label: "Resumen" },
     { href: "/app/ranking", label: "Ranking" },
     { href: "/app/ctas", label: "CTAs" },
+    { href: "/app/battles", label: "Battles" },
     { href: "/app/comps", label: "Comps" }
   ];
   if (isOfficerOrAdmin) {
-    navItems.splice(3, 0, { href: "/app/members", label: "Miembros" });
+    navItems.splice(4, 0, { href: "/app/members", label: "Miembros" });
   }
 
   async function handleLogout() {

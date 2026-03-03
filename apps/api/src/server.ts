@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { createRepository } from "@thehundred/db";
+import { createKillboardClient } from "@thehundred/killboard";
 import { createAuthServices } from "./auth.ts";
 import { loadApiConfig } from "./config.ts";
 import { send, json } from "./http.ts";
@@ -15,10 +16,18 @@ const repository = createRepository({
   supabaseUrl: config.supabaseUrl,
   supabaseServiceRoleKey: config.supabaseServiceRoleKey
 });
+const killboard = createKillboardClient({
+  baseUrl: config.albionApiBaseUrl,
+  source: config.albionBattlesSource
+});
 const port = config.port;
-const services = createApiServices(repository, {
+const services = createApiServices(repository, killboard, {
   repositoryProvider: config.repositoryProvider,
-  supabaseConfigured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey)
+  supabaseConfigured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey),
+  albionBattlesGuildId: config.albionBattlesGuildId,
+  albionBattlesGuildName: config.albionBattlesGuildName,
+  albionBattlesMinGuildPlayers: config.albionBattlesMinGuildPlayers,
+  albionBattlesLimit: config.albionBattlesLimit
 });
 const auth = createAuthServices(repository, config);
 

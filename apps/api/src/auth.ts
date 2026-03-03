@@ -27,6 +27,11 @@ export interface AuthServices {
     linkedUser: User | null;
     sessionToken: string;
   }>;
+  createDevSession(discordId: string): Promise<{
+    discordUser: DiscordIdentity & { avatarUrl?: string };
+    linkedUser: User | null;
+    sessionToken: string;
+  }>;
 }
 
 interface SessionRecord {
@@ -137,6 +142,28 @@ export function createAuthServices(
           avatarUrl
         },
         linkedUser: linkedUser ? { ...linkedUser, avatarUrl } : null,
+        sessionToken
+      };
+    },
+
+    async createDevSession(discordId) {
+      const linkedUser = await repository.getUserByDiscordId(discordId);
+      const sessionToken = randomUUID();
+
+      sessions.set(sessionToken, {
+        userId: linkedUser?.id,
+        discordId,
+        expiresAt: Date.now() + 1000 * 60 * 60 * 12
+      });
+
+      return {
+        discordUser: {
+          id: discordId,
+          username: linkedUser?.displayName ?? "Dev User",
+          global_name: linkedUser?.displayName ?? "Dev User",
+          avatarUrl: linkedUser?.avatarUrl
+        },
+        linkedUser,
         sessionToken
       };
     }

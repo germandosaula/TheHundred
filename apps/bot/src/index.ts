@@ -783,7 +783,7 @@ async function ensureRecruitmentTickets() {
 }
 
 async function handleCtaSignupSelect(interaction: StringSelectMenuInteraction) {
-  const ctaId = interaction.customId.replace("cta-signup:", "");
+  const [, ctaId] = interaction.customId.split(":");
   const cta = await repository.getCtaById(ctaId);
   if (!cta) {
     await interaction.reply({ content: "CTA no encontrada.", ephemeral: true });
@@ -1089,7 +1089,7 @@ function buildCtaSignupComponents(
 
     return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId(`cta-signup:${cta.id}`)
+        .setCustomId(`cta-signup:${cta.id}:${party.key}`)
         .setPlaceholder(`Elegir slot en ${party.name}`)
         .addOptions(options)
     );

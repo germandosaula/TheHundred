@@ -5,6 +5,12 @@ import { getLandingData } from "./lib";
 export default async function LandingPage() {
   const { authStart, me, slots } = await getLandingData();
   const hasLinkedUser = Boolean(me);
+  const showDevLogin = (process.env.API_BASE_URL ?? "http://localhost:3001").startsWith("http://localhost:");
+  const devDiscordId = process.env.DEV_LOGIN_DISCORD_ID;
+  const devLoginUrl =
+    showDevLogin && devDiscordId
+      ? `${process.env.API_BASE_URL ?? "http://localhost:3001"}/auth/dev-login?discord_id=${encodeURIComponent(devDiscordId)}`
+      : null;
 
   return (
     <main className="landing-shell">
@@ -30,6 +36,11 @@ export default async function LandingPage() {
         </nav>
         <div className="landing-actions">
           {hasLinkedUser ? <Link className="button ghost" href="/app">Abrir dashboard</Link> : null}
+          {devLoginUrl ? (
+            <a className="button ghost" href={devLoginUrl}>
+              Dev Login
+            </a>
+          ) : null}
           <a
             className="button primary"
             href={authStart?.authorizationUrl ?? "#"}

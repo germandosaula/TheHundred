@@ -95,6 +95,17 @@ export interface CtaSignupRecord {
   reactedAt: string;
 }
 
+export interface SaveCtaSignupInput {
+  ctaId: string;
+  memberId: string;
+  role: string;
+  slotKey: string;
+  slotLabel: string;
+  weaponName: string;
+  reactionEmoji?: string;
+  playerName: string;
+}
+
 export interface SaveCompInput {
   id?: string;
   name: string;
@@ -160,16 +171,7 @@ export interface DatabaseRepository {
   saveComp(input: SaveCompInput): Promise<CompRecord>;
   deleteComp(compId: string): Promise<boolean>;
   getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]>;
-  upsertCtaSignup(input: {
-    ctaId: string;
-    memberId: string;
-    role: string;
-    slotKey: string;
-    slotLabel: string;
-    weaponName: string;
-    reactionEmoji?: string;
-    playerName: string;
-  }): Promise<CtaSignupRecord>;
+  upsertCtaSignup(input: SaveCtaSignupInput): Promise<CtaSignupRecord>;
   deleteCtaSignup(ctaId: string, memberId: string): Promise<boolean>;
   getRecruitmentApplicationByUserId(userId: string): Promise<RecruitmentApplicationRecord | null>;
   saveRecruitmentApplication(

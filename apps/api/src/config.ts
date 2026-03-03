@@ -10,6 +10,12 @@ export interface ApiConfig {
   discordClientSecret: string;
   discordRedirectUri: string;
   discordScopes: string[];
+  albionApiBaseUrl: string;
+  albionBattlesSource: "official" | "albionbb";
+  albionBattlesGuildId: string;
+  albionBattlesGuildName: string;
+  albionBattlesMinGuildPlayers: number;
+  albionBattlesLimit: number;
 }
 
 export function loadApiConfig(): ApiConfig {
@@ -30,7 +36,15 @@ export function loadApiConfig(): ApiConfig {
     discordScopes: (process.env.DISCORD_SCOPES ?? "identify guilds")
       .split(" ")
       .map((scope) => scope.trim())
-      .filter(Boolean)
+      .filter(Boolean),
+    albionApiBaseUrl:
+      process.env.ALBION_API_BASE_URL ?? "https://gameinfo-ams.albiononline.com/api/gameinfo",
+    albionBattlesSource:
+      process.env.ALBION_BATTLES_SOURCE === "albionbb" ? "albionbb" : "official",
+    albionBattlesGuildId: process.env.ALBION_BATTLES_GUILD_ID ?? "",
+    albionBattlesGuildName: process.env.ALBION_BATTLES_GUILD_NAME ?? "The Hundred",
+    albionBattlesMinGuildPlayers: Number(process.env.ALBION_BATTLES_MIN_GUILD_PLAYERS ?? 20),
+    albionBattlesLimit: Number(process.env.ALBION_BATTLES_LIMIT ?? 12)
   };
 }
 

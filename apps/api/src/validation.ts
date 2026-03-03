@@ -40,6 +40,11 @@ export interface SaveCompPayload {
   }>;
 }
 
+export interface AssignCtaSlotPayload {
+  playerUserId?: string;
+  slotKey: string;
+}
+
 const allowedMemberStatuses = new Set<MemberStatus>(["TRIAL", "CORE", "BENCHED", "REJECTED"]);
 
 export function requireRegisterPayload(payload: RegisterPayload | null): RegisterPayload {
@@ -147,5 +152,16 @@ export function requireSaveCompPayload(payload: SaveCompPayload | null): SaveCom
         })
       };
     })
+  };
+}
+
+export function requireAssignCtaSlotPayload(payload: AssignCtaSlotPayload | null): AssignCtaSlotPayload {
+  if (!payload?.slotKey?.trim()) {
+    throw new DomainError("slotKey is required");
+  }
+
+  return {
+    slotKey: payload.slotKey.trim(),
+    playerUserId: payload.playerUserId?.trim() || undefined
   };
 }
