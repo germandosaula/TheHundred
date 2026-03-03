@@ -131,6 +131,50 @@ Ahora mismo ese blueprint define solo:
 - la web sigue yendo en Vercel
 - en Render solo debes completar los secretos marcados con `sync: false`
 
+## Deploy del bot en NAS con Docker
+
+Si quieres dejar el bot fuera de Render, el repo incluye:
+
+- `docker-compose.bot.yml`
+- `apps/bot/.env.example`
+
+### Variables del bot
+
+Crea `apps/bot/.env` a partir de `apps/bot/.env.example` y completa:
+
+- `REPOSITORY_PROVIDER=supabase`
+- `SUPABASE_URL=...`
+- `SUPABASE_SERVICE_ROLE_KEY=...`
+- `DISCORD_BOT_TOKEN=...`
+- `DISCORD_GUILD_ID=...`
+- `DISCORD_ROLE_TRIAL_ID=...`
+- `DISCORD_ROLE_CORE_ID=...`
+- `DISCORD_ROLE_BENCHED_ID=...`
+- `DISCORD_RECRUITMENT_CATEGORY_ID=...`
+- `DISCORD_COUNCIL_ROLE_IDS=...`
+- `DISCORD_SYNC_INTERVAL_MS=30000`
+
+### Arranque en el NAS
+
+1. Clonar el repo en el NAS
+2. Copiar `apps/bot/.env.example` a `apps/bot/.env`
+3. Rellenar secretos y IDs Discord
+4. Lanzar:
+
+- `docker compose -f docker-compose.bot.yml up -d`
+
+### Logs
+
+Para ver el bot en tiempo real:
+
+- `docker compose -f docker-compose.bot.yml logs -f`
+
+### Actualizacion
+
+Para actualizar el bot tras hacer `git pull`:
+
+- `docker compose -f docker-compose.bot.yml up -d --build`
+
 ## Supabase Link
 
 1. Crear un proyecto en Supabase

@@ -1,0 +1,11 @@
+services:
+  thehundred-bot:
+    image: node:22
+    container_name: thehundred-bot
+    working_dir: /app
+    command: sh -lc "npm install && npm run start:bot"
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file:
+      - apps/bot/.env
