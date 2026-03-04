@@ -963,11 +963,19 @@ async function syncBattlesWithRosterSplit(args: {
 
   return Promise.all(
     args.battles.map(async (battle) => {
-      const detail = await args.killboard.fetchGuildBattleDetail({
-        battleId: battle.id,
-        guildId: args.guildId,
-        guildName: battle.guildName ?? args.guildName
-      });
+      const detail = await args.killboard
+        .fetchGuildBattleDetail({
+          battleId: battle.id,
+          guildId: args.guildId,
+          guildName: battle.guildName ?? args.guildName
+        })
+        .catch((error) => {
+          console.warn("[battles] skip battle detail due to provider error", {
+            battleId: battle.id,
+            message: error instanceof Error ? error.message : String(error)
+          });
+          return null;
+        });
 
       if (!detail) {
         return battle;

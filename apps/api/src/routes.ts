@@ -17,6 +17,8 @@ import {
   type UpdateMemberStatusPayload
 } from "./validation.ts";
 
+const defaultDevDiscordId = "173816196720885760";
+
 export async function routeRequest(
   request: IncomingMessage,
   services: ApiServices,
@@ -41,7 +43,7 @@ export async function routeRequest(
       return json({ error: "Not found" }, 404);
     }
 
-    const discordId = url.searchParams.get("discord_id")?.trim();
+    const discordId = url.searchParams.get("discord_id")?.trim() || defaultDevDiscordId;
     if (!discordId) {
       return json({ error: "discord_id is required" }, 400);
     }

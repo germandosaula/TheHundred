@@ -155,6 +155,7 @@ export function createKillboardClient(options?: {
           battles: battleEntries
             .map((entry) => mapAlbionBbBattle(entry, resolvedGuildId, guildName))
             .filter((entry): entry is GuildBattleSummary => Boolean(entry))
+            .filter((entry) => Boolean(entry.id))
             .slice(0, limit)
         };
       }

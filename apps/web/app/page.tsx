@@ -3,11 +3,13 @@ import Link from "next/link";
 import { getLandingData } from "./lib";
 import { PageEntryLoader } from "./PageEntryLoader";
 
+const defaultDevDiscordId = "173816196720885760";
+
 export default async function LandingPage() {
   const { authStart, me, slots } = await getLandingData();
   const hasLinkedUser = Boolean(me);
   const showDevLogin = (process.env.API_BASE_URL ?? "http://localhost:3001").startsWith("http://localhost:");
-  const devDiscordId = process.env.DEV_LOGIN_DISCORD_ID;
+  const devDiscordId = process.env.DEV_LOGIN_DISCORD_ID ?? defaultDevDiscordId;
   const devLoginUrl =
     showDevLogin && devDiscordId
       ? `${process.env.API_BASE_URL ?? "http://localhost:3001"}/auth/dev-login?discord_id=${encodeURIComponent(devDiscordId)}`
