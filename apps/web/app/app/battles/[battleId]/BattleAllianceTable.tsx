@@ -7,10 +7,17 @@ const ITEMS_PER_PAGE = 8;
 type SortKey = "name" | "players" | "kills" | "deaths" | "avgIp" | "fame";
 
 function formatCompactNumber(value: number) {
-  return new Intl.NumberFormat("es-ES", {
-    notation: value >= 1000 ? "compact" : "standard",
-    maximumFractionDigits: 1
-  }).format(value);
+  if (value >= 1_000_000) {
+    const formatted = (value / 1_000_000).toFixed(1).replace(/\.0$/, "").replace(".", ",");
+    return `${formatted}m`;
+  }
+
+  if (value >= 1_000) {
+    const formatted = (value / 1_000).toFixed(1).replace(/\.0$/, "").replace(".", ",");
+    return `${formatted}k`;
+  }
+
+  return value.toString();
 }
 
 function StatCell({
@@ -92,7 +99,7 @@ export function BattleAllianceTable({ alliances }: { alliances: BattleAllianceEn
           <div className="battle-table-shell">
             <div
               className="battle-table battle-table-summary"
-              style={{ gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}
+              style={{ gridTemplateColumns: "minmax(140px, 1.15fr) minmax(88px, 0.72fr) minmax(88px, 0.72fr) minmax(88px, 0.72fr) minmax(98px, 0.8fr) minmax(116px, 0.92fr)" }}
             >
               <div className="battle-table-header"><SortHeader label="Alliance" value="name" /></div>
               <div className="battle-table-header"><SortHeader label="Players" value="players" /></div>

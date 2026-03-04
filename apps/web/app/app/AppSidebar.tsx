@@ -11,6 +11,55 @@ interface AppSidebarProps {
   children: React.ReactNode;
 }
 
+function SidebarIcon({ path }: { path: string }) {
+  return (
+    <svg aria-hidden="true" className="nav-icon" fill="none" viewBox="0 0 24 24">
+      <path
+        d={path}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function ToggleSidebarIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg aria-hidden="true" className="sidebar-toggle-icon" fill="none" viewBox="0 0 24 24">
+      {collapsed ? (
+        <path
+          d="m9 6 6 6-6 6"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+      ) : (
+        <path
+          d="m15 6-6 6 6 6"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+      )}
+    </svg>
+  );
+}
+
+function getGuildRoleLabel(role: MeData["role"]) {
+  switch (role) {
+    case "ADMIN":
+      return "Admin";
+    case "OFFICER":
+      return "Oficial";
+    default:
+      return "Jugador";
+  }
+}
+
 export function AppSidebar({ me, children }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -19,14 +68,43 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
   const [loggingOut, setLoggingOut] = useState(false);
   const isOfficerOrAdmin = me.role === "OFFICER" || me.role === "ADMIN";
   const navItems = [
-    { href: "/app", label: "Resumen" },
-    { href: "/app/ranking", label: "Ranking" },
-    { href: "/app/ctas", label: "CTAs" },
-    { href: "/app/battles", label: "Battles" },
-    { href: "/app/comps", label: "Comps" }
+    {
+      href: "/app",
+      label: "Resumen",
+      icon: "M4 12h16M4 6h16M4 18h10"
+    },
+    {
+      href: "/app/ranking",
+      label: "Ranking",
+      icon: "M6 18V9m6 9V5m6 13v-7"
+    },
+    {
+      href: "/app/ctas",
+      label: "CTAs",
+      icon: "M8 7h8M7 3h10l1 4H6l1-4Zm-1 7h12v10H6V10Z"
+    },
+    {
+      href: "/app/battles",
+      label: "Battles",
+      icon: "m7 6 5 5m0 0 5-5m-5 5-5 7m5-7 5 7"
+    },
+    {
+      href: "/app/rendimiento",
+      label: "Rendimiento",
+      icon: "M5 18h14M7 15V9m5 6V6m5 9v-3"
+    },
+    {
+      href: "/app/comps",
+      label: "Comps",
+      icon: "M12 3 5 7v5c0 4.5 2.8 7.7 7 9 4.2-1.3 7-4.5 7-9V7l-7-4Z"
+    }
   ];
   if (isOfficerOrAdmin) {
-    navItems.splice(4, 0, { href: "/app/members", label: "Miembros" });
+    navItems.push({
+      href: "/app/members",
+      label: "Miembros",
+      icon: "M16 19a4 4 0 0 0-8 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a3 3 0 0 0-3-3m0-5a3 3 0 1 0-2.2-5"
+    });
   }
 
   async function handleLogout() {
@@ -51,7 +129,7 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
             onClick={() => setCollapsed((value) => !value)}
             type="button"
           >
-            {collapsed ? ">>" : "<<"}
+            <ToggleSidebarIcon collapsed={collapsed} />
           </button>
           <div className="sidebar-brand">
             {me.avatarUrl ? (
@@ -68,13 +146,13 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
             )}
             {!collapsed ? (
               <div className="sidebar-brand-copy">
-                <strong>The Hundred</strong>
-                <span>War room</span>
+                <strong>{me.displayName}</strong>
+                <span>{getGuildRoleLabel(me.role)}</span>
               </div>
             ) : null}
           </div>
           <button className="sidebar-toggle mobile-only" onClick={() => setSidebarOpen(false)} type="button">
-            x
+            <ToggleSidebarIcon collapsed={false} />
           </button>
         </div>
 
@@ -86,7 +164,7 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
               key={item.href}
               onClick={() => setSidebarOpen(false)}
             >
-              <span className="nav-dot" />
+              <SidebarIcon path={item.icon} />
               {!collapsed ? item.label : null}
             </Link>
           ))}
@@ -111,11 +189,8 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
           </div>
           <div className="topbar-actions">
             <button className="sidebar-toggle mobile-only" onClick={() => setSidebarOpen(true)} type="button">
-              Menu
+              <ToggleSidebarIcon collapsed />
             </button>
-            <Link className="button ghost" href="/">
-              Volver a Public
-            </Link>
           </div>
         </header>
 

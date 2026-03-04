@@ -13,6 +13,7 @@ import type {
 export interface RegisterMemberInput {
   displayName: string;
   discordId: string;
+  albionName: string;
   avatarUrl?: string;
 }
 
@@ -128,6 +129,31 @@ export interface SaveCompInput {
   }>;
 }
 
+export interface BattlePerformanceBombRecord {
+  battleId: string;
+  bombGroupName: string;
+  players: number;
+  kills: number;
+  deaths: number;
+}
+
+export interface BattlePerformanceSnapshotRecord {
+  battleId: string;
+  startTime: string;
+  guildName: string;
+  guildPlayers: number;
+  guildKills: number;
+  guildDeaths: number;
+  mainKills: number;
+  mainDeaths: number;
+  processedAt: string;
+}
+
+export interface BattleMemberAttendanceRecord {
+  battleId: string;
+  memberId: string;
+}
+
 export interface DatabaseRepository {
   getConfig(): Promise<GuildConfig>;
   getUsers(): Promise<User[]>;
@@ -135,11 +161,13 @@ export interface DatabaseRepository {
   getUserByDiscordId(discordId: string): Promise<User | null>;
   createUser(input: RegisterMemberInput & { role?: UserRole }): Promise<User>;
   updateUserAvatar(userId: string, avatarUrl?: string): Promise<User | null>;
+  updateUserAlbionName(userId: string, albionName: string): Promise<User | null>;
   getMembers(): Promise<GuildMember[]>;
   getMemberById(memberId: string): Promise<GuildMember | null>;
   getMemberByUserId(userId: string): Promise<GuildMember | null>;
   createMember(userId: string, status?: MemberStatus): Promise<GuildMember>;
   updateMemberStatus(memberId: string, status: MemberStatus): Promise<GuildMember | null>;
+  updateMemberBombGroup(memberId: string, bombGroupName?: string): Promise<GuildMember | null>;
   setMemberDiscordRoleStatus(
     memberId: string,
     status?: MemberStatus,
@@ -166,6 +194,28 @@ export interface DatabaseRepository {
   regenerateAttendancePointsForCta(ctaId: string): Promise<PointsEntry[]>;
   getRanking(): Promise<Array<{ memberId: string; points: number }>>;
   getOpenSlots(): Promise<{ slotsOpen: number; memberCap: number }>;
+  getBattlePerformanceSnapshots(): Promise<BattlePerformanceSnapshotRecord[]>;
+  getBattlePerformanceBombs(): Promise<BattlePerformanceBombRecord[]>;
+  getBattleMemberAttendances(): Promise<BattleMemberAttendanceRecord[]>;
+  saveBattlePerformanceSnapshot(input: {
+    battleId: string;
+    startTime: string;
+    guildName: string;
+    guildPlayers: number;
+    guildKills: number;
+    guildDeaths: number;
+    mainKills: number;
+    mainDeaths: number;
+    bombs: Array<{
+      bombGroupName: string;
+      players: number;
+      kills: number;
+      deaths: number;
+    }>;
+    memberAttendances: Array<{
+      memberId: string;
+    }>;
+  }): Promise<BattlePerformanceSnapshotRecord>;
   getComps(): Promise<CompRecord[]>;
   getCompById(compId: string): Promise<CompRecord | null>;
   saveComp(input: SaveCompInput): Promise<CompRecord>;

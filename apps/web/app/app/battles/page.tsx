@@ -3,14 +3,14 @@ import { redirect } from "next/navigation";
 import { getPrivateBattlesData } from "../../lib";
 
 function formatBattleTime(value: string) {
-  return new Date(value).toLocaleString("es-ES", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  const date = new Date(value);
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+
+  return `${day}/${month}/${year}, ${hour}:${minute}`;
 }
 
 function formatCompactNumber(value: number) {
@@ -73,8 +73,8 @@ export default async function BattlesPage() {
                   <h2>{formatBattleTitle(battle.guildName, battle.opponentGuilds)}</h2>
                 </div>
                 <div className="battle-card-meta">
-                  <span className="status-badge">Main Kills: XX</span>
-                  <span className="status-badge">Bomb Kills: XX</span>
+                  {battle.mainKills ? <span className="status-badge">Main Kills: {battle.mainKills}</span> : null}
+                  {battle.bombKills ? <span className="status-badge">Bomb Kills: {battle.bombKills}</span> : null}
                 </div>
               </div>
 

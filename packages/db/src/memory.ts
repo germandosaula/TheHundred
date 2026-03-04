@@ -14,6 +14,9 @@ import {
   type UserRole
 } from "@thehundred/domain";
 import type {
+  BattleMemberAttendanceRecord,
+  BattlePerformanceBombRecord,
+  BattlePerformanceSnapshotRecord,
   CtaSignupRecord,
   CompRecord,
   CompSlotRecord,
@@ -34,6 +37,9 @@ export interface RepositoryState {
   ctaSignups: CtaSignupRecord[];
   pointsHistory: PointsEntry[];
   config: GuildConfig;
+  battlePerformanceSnapshots: BattlePerformanceSnapshotRecord[];
+  battlePerformanceBombs: BattlePerformanceBombRecord[];
+  battleMemberAttendances: BattleMemberAttendanceRecord[];
   comps: CompRecord[];
   recruitmentApplications: RecruitmentApplicationRecord[];
 }
@@ -66,6 +72,7 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       id: randomUUID(),
       discordId: input.discordId,
       displayName: input.displayName,
+      albionName: input.albionName,
       role: input.role ?? "PLAYER",
       avatarUrl: input.avatarUrl
     };
@@ -81,6 +88,16 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     }
 
     user.avatarUrl = avatarUrl;
+    return user;
+  }
+
+  async updateUserAlbionName(userId: string, albionName: string): Promise<User | null> {
+    const user = this.state.users.find((entry) => entry.id === userId) ?? null;
+    if (!user) {
+      return null;
+    }
+
+    user.albionName = albionName;
     return user;
   }
 
@@ -102,6 +119,7 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       userId,
       status,
       joinedAt: new Date().toISOString(),
+      bombGroupName: undefined,
       discordRoleStatus: undefined,
       discordRoleSyncedAt: undefined
     };
@@ -117,6 +135,16 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     }
 
     member.status = status;
+    return member;
+  }
+
+  async updateMemberBombGroup(memberId: string, bombGroupName?: string): Promise<GuildMember | null> {
+    const member = this.state.members.find((item) => item.id === memberId) ?? null;
+    if (!member) {
+      return null;
+    }
+
+    member.bombGroupName = bombGroupName;
     return member;
   }
 
@@ -262,6 +290,81 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       slotsOpen: countOpenSlots(this.state.members, this.state.config),
       memberCap: this.state.config.memberCap
     };
+  }
+
+  async getBattlePerformanceSnapshots(): Promise<BattlePerformanceSnapshotRecord[]> {
+    return this.state.battlePerformanceSnapshots;
+  }
+
+  async getBattlePerformanceBombs(): Promise<BattlePerformanceBombRecord[]> {
+    return this.state.battlePerformanceBombs;
+  }
+
+  async getBattleMemberAttendances(): Promise<BattleMemberAttendanceRecord[]> {
+    return this.state.battleMemberAttendances;
+  }
+
+  async saveBattlePerformanceSnapshot(input: {
+    battleId: string;
+    startTime: string;
+    guildName: string;
+    guildPlayers: number;
+    guildKills: number;
+    guildDeaths: number;
+    mainKills: number;
+    mainDeaths: number;
+    bombs: Array<{
+      bombGroupName: string;
+      players: number;
+      kills: number;
+      deaths: number;
+    }>;
+    memberAttendances: Array<{
+      memberId: string;
+    }>;
+  }): Promise<BattlePerformanceSnapshotRecord> {
+    const now = new Date().toISOString();
+    const snapshot: BattlePerformanceSnapshotRecord = {
+      battleId: input.battleId,
+      startTime: input.startTime,
+      guildName: input.guildName,
+      guildPlayers: input.guildPlayers,
+      guildKills: input.guildKills,
+      guildDeaths: input.guildDeaths,
+      mainKills: input.mainKills,
+      mainDeaths: input.mainDeaths,
+      processedAt: now
+    };
+
+    this.state.battlePerformanceSnapshots = this.state.battlePerformanceSnapshots.filter(
+      (entry) => entry.battleId !== input.battleId
+    );
+    this.state.battlePerformanceSnapshots.push(snapshot);
+
+    this.state.battlePerformanceBombs = this.state.battlePerformanceBombs.filter(
+      (entry) => entry.battleId !== input.battleId
+    );
+    this.state.battlePerformanceBombs.push(
+      ...input.bombs.map((bomb) => ({
+        battleId: input.battleId,
+        bombGroupName: bomb.bombGroupName,
+        players: bomb.players,
+        kills: bomb.kills,
+        deaths: bomb.deaths
+      }))
+    );
+
+    this.state.battleMemberAttendances = this.state.battleMemberAttendances.filter(
+      (entry) => entry.battleId !== input.battleId
+    );
+    this.state.battleMemberAttendances.push(
+      ...input.memberAttendances.map((entry) => ({
+        battleId: input.battleId,
+        memberId: entry.memberId
+      }))
+    );
+
+    return snapshot;
   }
 
   async getComps(): Promise<CompRecord[]> {
@@ -455,9 +558,9 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
 export function createSeedState(): RepositoryState {
   return {
     users: [
-      { id: "u1", discordId: "1001", displayName: "Astra", role: "ADMIN" },
-      { id: "u2", discordId: "1002", displayName: "Bram", role: "OFFICER" },
-      { id: "u3", discordId: "1003", displayName: "Cyra", role: "PLAYER" }
+      { id: "u1", discordId: "1001", displayName: "Astra", albionName: "Astra", role: "ADMIN" },
+      { id: "u2", discordId: "1002", displayName: "Bram", albionName: "Bram", role: "OFFICER" },
+      { id: "u3", discordId: "1003", displayName: "Cyra", albionName: "Cyra", role: "PLAYER" }
     ],
     members: [
       {
@@ -526,6 +629,9 @@ export function createSeedState(): RepositoryState {
         createdAt: "2026-02-20T20:00:00Z"
       }
     ],
+    battlePerformanceSnapshots: [],
+    battlePerformanceBombs: [],
+    battleMemberAttendances: [],
     comps: [],
     recruitmentApplications: [],
     config: {

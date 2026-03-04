@@ -3,6 +3,7 @@ import { DomainError, type MemberStatus } from "@thehundred/domain";
 export interface RegisterPayload {
   displayName: string;
   discordId: string;
+  albionName: string;
   avatarUrl?: string;
   timezone: string;
   mainRole: string;
@@ -17,6 +18,10 @@ export interface CreateCtaPayload {
 
 export interface UpdateMemberStatusPayload {
   status: MemberStatus;
+}
+
+export interface UpdateMemberBombGroupPayload {
+  bombGroupName?: string;
 }
 
 export interface SaveCompPayload {
@@ -51,18 +56,20 @@ export function requireRegisterPayload(payload: RegisterPayload | null): Registe
   if (
     !payload?.displayName?.trim() ||
     !payload?.discordId?.trim() ||
+    !payload?.albionName?.trim() ||
     !payload?.timezone?.trim() ||
     !payload?.mainRole?.trim() ||
     !payload?.zvzExperience?.trim()
   ) {
     throw new DomainError(
-      "displayName, discordId, timezone, mainRole and zvzExperience are required"
+      "displayName, discordId, albionName, timezone, mainRole and zvzExperience are required"
     );
   }
 
   return {
     displayName: payload.displayName.trim(),
     discordId: payload.discordId.trim(),
+    albionName: payload.albionName.trim(),
     avatarUrl: payload.avatarUrl?.trim() || undefined,
     timezone: payload.timezone?.trim() || "",
     mainRole: payload.mainRole?.trim() || "",
@@ -94,6 +101,20 @@ export function requireMemberStatusPayload(
   }
 
   return payload;
+}
+
+export function requireMemberBombGroupPayload(
+  payload: UpdateMemberBombGroupPayload | null
+): UpdateMemberBombGroupPayload {
+  const bombGroupName = payload?.bombGroupName?.trim();
+
+  if (typeof payload?.bombGroupName === "string" && bombGroupName && bombGroupName.length > 40) {
+    throw new DomainError("bombGroupName must be 40 characters or fewer");
+  }
+
+  return {
+    bombGroupName: bombGroupName || undefined
+  };
 }
 
 export function requireSaveCompPayload(payload: SaveCompPayload | null): SaveCompPayload {

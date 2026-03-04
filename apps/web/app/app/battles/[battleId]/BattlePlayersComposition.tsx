@@ -5,8 +5,7 @@ import {
   canonicalWeaponVariantKey,
   compRoleBucketLabels,
   getItemIconUrl,
-  getResolvedWeaponIconName,
-  resolveAlbionWeapon,
+  resolveEffectiveBattleItem,
   type AlbionCompRole
 } from "../../comps/catalog";
 import type { BattlePlayerEntry } from "../../../lib";
@@ -21,6 +20,7 @@ type ScopeOption = {
 type RoleBucket = {
   role: AlbionCompRole;
   count: number;
+  percentage: number;
   color: string;
 };
 
@@ -30,6 +30,31 @@ type WeaponCount = {
   icon: string;
   count: number;
 };
+
+function getCompositionGroupKey(player: BattlePlayerEntry) {
+  const effectiveItem = resolveEffectiveBattleItem(player);
+  if (effectiveItem.resolved?.role === "Battlemount") {
+    return effectiveItem.resolved.id ?? effectiveItem.iconName ?? effectiveItem.displayName ?? null;
+  }
+  return (
+    canonicalWeaponVariantKey(effectiveItem.iconName ?? undefined) ??
+    effectiveItem.resolved?.id ??
+    effectiveItem.displayName ??
+    null
+  );
+}
+
+function getCompositionIconName(player: BattlePlayerEntry) {
+  const effectiveItem = resolveEffectiveBattleItem(player);
+  if (effectiveItem.resolved?.role === "Battlemount") {
+    return effectiveItem.resolved.iconName ?? effectiveItem.iconName ?? null;
+  }
+  return (
+    canonicalWeaponVariantKey(effectiveItem.iconName ?? undefined) ??
+    effectiveItem.iconName ??
+    null
+  );
+}
 
 const roleOrder: AlbionCompRole[] = [
   "Tank",
@@ -119,18 +144,23 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
 
   const roleBuckets = useMemo<RoleBucket[]>(() => {
     const counts = new Map<AlbionCompRole, number>(roleOrder.map((role) => [role, 0]));
+    const totalPlayers = filteredPlayers.length;
 
     for (const player of filteredPlayers) {
-      const resolved = resolveAlbionWeapon(player.weaponName ?? player.weaponIconName);
-      if (!resolved) {
+      const effectiveItem = resolveEffectiveBattleItem(player);
+      if (!effectiveItem.resolved) {
         continue;
       }
-      counts.set(resolved.role, (counts.get(resolved.role) ?? 0) + 1);
+      counts.set(
+        effectiveItem.resolved.role,
+        (counts.get(effectiveItem.resolved.role) ?? 0) + 1
+      );
     }
 
     return roleOrder.map((role) => ({
       role,
       count: counts.get(role) ?? 0,
+      percentage: totalPlayers > 0 ? ((counts.get(role) ?? 0) / totalPlayers) * 100 : 0,
       color: roleColors[role]
     }));
   }, [filteredPlayers]);
@@ -139,14 +169,17 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
     const counts = new Map<string, WeaponCount>();
 
     for (const player of filteredPlayers) {
-      const sourceWeapon = player.weaponIconName ?? player.weaponName;
-      const resolved = resolveAlbionWeapon(sourceWeapon);
-      if (!resolved || resolved.role !== activeRole) {
+      const effectiveItem = resolveEffectiveBattleItem(player);
+      if (!effectiveItem.resolved || effectiveItem.resolved.role !== activeRole) {
         continue;
       }
 
-      const icon = getResolvedWeaponIconName(sourceWeapon) ?? resolved.name;
-      const key = canonicalWeaponVariantKey(sourceWeapon) ?? resolved.id;
+      const icon = getCompositionIconName(player);
+      const key = getCompositionGroupKey(player);
+      if (!icon || !key) {
+        continue;
+      }
+
       const existing = counts.get(key);
       if (existing) {
         existing.count += 1;
@@ -155,7 +188,7 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
 
       counts.set(key, {
         key,
-        label: resolved.name,
+        label: effectiveItem.resolved.name,
         icon,
         count: 1
       });
@@ -193,6 +226,7 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
     {
       role: "Tank" as AlbionCompRole,
       count: 0,
+      percentage: 0,
       color: roleColors.Tank
     };
 
@@ -242,6 +276,7 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
                     d={segment.path}
                     fill={segment.color}
                     key={segment.role}
+                    onClick={() => setActiveRole(segment.role)}
                     onMouseEnter={(event) => handleSegmentMove(event, segment.role)}
                     onMouseMove={(event) => handleSegmentMove(event, segment.role)}
                   />
@@ -262,6 +297,7 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
               >
                 <span>{compRoleBucketLabels[activeBucket.role]}</span>
                 <strong>{activeBucket.count}</strong>
+                <small>{activeBucket.percentage.toFixed(1)}%</small>
               </div>
             ) : null}
           </div>

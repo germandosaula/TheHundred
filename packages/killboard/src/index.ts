@@ -50,6 +50,8 @@ export interface BattlePlayerEntry {
   fame: number;
   weaponName?: string;
   weaponIconName?: string;
+  mountName?: string;
+  mountIconName?: string;
 }
 
 export interface BattleTopEntry {
@@ -454,11 +456,18 @@ function mapAlbionBbBattle(
         ""
     ),
     startTime:
+      readString(record, "startedAt") ??
+      readString(record, "StartedAt") ??
       readString(record, "startTime") ??
       readString(record, "time") ??
       readString(record, "StartTime") ??
       new Date().toISOString(),
-    endTime: readString(record, "endTime") ?? readString(record, "EndTime") ?? undefined,
+    endTime:
+      readString(record, "finishedAt") ??
+      readString(record, "FinishedAt") ??
+      readString(record, "endTime") ??
+      readString(record, "EndTime") ??
+      undefined,
     clusterName:
       readString(record, "clusterName") ??
       readString(record, "cluster") ??
@@ -539,11 +548,19 @@ function mapAlbionBbBattleDetail(
   const guildsSummary = guildEntries
     .map((entry) => mapGuildSummaryEntry(entry))
     .filter((entry): entry is BattleGuildEntry => Boolean(entry))
+    .map((entry) => ({
+      ...entry,
+      avgIp: entry.avgIp ?? computeAverageIpForGuild(guildPlayers, entry.name)
+    }))
     .sort((left, right) => right.fame - left.fame || right.players - left.players);
 
   const alliancesSummary = allianceEntries
     .map((entry) => mapAllianceSummaryEntry(entry, guildsSummary))
     .filter((entry): entry is BattleAllianceEntry => Boolean(entry))
+    .map((entry) => ({
+      ...entry,
+      avgIp: entry.avgIp ?? computeAverageIpForAlliance(guildPlayers, entry.name)
+    }))
     .sort((left, right) => right.fame - left.fame || right.players - left.players);
 
   const topKills = pickTopEntry(guildPlayers, "kills");
@@ -680,9 +697,11 @@ function mergeBattlePlayer(
     ...existing,
     guildName: existing.guildName ?? next.guildName,
     allianceName: existing.allianceName ?? next.allianceName,
-    ip: existing.ip ?? next.ip,
+    ip: pickPreferredIp(existing.ip, next.ip),
     weaponName: pickPreferredWeaponName(existing.weaponName, next.weaponName),
     weaponIconName: pickPreferredWeaponName(existing.weaponIconName, next.weaponIconName),
+    mountName: pickPreferredWeaponName(existing.mountName, next.mountName),
+    mountIconName: pickPreferredWeaponName(existing.mountIconName, next.mountIconName),
     damage: Math.max(existing.damage, next.damage),
     heal: Math.max(existing.heal, next.heal),
     kills: Math.max(existing.kills, next.kills),
@@ -713,6 +732,25 @@ function pickPreferredWeaponName(current?: string, candidate?: string): string |
   }
 
   return candidateScore > currentScore ? candidate : current;
+}
+
+function pickPreferredIp(current?: number, candidate?: number): number | undefined {
+  const currentIsValid = Number.isFinite(current) && (current ?? 0) > 0;
+  const candidateIsValid = Number.isFinite(candidate) && (candidate ?? 0) > 0;
+
+  if (currentIsValid && candidateIsValid) {
+    return current;
+  }
+
+  if (currentIsValid) {
+    return current;
+  }
+
+  if (candidateIsValid) {
+    return candidate;
+  }
+
+  return current ?? candidate;
 }
 
 function scoreWeaponName(value: string): number {
@@ -821,8 +859,18 @@ function mapGuildSummaryEntry(entry: JsonRecord): BattleGuildEntry | null {
       0,
     kills: readNumber(entry, "kills") ?? readNumber(entry, "killCount") ?? 0,
     deaths: readNumber(entry, "deaths") ?? readNumber(entry, "deathCount") ?? 0,
-    avgIp: readNumber(entry, "avgIp") ?? readNumber(entry, "averageIp") ?? undefined,
-    fame: readNumber(entry, "fame") ?? readNumber(entry, "totalFame") ?? 0
+    avgIp:
+      readNumber(entry, "avgIp") ??
+      readNumber(entry, "averageIp") ??
+      readNumber(entry, "ip") ??
+      readNumber(entry, "Ip") ??
+      undefined,
+    fame:
+      readNumber(entry, "fame") ??
+      readNumber(entry, "totalFame") ??
+      readNumber(entry, "killFame") ??
+      readNumber(entry, "KillFame") ??
+      0
   };
 }
 
@@ -853,8 +901,18 @@ function mapAllianceSummaryEntry(
       aggregatedPlayers,
     kills: readNumber(entry, "kills") ?? readNumber(entry, "killCount") ?? aggregatedKills,
     deaths: readNumber(entry, "deaths") ?? readNumber(entry, "deathCount") ?? aggregatedDeaths,
-    avgIp: readNumber(entry, "avgIp") ?? readNumber(entry, "averageIp") ?? undefined,
-    fame: readNumber(entry, "fame") ?? readNumber(entry, "totalFame") ?? aggregatedFame
+    avgIp:
+      readNumber(entry, "avgIp") ??
+      readNumber(entry, "averageIp") ??
+      readNumber(entry, "ip") ??
+      readNumber(entry, "Ip") ??
+      undefined,
+    fame:
+      readNumber(entry, "fame") ??
+      readNumber(entry, "totalFame") ??
+      readNumber(entry, "killFame") ??
+      readNumber(entry, "KillFame") ??
+      aggregatedFame
   };
 }
 
@@ -909,7 +967,12 @@ function mapBattlePlayer(
       0,
     kills: readNumber(entry, "kills") ?? readNumber(entry, "killCount") ?? 0,
     deaths: readNumber(entry, "deaths") ?? readNumber(entry, "deathCount") ?? 0,
-    fame: readNumber(entry, "fame") ?? readNumber(entry, "killFame") ?? 0,
+    fame:
+      readNumber(entry, "killFame") ??
+      readNumber(entry, "KillFame") ??
+      readNumber(entry, "fame") ??
+      readNumber(entry, "Fame") ??
+      0,
     weaponName:
       readString(entry, "weaponName") ??
       readString(entry, "WeaponName") ??
@@ -985,6 +1048,33 @@ function mapBattlePlayer(
       readNestedString(entry, ["equipment", "mainhand", "uniqueName"]) ??
       readNestedString(entry, ["equipment", "weapon", "uniqueName"]) ??
       readNestedString(entry, ["gear", "mainHand", "uniqueName"]) ??
+      readNestedString(entry, ["Equipment", "MainHand", "Type"]) ??
+      readNestedString(entry, ["Equipment", "Mainhand", "Type"]) ??
+      readNestedString(entry, ["Equipment", "Weapon", "Type"]) ??
+      undefined,
+    mountName:
+      readString(entry, "mountName") ??
+      readString(entry, "MountName") ??
+      readString(entry, "mount") ??
+      readString(entry, "Mount") ??
+      readNestedString(entry, ["mount", "name"]) ??
+      readNestedString(entry, ["Mount", "name"]) ??
+      readNestedString(entry, ["mount", "Name"]) ??
+      readNestedString(entry, ["Mount", "Name"]) ??
+      readNestedString(entry, ["Equipment", "Mount", "Name"]) ??
+      readNestedString(entry, ["equipment", "mount", "name"]) ??
+      undefined,
+    mountIconName:
+      readString(entry, "mountIconName") ??
+      readString(entry, "MountIconName") ??
+      readString(entry, "mountType") ??
+      readString(entry, "MountType") ??
+      readNestedString(entry, ["mount", "type"]) ??
+      readNestedString(entry, ["Mount", "type"]) ??
+      readNestedString(entry, ["mount", "Type"]) ??
+      readNestedString(entry, ["Mount", "Type"]) ??
+      readNestedString(entry, ["Equipment", "Mount", "Type"]) ??
+      readNestedString(entry, ["equipment", "mount", "type"]) ??
       undefined
   };
 }
@@ -1010,4 +1100,35 @@ function pickTopEntry(
     allianceName: top.allianceName,
     value: top[field]
   };
+}
+
+function computeAverageIpForGuild(
+  players: BattlePlayerEntry[],
+  guildName: string
+): number | undefined {
+  return computeAverageIp(
+    players.filter((player) => player.guildName === guildName)
+  );
+}
+
+function computeAverageIpForAlliance(
+  players: BattlePlayerEntry[],
+  allianceName: string
+): number | undefined {
+  return computeAverageIp(
+    players.filter((player) => player.allianceName === allianceName)
+  );
+}
+
+function computeAverageIp(players: BattlePlayerEntry[]): number | undefined {
+  const validIps = players
+    .map((player) => player.ip)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+
+  if (validIps.length === 0) {
+    return undefined;
+  }
+
+  const total = validIps.reduce((sum, value) => sum + value, 0);
+  return Math.round(total / validIps.length);
 }

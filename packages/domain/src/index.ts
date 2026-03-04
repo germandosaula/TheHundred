@@ -9,6 +9,7 @@ export interface User {
   id: string;
   discordId: string;
   displayName: string;
+  albionName?: string;
   role: UserRole;
   avatarUrl?: string;
 }
@@ -18,6 +19,7 @@ export interface GuildMember {
   userId: string;
   status: MemberStatus;
   joinedAt: string;
+  bombGroupName?: string;
   discordRoleStatus?: MemberStatus;
   discordRoleSyncedAt?: string;
 }

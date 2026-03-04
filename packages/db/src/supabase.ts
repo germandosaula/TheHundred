@@ -16,6 +16,9 @@ import {
   type UserRole
 } from "@thehundred/domain";
 import type {
+  BattleMemberAttendanceRecord,
+  BattlePerformanceBombRecord,
+  BattlePerformanceSnapshotRecord,
   CtaSignupRecord,
   CompRecord,
   CompPartyRecord,
@@ -38,6 +41,7 @@ type UserRow = {
   id: string;
   discord_id: string;
   display_name: string;
+  albion_name: string | null;
   role: UserRole;
   avatar_url: string | null;
 };
@@ -47,6 +51,7 @@ type GuildMemberRow = {
   user_id: string;
   status: MemberStatus;
   joined_at: string;
+  bomb_group_name: string | null;
   discord_role_status: MemberStatus | null;
   discord_role_synced_at: string | null;
 };
@@ -135,6 +140,31 @@ type CtaSignupRow = {
   reacted_at: string;
 };
 
+type BattlePerformanceSnapshotRow = {
+  battle_id: string;
+  start_time: string;
+  guild_name: string;
+  guild_players: number;
+  guild_kills: number;
+  guild_deaths: number;
+  main_kills: number;
+  main_deaths: number;
+  processed_at: string;
+};
+
+type BattlePerformanceBombRow = {
+  battle_id: string;
+  bomb_group_name: string;
+  players: number;
+  kills: number;
+  deaths: number;
+};
+
+type BattleMemberAttendanceRow = {
+  battle_id: string;
+  member_id: string;
+};
+
 export class SupabaseDatabaseRepository implements DatabaseRepository {
   private readonly client: SupabaseClient;
 
@@ -162,7 +192,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getUsers(): Promise<User[]> {
     const { data, error } = await this.client
       .from("users")
-      .select("id, discord_id, display_name, role, avatar_url")
+      .select("id, discord_id, display_name, albion_name, role, avatar_url")
       .returns<UserRow[]>();
     if (error) {
       throw createSupabaseDomainError("Failed to load users from Supabase", error);
@@ -174,7 +204,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getUserById(userId: string): Promise<User | null> {
     const { data, error } = await this.client
       .from("users")
-      .select("id, discord_id, display_name, role, avatar_url")
+      .select("id, discord_id, display_name, albion_name, role, avatar_url")
       .eq("id", userId)
       .maybeSingle<UserRow>();
     if (error) {
@@ -187,7 +217,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getUserByDiscordId(discordId: string): Promise<User | null> {
     const { data, error } = await this.client
       .from("users")
-      .select("id, discord_id, display_name, role, avatar_url")
+      .select("id, discord_id, display_name, albion_name, role, avatar_url")
       .eq("discord_id", discordId)
       .maybeSingle<UserRow>();
     if (error) {
@@ -203,10 +233,11 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
       .insert({
         discord_id: input.discordId,
         display_name: input.displayName,
+        albion_name: input.albionName,
         role: input.role ?? "PLAYER",
         avatar_url: input.avatarUrl ?? null
       })
-      .select("id, discord_id, display_name, role, avatar_url")
+      .select("id, discord_id, display_name, albion_name, role, avatar_url")
       .single<UserRow>();
     if (error || !data) {
       throw createSupabaseDomainError("Failed to create user in Supabase", error);
@@ -220,7 +251,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
       .from("users")
       .update({ avatar_url: avatarUrl ?? null })
       .eq("id", userId)
-      .select("id, discord_id, display_name, role, avatar_url")
+      .select("id, discord_id, display_name, albion_name, role, avatar_url")
       .maybeSingle<UserRow>();
     if (error) {
       throw createSupabaseDomainError("Failed to update user avatar in Supabase", error);
@@ -229,10 +260,24 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     return data ? mapUser(data) : null;
   }
 
+  async updateUserAlbionName(userId: string, albionName: string): Promise<User | null> {
+    const { data, error } = await this.client
+      .from("users")
+      .update({ albion_name: albionName })
+      .eq("id", userId)
+      .select("id, discord_id, display_name, albion_name, role, avatar_url")
+      .maybeSingle<UserRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to update user Albion name in Supabase", error);
+    }
+
+    return data ? mapUser(data) : null;
+  }
+
   async getMembers(): Promise<GuildMember[]> {
     const { data, error } = await this.client
       .from("guild_members")
-      .select("id, user_id, status, joined_at, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
       .returns<GuildMemberRow[]>();
     if (error) {
       throw createSupabaseDomainError("Failed to load guild members from Supabase", error);
@@ -244,7 +289,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getMemberById(memberId: string): Promise<GuildMember | null> {
     const { data, error } = await this.client
       .from("guild_members")
-      .select("id, user_id, status, joined_at, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
       .eq("id", memberId)
       .maybeSingle<GuildMemberRow>();
     if (error) {
@@ -257,7 +302,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getMemberByUserId(userId: string): Promise<GuildMember | null> {
     const { data, error } = await this.client
       .from("guild_members")
-      .select("id, user_id, status, joined_at, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
       .eq("user_id", userId)
       .maybeSingle<GuildMemberRow>();
     if (error) {
@@ -271,7 +316,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     const { data, error } = await this.client
       .from("guild_members")
       .insert({ user_id: userId, status })
-      .select("id, user_id, status, joined_at, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
       .single<GuildMemberRow>();
     if (error || !data) {
       throw createSupabaseDomainError("Failed to create guild member in Supabase", error);
@@ -285,10 +330,24 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
       .from("guild_members")
       .update({ status })
       .eq("id", memberId)
-      .select("id, user_id, status, joined_at, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
       .maybeSingle<GuildMemberRow>();
     if (error) {
       throw createSupabaseDomainError("Failed to update member status in Supabase", error);
+    }
+
+    return data ? mapGuildMember(data) : null;
+  }
+
+  async updateMemberBombGroup(memberId: string, bombGroupName?: string): Promise<GuildMember | null> {
+    const { data, error } = await this.client
+      .from("guild_members")
+      .update({ bomb_group_name: bombGroupName ?? null })
+      .eq("id", memberId)
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .maybeSingle<GuildMemberRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to update member bomb group in Supabase", error);
     }
 
     return data ? mapGuildMember(data) : null;
@@ -306,7 +365,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
         discord_role_synced_at: status ? syncedAt : null
       })
       .eq("id", memberId)
-      .select("id, user_id, status, joined_at, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
       .maybeSingle<GuildMemberRow>();
     if (error) {
       throw createSupabaseDomainError("Failed to update member Discord role sync in Supabase", error);
@@ -544,6 +603,135 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
       slotsOpen: countOpenSlots(members, config),
       memberCap: config.memberCap
     };
+  }
+
+  async getBattlePerformanceSnapshots(): Promise<BattlePerformanceSnapshotRecord[]> {
+    const { data, error } = await this.client
+      .from("battle_performance_snapshots")
+      .select("battle_id, start_time, guild_name, guild_players, guild_kills, guild_deaths, main_kills, main_deaths, processed_at")
+      .order("start_time", { ascending: false })
+      .returns<BattlePerformanceSnapshotRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load performance snapshots from Supabase", error);
+    }
+
+    return (data ?? []).map(mapBattlePerformanceSnapshot);
+  }
+
+  async getBattlePerformanceBombs(): Promise<BattlePerformanceBombRecord[]> {
+    const { data, error } = await this.client
+      .from("battle_performance_bombs")
+      .select("battle_id, bomb_group_name, players, kills, deaths")
+      .returns<BattlePerformanceBombRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load performance bombs from Supabase", error);
+    }
+
+    return (data ?? []).map(mapBattlePerformanceBomb);
+  }
+
+  async getBattleMemberAttendances(): Promise<BattleMemberAttendanceRecord[]> {
+    const { data, error } = await this.client
+      .from("battle_member_attendance")
+      .select("battle_id, member_id")
+      .returns<BattleMemberAttendanceRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load member battle attendance from Supabase", error);
+    }
+
+    return (data ?? []).map(mapBattleMemberAttendance);
+  }
+
+  async saveBattlePerformanceSnapshot(input: {
+    battleId: string;
+    startTime: string;
+    guildName: string;
+    guildPlayers: number;
+    guildKills: number;
+    guildDeaths: number;
+    mainKills: number;
+    mainDeaths: number;
+    bombs: Array<{
+      bombGroupName: string;
+      players: number;
+      kills: number;
+      deaths: number;
+    }>;
+    memberAttendances: Array<{
+      memberId: string;
+    }>;
+  }): Promise<BattlePerformanceSnapshotRecord> {
+    const now = new Date().toISOString();
+    const { data, error } = await this.client
+      .from("battle_performance_snapshots")
+      .upsert(
+        {
+          battle_id: input.battleId,
+          start_time: input.startTime,
+          guild_name: input.guildName,
+          guild_players: input.guildPlayers,
+          guild_kills: input.guildKills,
+          guild_deaths: input.guildDeaths,
+          main_kills: input.mainKills,
+          main_deaths: input.mainDeaths,
+          processed_at: now
+        },
+        { onConflict: "battle_id" }
+      )
+      .select("battle_id, start_time, guild_name, guild_players, guild_kills, guild_deaths, main_kills, main_deaths, processed_at")
+      .single<BattlePerformanceSnapshotRow>();
+    if (error || !data) {
+      throw createSupabaseDomainError("Failed to save performance snapshot in Supabase", error);
+    }
+
+    const { error: deleteError } = await this.client
+      .from("battle_performance_bombs")
+      .delete()
+      .eq("battle_id", input.battleId);
+    if (deleteError) {
+      throw createSupabaseDomainError("Failed to replace performance bombs in Supabase", deleteError);
+    }
+
+    if (input.bombs.length > 0) {
+      const { error: insertBombsError } = await this.client
+        .from("battle_performance_bombs")
+        .insert(
+          input.bombs.map((bomb) => ({
+            battle_id: input.battleId,
+            bomb_group_name: bomb.bombGroupName,
+            players: bomb.players,
+            kills: bomb.kills,
+            deaths: bomb.deaths
+          }))
+        );
+      if (insertBombsError) {
+        throw createSupabaseDomainError("Failed to save performance bombs in Supabase", insertBombsError);
+      }
+    }
+
+    const { error: deleteAttendanceError } = await this.client
+      .from("battle_member_attendance")
+      .delete()
+      .eq("battle_id", input.battleId);
+    if (deleteAttendanceError) {
+      throw createSupabaseDomainError("Failed to replace member battle attendance in Supabase", deleteAttendanceError);
+    }
+
+    if (input.memberAttendances.length > 0) {
+      const { error: insertAttendanceError } = await this.client
+        .from("battle_member_attendance")
+        .insert(
+          input.memberAttendances.map((entry) => ({
+            battle_id: input.battleId,
+            member_id: entry.memberId
+          }))
+        );
+      if (insertAttendanceError) {
+        throw createSupabaseDomainError("Failed to save member battle attendance in Supabase", insertAttendanceError);
+      }
+    }
+
+    return mapBattlePerformanceSnapshot(data);
   }
 
   async getComps(): Promise<CompRecord[]> {
@@ -914,6 +1102,7 @@ function mapUser(row: UserRow): User {
     id: row.id,
     discordId: row.discord_id,
     displayName: row.display_name,
+    albionName: row.albion_name ?? undefined,
     role: row.role,
     avatarUrl: row.avatar_url ?? undefined
   };
@@ -925,6 +1114,7 @@ function mapGuildMember(row: GuildMemberRow): GuildMember {
     userId: row.user_id,
     status: row.status,
     joinedAt: row.joined_at,
+    bombGroupName: row.bomb_group_name ?? undefined,
     discordRoleStatus: row.discord_role_status ?? undefined,
     discordRoleSyncedAt: row.discord_role_synced_at ?? undefined
   };
@@ -962,6 +1152,39 @@ function mapPointsEntry(row: PointsEntryRow): PointsEntry {
     points: row.points,
     createdAt: row.created_at,
     reversedAt: row.reversed_at ?? undefined
+  };
+}
+
+function mapBattlePerformanceSnapshot(
+  row: BattlePerformanceSnapshotRow
+): BattlePerformanceSnapshotRecord {
+  return {
+    battleId: row.battle_id,
+    startTime: row.start_time,
+    guildName: row.guild_name,
+    guildPlayers: row.guild_players,
+    guildKills: row.guild_kills,
+    guildDeaths: row.guild_deaths,
+    mainKills: row.main_kills,
+    mainDeaths: row.main_deaths,
+    processedAt: row.processed_at
+  };
+}
+
+function mapBattlePerformanceBomb(row: BattlePerformanceBombRow): BattlePerformanceBombRecord {
+  return {
+    battleId: row.battle_id,
+    bombGroupName: row.bomb_group_name,
+    players: row.players,
+    kills: row.kills,
+    deaths: row.deaths
+  };
+}
+
+function mapBattleMemberAttendance(row: BattleMemberAttendanceRow): BattleMemberAttendanceRecord {
+  return {
+    battleId: row.battle_id,
+    memberId: row.member_id
   };
 }
 

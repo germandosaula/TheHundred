@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BattleAllianceTable } from "./BattleAllianceTable";
 import { BattleGuildTable } from "./BattleGuildTable";
 import { BattlePlayersComposition } from "./BattlePlayersComposition";
+import { BattleRosterGroups } from "./BattleRosterGroups";
 import { BattlePlayersTable } from "./BattlePlayersTable";
 import {
   getPrivateBattleDetailData,
@@ -10,14 +11,14 @@ import {
 } from "../../../lib";
 
 function formatBattleTime(value: string) {
-  return new Date(value).toLocaleString("es-ES", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  const date = new Date(value);
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+
+  return `${day}/${month}/${year}, ${hour}:${minute}`;
 }
 
 function formatCompactNumber(value: number) {
@@ -108,24 +109,27 @@ export default async function BattleDetailPage({
   return (
     <section className="dashboard-stack battle-detail-page">
       <article className="dashboard-card battle-detail-hero">
-        <div className="section-row">
-          <div>
-            <span className="card-label">Battle</span>
-            <h1>{formatBattleTitle(battle.guilds)}</h1>
-          </div>
-          <div className="actions">
-            <Link className="button ghost" href="/app/battles">
-              Volver a Battles
-            </Link>
-            <a
-              className="button ghost"
-              href={`https://europe.albionbb.com/battles/${battle.id}`}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Ver en AlbionBB
-            </a>
-          </div>
+        <Link className="battle-back-link" href="/app/battles">
+          <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+            <path
+              d="m15 6-6 6 6 6"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+            />
+          </svg>
+          Volver a Battles
+        </Link>
+
+        <div>
+          <span className="card-label">Battle</span>
+          <h1>{formatBattleTitle(battle.guilds)}</h1>
+        </div>
+
+        <div className="battle-detail-start">
+          <span>Inicio</span>
+          <strong>{formatBattleTime(battle.startTime)} UTC</strong>
         </div>
 
         <div className="battle-top-grid">
@@ -141,6 +145,7 @@ export default async function BattleDetailPage({
         <BattleGuildTable guilds={battle.guildsSummary} />
       </div>
 
+      <BattleRosterGroups groups={battle.rosterGroupsSummary} />
       <BattlePlayersTable players={battle.players} />
       <BattlePlayersComposition players={battle.players} />
     </section>

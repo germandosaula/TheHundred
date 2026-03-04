@@ -7,9 +7,46 @@ export interface SlotsData {
   memberCap: number;
 }
 
+export interface PublicPerformanceData {
+  trackedBattles: number;
+  selectedMonth: string;
+  selectedMonthLabel: string;
+  attendance: {
+    averageCount: number;
+    averagePercent: number;
+    ctaCount: number;
+    history: Array<{
+      dateKey: string;
+      label: string;
+      memberCount: number;
+      attendancePercent: number;
+      battleCount: number;
+    }>;
+  };
+  main: {
+    averageKills: number;
+    sharePercent: number;
+  };
+  bombTotals: {
+    averageKills: number;
+    sharePercent: number;
+  };
+  bombs: Array<{
+    bombGroupName: string;
+    averageKills: number;
+    sharePercent: number;
+  }>;
+  pagination: {
+    previousMonth?: string;
+    nextMonth?: string;
+  };
+  lastUpdatedAt?: string;
+}
+
 export interface MeData {
   id: string;
   displayName: string;
+  albionName?: string;
   role: string;
   avatarUrl?: string;
 }
@@ -35,6 +72,8 @@ export interface BattleEntry {
   guilds: string[];
   alliances: string[];
   opponentGuilds: string[];
+  mainKills?: number;
+  bombKills?: number;
 }
 
 export interface BattleAllianceEntry {
@@ -69,6 +108,8 @@ export interface BattlePlayerEntry {
   fame: number;
   weaponName?: string;
   weaponIconName?: string;
+  mountName?: string;
+  mountIconName?: string;
 }
 
 export interface BattleTopEntry {
@@ -78,10 +119,20 @@ export interface BattleTopEntry {
   value: number;
 }
 
+export interface BattleRosterGroupEntry {
+  key: string;
+  label: string;
+  type: "BOMB" | "MAIN_ZERG";
+  matchedPlayers: number;
+  kills: number;
+  deaths: number;
+}
+
 export interface BattleDetailEntry extends BattleEntry {
   alliancesSummary: BattleAllianceEntry[];
   guildsSummary: BattleGuildEntry[];
   players: BattlePlayerEntry[];
+  rosterGroupsSummary: BattleRosterGroupEntry[];
   topKills?: BattleTopEntry;
   topHeal?: BattleTopEntry;
   topDamage?: BattleTopEntry;
@@ -132,9 +183,13 @@ export interface MemberEntry {
   id: string;
   userId: string;
   displayName: string;
+  albionName?: string;
   discordId: string;
   avatarUrl?: string;
   status: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+  bombGroupName?: string;
+  attendanceCount: number;
+  attendancePercent: number;
   discordRoleStatus?: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
   discordRoleSyncedAt?: string;
 }
@@ -218,13 +273,19 @@ export async function getJson<T>(
 export async function getLandingData() {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
-  const [slots, authStart, me] = await Promise.all([
+  const [slots, authStart, me, performance] = await Promise.all([
     getJson<SlotsData>("/public/slots"),
     getJson<AuthStartData>("/auth/discord/start"),
-    getJson<MeData>("/me", sessionToken, discordId)
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<PublicPerformanceData>("/public/performance")
   ]);
 
-  return { sessionToken, slots, authStart, me };
+  return { sessionToken, slots, authStart, me, performance };
+}
+
+export async function getPublicPerformanceData(month?: string) {
+  const query = month ? `?month=${encodeURIComponent(month)}` : "";
+  return getJson<PublicPerformanceData>(`/public/performance${query}`);
 }
 
 export async function getPrivateDashboardData() {

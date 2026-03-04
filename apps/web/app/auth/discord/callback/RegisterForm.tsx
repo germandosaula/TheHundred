@@ -9,6 +9,7 @@ interface RegisterFormProps {
 }
 
 export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFormProps) {
+  const [albionName, setAlbionName] = useState("");
   const [primaryRole, setPrimaryRole] = useState("");
   const [secondaryRole, setSecondaryRole] = useState("");
   const [availabilityUtc, setAvailabilityUtc] = useState("");
@@ -30,6 +31,7 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
         body: JSON.stringify({
           displayName: suggestedName,
           discordId,
+          albionName,
           avatarUrl,
           timezone: availabilityUtc,
           mainRole: primaryRole,
@@ -67,6 +69,16 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
 
   return (
     <form className="register-form" onSubmit={onSubmit}>
+      <label className="field">
+        <span>Nombre en Albion</span>
+        <input
+          name="albionName"
+          onChange={(event) => setAlbionName(event.target.value)}
+          placeholder="El nombre tiene que ser exactamente el de tu personaje de Albion"
+          required
+          value={albionName}
+        />
+      </label>
       <label className="field">
         <span>Rol Principal</span>
         <input

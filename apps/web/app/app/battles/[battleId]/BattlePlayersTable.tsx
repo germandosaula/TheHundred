@@ -1,17 +1,24 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { getItemIconUrl, getResolvedWeaponIconName } from "../../comps/catalog";
+import { getItemIconUrl, resolveEffectiveBattleItem } from "../../comps/catalog";
 import type { BattlePlayerEntry } from "../../../lib";
 
 const PLAYERS_PER_PAGE = 10;
 type SortKey = "name" | "guildName" | "allianceName" | "ip" | "damage" | "heal" | "kills" | "deaths" | "fame";
 
 function formatCompactNumber(value: number) {
-  return new Intl.NumberFormat("es-ES", {
-    notation: value >= 1000 ? "compact" : "standard",
-    maximumFractionDigits: 1
-  }).format(value);
+  if (value >= 1_000_000) {
+    const formatted = (value / 1_000_000).toFixed(1).replace(/\.0$/, "").replace(".", ",");
+    return `${formatted}m`;
+  }
+
+  if (value >= 1_000) {
+    const formatted = (value / 1_000).toFixed(1).replace(/\.0$/, "").replace(".", ",");
+    return `${formatted}k`;
+  }
+
+  return value.toString();
 }
 
 function StatCell({
@@ -77,14 +84,6 @@ export function BattlePlayersTable({ players }: { players: BattlePlayerEntry[] }
     );
   }
 
-  function getPlayerIconName(player: BattlePlayerEntry): string | null {
-    if (player.weaponIconName) {
-      return player.weaponIconName;
-    }
-
-    return getResolvedWeaponIconName(player.weaponName);
-  }
-
   return (
     <article className="dashboard-card battle-table-card battle-players-card">
       <div className="section-row battle-table-head">
@@ -119,12 +118,16 @@ export function BattlePlayersTable({ players }: { players: BattlePlayerEntry[] }
 
               {visiblePlayers.map((player, index) => (
                 <Fragment key={`${player.id}-${index}`}>
+                  {(() => {
+                    const effectiveItem = resolveEffectiveBattleItem(player);
+                    return (
+                      <>
                   <div className="battle-table-cell battle-player-cell" key={`${player.id}-${index}-name`}>
-                    {getPlayerIconName(player) ? (
+                    {effectiveItem.iconName ? (
                       <img
-                        alt={player.weaponName ?? player.weaponIconName ?? player.name}
+                        alt={effectiveItem.displayName ?? player.name}
                         className="battle-player-weapon"
-                        src={getItemIconUrl(getPlayerIconName(player) ?? "")}
+                        src={getItemIconUrl(effectiveItem.iconName)}
                       />
                     ) : (
                       <div className="battle-player-weapon placeholder" />
@@ -155,6 +158,9 @@ export function BattlePlayersTable({ players }: { players: BattlePlayerEntry[] }
                   <div className="battle-table-cell" key={`${player.id}-${index}-fame`}>
                     <StatCell tone="gold" value={formatCompactNumber(player.fame)} />
                   </div>
+                      </>
+                    );
+                  })()}
                 </Fragment>
               ))}
             </div>

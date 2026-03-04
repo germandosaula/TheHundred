@@ -21,6 +21,7 @@ export interface ApiServices {
   registerMember(input: {
     displayName: string;
     discordId: string;
+    albionName: string;
     avatarUrl?: string;
     timezone: string;
     mainRole: string;
@@ -28,8 +29,50 @@ export interface ApiServices {
     notes?: string;
   }): Promise<{ userId: string; alreadyRegistered: boolean; applicationId: string }>;
   requirePrivateAccess(actor: User): Promise<void>;
+  getPublicPerformance(input?: { month?: string }): Promise<{
+    trackedBattles: number;
+    selectedMonth: string;
+    selectedMonthLabel: string;
+    attendance: {
+      averageCount: number;
+      averagePercent: number;
+      ctaCount: number;
+      history: Array<{
+        dateKey: string;
+        label: string;
+        memberCount: number;
+        attendancePercent: number;
+        battleCount: number;
+      }>;
+    };
+    main: {
+      averageKills: number;
+      sharePercent: number;
+    };
+    bombTotals: {
+      averageKills: number;
+      sharePercent: number;
+    };
+    bombs: Array<{
+      bombGroupName: string;
+      averageKills: number;
+      sharePercent: number;
+    }>;
+    pagination: {
+      previousMonth?: string;
+      nextMonth?: string;
+    };
+    lastUpdatedAt?: string;
+  }>;
   listMembers(actor: User): Promise<
-    Array<GuildMember & { displayName: string; discordId: string }>
+    Array<
+      GuildMember & {
+        displayName: string;
+        discordId: string;
+        attendanceCount: number;
+        attendancePercent: number;
+      }
+    >
   >;
   listAssignableCompPlayers(actor: User): Promise<
     Array<GuildMember & { displayName: string; discordId: string; avatarUrl?: string }>
@@ -70,6 +113,7 @@ export interface ApiServices {
     ctaId: string
   ): Promise<{ cta: CTA; generatedPoints: Array<{ memberId: string; points: number }> }>;
   updateMemberStatus(actor: User, memberId: string, nextStatus: GuildMember["status"]): Promise<GuildMember>;
+  updateMemberBombGroup(actor: User, memberId: string, bombGroupName?: string): Promise<GuildMember>;
   approveRegear(actor: User, regearId: string): Promise<{ approved: true; regearId: string }>;
   listComps(): Promise<Awaited<ReturnType<DatabaseRepository["getComps"]>>>;
   saveComp(
@@ -86,12 +130,29 @@ export interface ApiServices {
     guildId?: string;
     guildName?: string;
     minGuildPlayers: number;
-    battles: GuildBattleSummary[];
+    battles: Array<
+      GuildBattleSummary & {
+        mainKills?: number;
+        bombKills?: number;
+      }
+    >;
   }>;
   getBattleDetail(
     actor: User,
     battleId: string
-  ): Promise<GuildBattleDetail | null>;
+  ): Promise<
+    | (GuildBattleDetail & {
+        rosterGroupsSummary: Array<{
+          key: string;
+          label: string;
+          type: "BOMB" | "MAIN_ZERG";
+          matchedPlayers: number;
+          kills: number;
+          deaths: number;
+        }>;
+      })
+    | null
+  >;
   deleteComp(actor: User, compId: string): Promise<{ deleted: true; compId: string }>;
 }
 
@@ -131,12 +192,16 @@ export function createApiServices(
         if (input.avatarUrl) {
           await repository.updateUserAvatar(existingUser.id, input.avatarUrl);
         }
+        if (existingUser.albionName !== input.albionName) {
+          await repository.updateUserAlbionName(existingUser.id, input.albionName);
+        }
         userId = existingUser.id;
         alreadyRegistered = true;
       } else {
         const user = await repository.createUser({
           displayName: input.displayName,
           discordId: input.discordId,
+          albionName: input.albionName,
           avatarUrl: input.avatarUrl,
           role: "PLAYER"
         });
@@ -165,18 +230,165 @@ export function createApiServices(
       }
     },
 
+    async getPublicPerformance(input) {
+      await syncLatestBattlePerformanceSnapshots({
+        repository,
+        killboard,
+        guildId: options.albionBattlesGuildId?.trim() || undefined,
+        guildName: options.albionBattlesGuildName?.trim() || undefined,
+        minGuildPlayers: options.albionBattlesMinGuildPlayers,
+        limit: options.albionBattlesLimit
+      });
+
+      const [snapshots, bombs, members] = await Promise.all([
+        repository.getBattlePerformanceSnapshots(),
+        repository.getBattlePerformanceBombs(),
+        repository.getMembers()
+      ]);
+      const selectedMonth = resolveSelectedMonth(input?.month);
+      const selectedMonthLabel = formatSelectedMonthLabel(selectedMonth);
+      const monthRange = getMonthRange(selectedMonth);
+      const totalMembers = members.length;
+      const dailyBuckets = new Map<
+        number,
+        {
+          dateKey: string;
+          day: number;
+          totalMembers: number;
+          totalPercent: number;
+          battleCount: number;
+        }
+      >();
+
+      for (const snapshot of snapshots.filter((entry) => {
+        const time = new Date(entry.startTime).getTime();
+        return time >= monthRange.start.getTime() && time < monthRange.end.getTime();
+      })) {
+        const day = Math.min(new Date(snapshot.startTime).getUTCDate(), 30);
+        const dateKey = formatUtcDayKey(snapshot.startTime, day);
+        const existing = dailyBuckets.get(day) ?? {
+          dateKey,
+          day,
+          totalMembers: 0,
+          totalPercent: 0,
+          battleCount: 0
+        };
+        const attendancePercent = totalMembers > 0 ? (snapshot.guildPlayers / totalMembers) * 100 : 0;
+        existing.totalMembers += snapshot.guildPlayers;
+        existing.totalPercent += attendancePercent;
+        existing.battleCount += 1;
+        dailyBuckets.set(day, existing);
+      }
+
+      const attendanceHistory = [...dailyBuckets.values()]
+        .sort((left, right) => left.day - right.day)
+        .map((entry) => ({
+          dateKey: entry.dateKey,
+          label: String(entry.day).padStart(2, "0"),
+          memberCount: entry.battleCount > 0 ? entry.totalMembers / entry.battleCount : 0,
+          attendancePercent: entry.battleCount > 0 ? entry.totalPercent / entry.battleCount : 0,
+          battleCount: entry.battleCount
+        }));
+
+      const averageAttendanceCount =
+        snapshots.length > 0
+          ? snapshots.reduce((sum, snapshot) => sum + snapshot.guildPlayers, 0) / snapshots.length
+          : 0;
+      const averageAttendancePercent =
+        totalMembers > 0 ? (averageAttendanceCount / totalMembers) * 100 : 0;
+
+      const totalGuildKills = snapshots.reduce((sum, snapshot) => sum + snapshot.guildKills, 0);
+      const totalMainKills = snapshots.reduce((sum, snapshot) => sum + snapshot.mainKills, 0);
+      const totalBombKills = bombs.reduce((sum, bomb) => sum + bomb.kills, 0);
+
+      const bombMap = new Map<
+        string,
+        {
+          bombGroupName: string;
+          totalKills: number;
+        }
+      >();
+
+      for (const bomb of bombs) {
+        const existing = bombMap.get(bomb.bombGroupName) ?? {
+          bombGroupName: bomb.bombGroupName,
+          totalKills: 0
+        };
+        existing.totalKills += bomb.kills;
+        bombMap.set(bomb.bombGroupName, existing);
+      }
+
+      return {
+        trackedBattles: snapshots.length,
+        selectedMonth,
+        selectedMonthLabel,
+        attendance: {
+          averageCount: averageAttendanceCount,
+          averagePercent: averageAttendancePercent,
+          ctaCount: snapshots.length,
+          history: attendanceHistory
+        },
+        main: {
+          averageKills: snapshots.length > 0 ? totalMainKills / snapshots.length : 0,
+          sharePercent: totalGuildKills > 0 ? (totalMainKills / totalGuildKills) * 100 : 0
+        },
+        bombTotals: {
+          averageKills: snapshots.length > 0 ? totalBombKills / snapshots.length : 0,
+          sharePercent: totalGuildKills > 0 ? (totalBombKills / totalGuildKills) * 100 : 0
+        },
+        bombs: [...bombMap.values()]
+          .map((entry) => ({
+            bombGroupName: entry.bombGroupName,
+            averageKills: snapshots.length > 0 ? entry.totalKills / snapshots.length : 0,
+            sharePercent: totalGuildKills > 0 ? (entry.totalKills / totalGuildKills) * 100 : 0
+          }))
+          .sort((left, right) => right.averageKills - left.averageKills || left.bombGroupName.localeCompare(right.bombGroupName, "es")),
+        pagination: {
+          previousMonth: shiftMonth(selectedMonth, -1),
+          nextMonth: shiftMonth(selectedMonth, 1)
+        },
+        lastUpdatedAt: snapshots[0]?.processedAt
+      };
+    },
+
     async listMembers(actor) {
       assertOfficerOrAdmin(actor.role);
-      const [members, users] = await Promise.all([repository.getMembers(), repository.getUsers()]);
+      await syncLatestBattlePerformanceSnapshots({
+        repository,
+        killboard,
+        guildId: options.albionBattlesGuildId?.trim() || undefined,
+        guildName: options.albionBattlesGuildName?.trim() || undefined,
+        minGuildPlayers: options.albionBattlesMinGuildPlayers,
+        limit: options.albionBattlesLimit
+      });
+
+      const [members, users, snapshots, attendances] = await Promise.all([
+        repository.getMembers(),
+        repository.getUsers(),
+        repository.getBattlePerformanceSnapshots(),
+        repository.getBattleMemberAttendances()
+      ]);
       const usersById = new Map(users.map((user) => [user.id, user]));
+      const attendanceCountByMemberId = new Map<string, number>();
+
+      for (const attendance of attendances) {
+        attendanceCountByMemberId.set(
+          attendance.memberId,
+          (attendanceCountByMemberId.get(attendance.memberId) ?? 0) + 1
+        );
+      }
 
       return members.map((member) => {
         const user = usersById.get(member.userId);
+        const attendanceCount = attendanceCountByMemberId.get(member.id) ?? 0;
         return {
           ...member,
           displayName: user?.displayName ?? member.userId,
+          albionName: user?.albionName,
           discordId: user?.discordId ?? "unknown",
-          avatarUrl: user?.avatarUrl
+          avatarUrl: user?.avatarUrl,
+          attendanceCount,
+          attendancePercent: snapshots.length > 0 ? (attendanceCount / snapshots.length) * 100 : 0
         };
       });
     },
@@ -328,6 +540,13 @@ export function createApiServices(
         limit: options.albionBattlesLimit
       });
       const battles = result.battles;
+      const battlesWithRosterSplit = await syncBattlesWithRosterSplit({
+        repository,
+        killboard,
+        battles,
+        guildId: result.guildId ?? guildId,
+        guildName
+      });
 
       console.log("[battles] result", {
         guildId: result.guildId ?? guildId,
@@ -339,7 +558,7 @@ export function createApiServices(
         guildId: result.guildId ?? guildId,
         guildName: battles[0]?.guildName ?? guildName,
         minGuildPlayers: options.albionBattlesMinGuildPlayers,
-        battles
+        battles: battlesWithRosterSplit
       };
     },
 
@@ -358,11 +577,28 @@ export function createApiServices(
         return null;
       }
 
-      return killboard.fetchGuildBattleDetail({
+      const battle = await killboard.fetchGuildBattleDetail({
         battleId,
         guildId,
         guildName
       });
+
+      if (!battle) {
+        return null;
+      }
+
+      const [members, users] = await Promise.all([repository.getMembers(), repository.getUsers()]);
+      const rosterGroupsSummary = buildRosterGroupsSummary({
+        battle,
+        members,
+        users,
+        configuredGuildName: guildName
+      });
+
+      return {
+        ...battle,
+        rosterGroupsSummary
+      };
     },
 
     async createCta(actor, title, datetimeUtc) {
@@ -426,6 +662,21 @@ export function createApiServices(
       const updated = await repository.updateMemberStatus(memberId, status);
       if (!updated) {
         throw new Error("Member not found during status update");
+      }
+
+      return updated;
+    },
+
+    async updateMemberBombGroup(actor, memberId, bombGroupName) {
+      assertOfficerOrAdmin(actor.role);
+      const member = await repository.getMemberById(memberId);
+      if (!member) {
+        throw new Error("Member not found");
+      }
+
+      const updated = await repository.updateMemberBombGroup(memberId, bombGroupName);
+      if (!updated) {
+        throw new Error("Member not found during bomb group update");
       }
 
       return updated;
@@ -537,4 +788,227 @@ export function createApiServices(
       return { deleted: true, compId };
     }
   };
+}
+
+function normalizeRosterPlayerName(value?: string): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
+function normalizeGuildName(value?: string): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
+function formatUtcDayKey(value: string, forcedDay?: number): string {
+  const date = new Date(value);
+  const day = String(forcedDay ?? date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  return `${year}-${month}-${day}`;
+}
+
+function resolveSelectedMonth(value?: string): string {
+  if (value && /^\d{4}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function getMonthRange(month: string) {
+  const [year, rawMonth] = month.split("-").map(Number);
+  const start = new Date(Date.UTC(year, rawMonth - 1, 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, rawMonth, 1, 0, 0, 0, 0));
+  return { start, end };
+}
+
+function shiftMonth(month: string, delta: number): string {
+  const [year, rawMonth] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, rawMonth - 1 + delta, 1, 0, 0, 0, 0));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatSelectedMonthLabel(month: string): string {
+  const [year, rawMonth] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-ES", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(new Date(Date.UTC(year, rawMonth - 1, 1, 0, 0, 0, 0)));
+}
+
+function buildRosterAnalysis(args: {
+  battle: GuildBattleDetail;
+  members: GuildMember[];
+  users: Awaited<ReturnType<DatabaseRepository["getUsers"]>>;
+  configuredGuildName?: string;
+}) {
+  const rosterNameToBomb = new Map<string, string>();
+  const rosterNameToMemberId = new Map<string, string>();
+  const usersById = new Map(args.users.map((entry) => [entry.id, entry]));
+  const targetGuildName = normalizeGuildName(args.configuredGuildName ?? args.battle.guildName);
+  const guildPlayers = targetGuildName
+    ? args.battle.players.filter(
+        (player) => normalizeGuildName(player.guildName) === targetGuildName
+      )
+    : args.battle.players;
+
+  for (const member of args.members) {
+    const user = usersById.get(member.userId);
+    const normalizedName = normalizeRosterPlayerName(user?.albionName);
+    if (!normalizedName) {
+      continue;
+    }
+    rosterNameToMemberId.set(normalizedName, member.id);
+    if (member.bombGroupName) {
+      rosterNameToBomb.set(normalizedName, member.bombGroupName);
+    }
+  }
+
+  const summaryByKey = new Map<
+    string,
+    {
+      key: string;
+      label: string;
+      type: "BOMB" | "MAIN_ZERG";
+      matchedPlayers: number;
+      kills: number;
+      deaths: number;
+    }
+  >();
+  const matchedMemberIds = new Set<string>();
+
+  for (const player of guildPlayers) {
+    const normalizedPlayerName = normalizeRosterPlayerName(player.name) ?? "";
+    const assignedBomb = rosterNameToBomb.get(normalizedPlayerName);
+    const matchedMemberId = rosterNameToMemberId.get(normalizedPlayerName);
+    const key = assignedBomb ? `bomb:${assignedBomb.toLowerCase()}` : "main-zerg";
+    const existing = summaryByKey.get(key) ?? {
+      key,
+      label: assignedBomb ? `Bomb "${assignedBomb}"` : "Main Zerg",
+      type: assignedBomb ? ("BOMB" as const) : ("MAIN_ZERG" as const),
+      matchedPlayers: 0,
+      kills: 0,
+      deaths: 0
+    };
+
+    existing.matchedPlayers += 1;
+    existing.kills += player.kills;
+    existing.deaths += player.deaths;
+    summaryByKey.set(key, existing);
+
+    if (matchedMemberId) {
+      matchedMemberIds.add(matchedMemberId);
+    }
+  }
+
+  return {
+    rosterGroupsSummary: [...summaryByKey.values()].sort((left, right) => {
+      if (left.type !== right.type) {
+        return left.type === "MAIN_ZERG" ? -1 : 1;
+      }
+      return left.label.localeCompare(right.label, "es");
+    }),
+    matchedMemberIds: [...matchedMemberIds]
+  };
+}
+
+function buildRosterGroupsSummary(args: {
+  battle: GuildBattleDetail;
+  members: GuildMember[];
+  users: Awaited<ReturnType<DatabaseRepository["getUsers"]>>;
+  configuredGuildName?: string;
+}) {
+  return buildRosterAnalysis(args).rosterGroupsSummary;
+}
+
+async function syncLatestBattlePerformanceSnapshots(args: {
+  repository: DatabaseRepository;
+  killboard: KillboardClient;
+  guildId?: string;
+  guildName?: string;
+  minGuildPlayers: number;
+  limit: number;
+}) {
+  if (!args.guildId && !args.guildName) {
+    return [];
+  }
+
+  const result = await args.killboard.fetchRecentGuildBattles({
+    guildId: args.guildId,
+    guildName: args.guildName,
+    minGuildPlayers: args.minGuildPlayers,
+    limit: args.limit
+  });
+
+  return syncBattlesWithRosterSplit({
+    repository: args.repository,
+    killboard: args.killboard,
+    battles: result.battles,
+    guildId: result.guildId ?? args.guildId,
+    guildName: args.guildName
+  });
+}
+
+async function syncBattlesWithRosterSplit(args: {
+  repository: DatabaseRepository;
+  killboard: KillboardClient;
+  battles: GuildBattleSummary[];
+  guildId?: string;
+  guildName?: string;
+}) {
+  const [members, users] = await Promise.all([args.repository.getMembers(), args.repository.getUsers()]);
+
+  return Promise.all(
+    args.battles.map(async (battle) => {
+      const detail = await args.killboard.fetchGuildBattleDetail({
+        battleId: battle.id,
+        guildId: args.guildId,
+        guildName: battle.guildName ?? args.guildName
+      });
+
+      if (!detail) {
+        return battle;
+      }
+
+      const rosterAnalysis = buildRosterAnalysis({
+        battle: detail,
+        members,
+        users,
+        configuredGuildName: args.guildName
+      });
+      const rosterGroupsSummary = rosterAnalysis.rosterGroupsSummary;
+
+      const mainGroup = rosterGroupsSummary.find((entry) => entry.type === "MAIN_ZERG");
+      const bombGroups = rosterGroupsSummary.filter((entry) => entry.type === "BOMB");
+
+      await args.repository.saveBattlePerformanceSnapshot({
+        battleId: detail.id,
+        startTime: detail.startTime,
+        guildName: detail.guildName,
+        guildPlayers: detail.guildPlayers,
+        guildKills: detail.guildKills,
+        guildDeaths: detail.guildDeaths,
+        mainKills: mainGroup?.kills ?? 0,
+        mainDeaths: mainGroup?.deaths ?? 0,
+        bombs: bombGroups.map((group) => ({
+          bombGroupName: group.label.replace(/^Bomb "/, "").replace(/"$/, ""),
+          players: group.matchedPlayers,
+          kills: group.kills,
+          deaths: group.deaths
+        })),
+        memberAttendances: rosterAnalysis.matchedMemberIds.map((memberId) => ({
+          memberId
+        }))
+      });
+
+      return {
+        ...battle,
+        mainKills: mainGroup?.kills || undefined,
+        bombKills: bombGroups.reduce((sum, entry) => sum + entry.kills, 0) || undefined
+      };
+    })
+  );
 }

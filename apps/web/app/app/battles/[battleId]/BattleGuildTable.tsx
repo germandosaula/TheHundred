@@ -7,10 +7,17 @@ const ITEMS_PER_PAGE = 6;
 type SortKey = "name" | "allianceName" | "players" | "kills" | "deaths" | "avgIp" | "fame";
 
 function formatCompactNumber(value: number) {
-  return new Intl.NumberFormat("es-ES", {
-    notation: value >= 1000 ? "compact" : "standard",
-    maximumFractionDigits: 1
-  }).format(value);
+  if (value >= 1_000_000) {
+    const formatted = (value / 1_000_000).toFixed(1).replace(/\.0$/, "").replace(".", ",");
+    return `${formatted}m`;
+  }
+
+  if (value >= 1_000) {
+    const formatted = (value / 1_000).toFixed(1).replace(/\.0$/, "").replace(".", ",");
+    return `${formatted}k`;
+  }
+
+  return value.toString();
 }
 
 function StatCell({

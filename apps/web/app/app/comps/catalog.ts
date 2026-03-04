@@ -11,6 +11,7 @@ export interface AlbionWeaponOption {
   name: string;
   role: AlbionCompRole;
   iconName?: string;
+  iconUrl?: string;
   aliases?: string[];
 }
 
@@ -109,7 +110,7 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "quarterstaff", name: "Quarterstaff", role: "Tank" },
   { id: "iron-clad-staff", name: "Iron-Clad Staff", role: "Tank" },
   { id: "double-bladed-staff", name: "Double Bladed Staff", role: "Tank" },
-  { id: "black-monk-staff", name: "Black Monk Staff", role: "Tank" },
+  { id: "black-monk-staff", name: "Black Monk Staff", role: "Tank", iconName: "T8_2H_COMBATSTAFF_MORGANA", aliases: ["combatstaff-morgana", "2h-combatstaff-morgana"] },
   { id: "staff-of-balance", name: "Staff of Balance", role: "Tank", iconName: "T8_2H_ROCKSTAFF_KEEPER", aliases: ["rockstaff-keeper", "2h-rockstaff-keeper"] },
   { id: "soulscythe", name: "Soulscythe", role: "Tank" },
   { id: "grailseeker", name: "Grailseeker", role: "Tank" },
@@ -134,22 +135,47 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "hellfire-hands", name: "Hellfire Hands", role: "Melee" },
   { id: "ravenstrike-cestus", name: "Ravenstrike Cestus", role: "Melee" },
   { id: "avalonian-fists", name: "Brawler Gloves", role: "Melee" },
-  { id: "rootbound-staff", name: "Rootbound Staff", role: "Support" },
-  { id: "earthrune-staff", name: "Earthrune Staff", role: "Tank" },
+  { id: "rootbound-staff", name: "Rootbound Staff", role: "Support", iconName: "T8_2H_SHAPESHIFTER_SET2", aliases: ["shapeshifter-set2", "2h-shapeshifter-set2"] },
+  { id: "earthrune-staff", name: "Earthrune Staff", role: "Tank", iconName: "T8_2H_SHAPESHIFTER_KEEPER", aliases: ["shapeshifter-keeper", "2h-shapeshifter-keeper"] },
   { id: "lightcaller", name: "Lightcaller", role: "Ranged" },
   { id: "primal-staff", name: "Primal Staff", role: "Melee" },
   { id: "bloodmoon-staff", name: "Bloodmoon Staff", role: "Melee" },
   { id: "prowling-staff", name: "Prowling Staff", role: "Melee" },
-  { id: "command-mammoth", name: "Command Mammoth", role: "Battlemount" },
+  { id: "still-gaze-staff", name: "Still Gaze Staff", role: "Tank", iconName: "T8_2H_SHAPESHIFTER_CRYSTAL", aliases: ["shapeshifter-crystal", "2h-shapeshifter-crystal"] },
+  {
+    id: "command-mammoth",
+    name: "Command Mammoth",
+    role: "Battlemount",
+    iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Command%20Mammoth@1.png?locale=en",
+    aliases: ["mammoth-battle", "mount-mammoth-battle", "command mammoth"]
+  },
   { id: "behemoth", name: "Behemoth", role: "Battlemount" },
   { id: "juggernaut", name: "Juggernaut", role: "Battlemount" },
   { id: "bastion", name: "Bastion", role: "Battlemount" },
-  { id: "colossus-beetle", name: "Colossus Beetle", role: "Battlemount" },
+  {
+    id: "colossus-beetle",
+    name: "Colossus Beetle",
+    role: "Battlemount",
+    iconName: "UNIQUE_MOUNT_BEETLE_SILVER",
+    aliases: ["beetle-silver", "mount-beetle-silver", "beetle"]
+  },
   { id: "flame-basilisk", name: "Flame Basilisk", role: "Battlemount" },
   { id: "venom-basilisk", name: "Venom Basilisk", role: "Battlemount" },
-  { id: "siege-ballista", name: "Siege Ballista", role: "Battlemount" },
+  {
+    id: "siege-ballista",
+    name: "Siege Ballista",
+    role: "Battlemount",
+    iconName: "T6_MOUNT_SIEGE_BALLISTA",
+    aliases: ["mount-siege-ballista", "siege balista", "siege ballista"]
+  },
   { id: "eagle", name: "Eagle", role: "Battlemount" },
-  { id: "tower-chariot", name: "Tower Chariot", role: "Battlemount" }
+  {
+    id: "tower-chariot",
+    name: "Tower Chariot",
+    role: "Battlemount",
+    iconName: "UNIQUE_MOUNT_TOWER_CHARIOT_SILVER",
+    aliases: ["mount-tower-chariot-silver", "tower chariot", "chariot"]
+  }
 ];
 
 export const defaultPartySlots: AlbionPartySlotTemplate[] = [
@@ -506,6 +532,42 @@ export function resolveAlbionWeapon(input?: string): AlbionWeaponOption | null {
   };
 }
 
+export function resolveCatalogAlbionWeapon(input?: string): AlbionWeaponOption | null {
+  if (!input) {
+    return null;
+  }
+
+  const normalized = normalizeWeaponKey(input);
+  const compact = compactWeaponKey(input);
+  return (
+    albionWeaponCatalog.find((entry) => normalizeWeaponKey(entry.name) === normalized) ??
+    albionWeaponCatalog.find((entry) => normalizeWeaponKey(entry.id) === normalized) ??
+    albionWeaponCatalog.find((entry) => entry.aliases?.some((alias) => normalizeWeaponKey(alias) === normalized)) ??
+    albionWeaponCatalog.find((entry) => compactWeaponKey(entry.name) === compact) ??
+    albionWeaponCatalog.find((entry) => compactWeaponKey(entry.id) === compact) ??
+    albionWeaponCatalog.find((entry) => entry.aliases?.some((alias) => compactWeaponKey(alias) === compact)) ??
+    albionWeaponCatalog.find((entry) => {
+      const name = normalizeWeaponKey(entry.name);
+      const id = normalizeWeaponKey(entry.id);
+      const compactName = compactWeaponKey(entry.name);
+      const compactId = compactWeaponKey(entry.id);
+      const aliases = entry.aliases ?? [];
+      return (
+        normalized.includes(name) ||
+        name.includes(normalized) ||
+        normalized.includes(id) ||
+        aliases.some((alias) => normalized.includes(normalizeWeaponKey(alias)) || normalizeWeaponKey(alias).includes(normalized)) ||
+        compact.includes(compactName) ||
+        compactName.includes(compact) ||
+        compact.includes(compactId) ||
+        compactId.includes(compact) ||
+        aliases.some((alias) => compact.includes(compactWeaponKey(alias)) || compactWeaponKey(alias).includes(compact))
+      );
+    }) ??
+    null
+  );
+}
+
 function isAlbionItemType(value: string): boolean {
   return /^T\d+_/.test(value.trim());
 }
@@ -518,6 +580,43 @@ export function getResolvedWeaponIconName(input?: string): string | null {
 
   const resolved = resolveAlbionWeapon(input);
   return resolved?.iconName ?? null;
+}
+
+export function resolveEffectiveBattleItem(input: {
+  weaponName?: string;
+  weaponIconName?: string;
+  mountName?: string;
+  mountIconName?: string;
+}) {
+  const mountSource = input.mountIconName ?? input.mountName;
+  const mountResolved = resolveCatalogAlbionWeapon(mountSource);
+
+  if (mountResolved?.role === "Battlemount") {
+    return {
+      kind: "mount" as const,
+      resolved: mountResolved,
+      displayName: input.mountName ?? mountResolved.name,
+      iconName:
+        input.mountIconName ??
+        getResolvedWeaponIconName(input.mountName) ??
+        mountResolved.iconName ??
+        null
+    };
+  }
+
+  const weaponSource = input.weaponIconName ?? input.weaponName;
+  const weaponResolved = resolveAlbionWeapon(weaponSource);
+
+  return {
+    kind: "weapon" as const,
+    resolved: weaponResolved,
+    displayName: input.weaponName ?? weaponResolved?.name ?? null,
+    iconName:
+      input.weaponIconName ??
+      getResolvedWeaponIconName(input.weaponName ?? input.weaponIconName) ??
+      weaponResolved?.iconName ??
+      null
+  };
 }
 
 function isAlbionRenderItemType(value: string): boolean {
@@ -533,6 +632,15 @@ function resolveCatalogIconName(input?: string): string | null {
   return resolved?.iconName ?? null;
 }
 
+function resolveCatalogIconUrl(input?: string): string | null {
+  if (!input) {
+    return null;
+  }
+
+  const resolved = resolveAlbionWeapon(input);
+  return resolved?.iconUrl ?? null;
+}
+
 function buildAlbionBbCdnItemUrl(name: string): string {
   return `https://cdn.albionbb.com/items/${encodeURIComponent(name)}.png`;
 }
@@ -541,6 +649,11 @@ export function getWeaponIconUrl(name: string): string {
   const trimmed = name.trim().replace(/\.+$/, "");
   if (!trimmed) {
     return "";
+  }
+
+  const catalogIconUrl = resolveCatalogIconUrl(trimmed);
+  if (catalogIconUrl) {
+    return catalogIconUrl;
   }
 
   if (isAlbionRenderItemType(trimmed) || /^T\d+_.+@\d+Q\d+$/i.test(trimmed)) {

@@ -6,12 +6,14 @@ import { createRequestContext, requireAuthenticatedUser } from "./request-contex
 import {
   requireCreateCtaPayload,
   requireAssignCtaSlotPayload,
+  requireMemberBombGroupPayload,
   requireMemberStatusPayload,
   requireRegisterPayload,
   requireSaveCompPayload,
   type CreateCtaPayload,
   type RegisterPayload,
   type SaveCompPayload,
+  type UpdateMemberBombGroupPayload,
   type UpdateMemberStatusPayload
 } from "./validation.ts";
 
@@ -133,6 +135,10 @@ export async function routeRequest(
     return json(await services.getOpenSlots());
   }
 
+  if (method === "GET" && url.pathname === "/public/performance") {
+    return json(await services.getPublicPerformance({ month: url.searchParams.get("month") ?? undefined }));
+  }
+
   if (method === "GET" && url.pathname === "/me") {
     return json(requireAuthenticatedUser(context.currentUser));
   }
@@ -226,6 +232,16 @@ export async function routeRequest(
       await parseBody<UpdateMemberStatusPayload>(request)
     );
     return json(await services.updateMemberStatus(currentUser, memberId, payload.status));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/bomb-group$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const memberId = url.pathname.split("/")[2];
+    const payload = requireMemberBombGroupPayload(
+      await parseBody<UpdateMemberBombGroupPayload>(request)
+    );
+    return json(await services.updateMemberBombGroup(currentUser, memberId, payload.bombGroupName));
   }
 
   if (method === "POST" && url.pathname.match(/^\/regear\/[^/]+\/approve$/)) {

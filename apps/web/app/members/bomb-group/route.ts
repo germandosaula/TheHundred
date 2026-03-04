@@ -6,23 +6,21 @@ const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
 export async function POST(request: Request) {
   const sessionToken = (await cookies()).get("th_session")?.value;
   const payload = (await request.json()) as {
-    displayName?: string;
-    discordId?: string;
-    albionName?: string;
-    avatarUrl?: string;
-    timezone?: string;
-    mainRole?: string;
-    zvzExperience?: string;
-    notes?: string;
+    memberId?: string;
+    bombGroupName?: string;
   };
 
-  const response = await fetch(`${apiBaseUrl}/register`, {
+  if (!payload.memberId) {
+    return NextResponse.json({ error: "memberId is required" }, { status: 400 });
+  }
+
+  const response = await fetch(`${apiBaseUrl}/members/${payload.memberId}/bomb-group`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(sessionToken ? { "x-session-token": sessionToken } : {})
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ bombGroupName: payload.bombGroupName })
   });
 
   const body = await response.text();
