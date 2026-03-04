@@ -24,6 +24,10 @@ export interface UpdateMemberBombGroupPayload {
   bombGroupName?: string;
 }
 
+export interface KickMemberPayload {
+  reason?: string;
+}
+
 export interface SaveCompPayload {
   id?: string;
   name: string;
@@ -114,6 +118,18 @@ export function requireMemberBombGroupPayload(
 
   return {
     bombGroupName: bombGroupName || undefined
+  };
+}
+
+export function requireKickMemberPayload(payload: KickMemberPayload | null): KickMemberPayload {
+  const reason = payload?.reason?.trim();
+
+  if (reason && reason.length > 200) {
+    throw new DomainError("reason must be 200 characters or fewer");
+  }
+
+  return {
+    reason: reason || undefined
   };
 }
 

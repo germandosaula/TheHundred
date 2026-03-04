@@ -119,6 +119,38 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
     }
   }
 
+  async function kickMember(memberId: string, memberName: string) {
+    const confirmed = window.confirm(
+      `Vas a expulsar a ${memberName}. Se ocultará del listado y el bot quitará sus roles de guild. ¿Continuar?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setPendingMemberId(memberId);
+    setError(null);
+
+    try {
+      const response = await fetch("/members/kick", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ memberId })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error ?? `Kick failed with status ${response.status}`);
+      }
+
+      window.location.reload();
+    } catch (kickError) {
+      setError(kickError instanceof Error ? kickError.message : "Kick failed");
+      setPendingMemberId(null);
+    }
+  }
+
   return (
     <div className="member-manager">
       <div className="member-toolbar">
@@ -248,6 +280,14 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
                     : statusLabels[status]}
                 </button>
               ))}
+                <button
+                  className="status-chip status-chip-danger"
+                  disabled={pendingMemberId === member.id}
+                  onClick={() => kickMember(member.id, member.displayName)}
+                  type="button"
+                >
+                  {pendingMemberId === member.id ? "..." : "Kick"}
+                </button>
               </div>
             </div>
           </li>

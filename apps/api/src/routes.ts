@@ -7,6 +7,7 @@ import {
   requireCreateCtaPayload,
   requireAssignCtaSlotPayload,
   requireMemberBombGroupPayload,
+  requireKickMemberPayload,
   requireMemberStatusPayload,
   requireRegisterPayload,
   requireSaveCompPayload,
@@ -14,6 +15,7 @@ import {
   type RegisterPayload,
   type SaveCompPayload,
   type UpdateMemberBombGroupPayload,
+  type KickMemberPayload,
   type UpdateMemberStatusPayload
 } from "./validation.ts";
 
@@ -244,6 +246,16 @@ export async function routeRequest(
       await parseBody<UpdateMemberBombGroupPayload>(request)
     );
     return json(await services.updateMemberBombGroup(currentUser, memberId, payload.bombGroupName));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/kick$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const memberId = url.pathname.split("/")[2];
+    const payload = requireKickMemberPayload(
+      await parseBody<KickMemberPayload>(request)
+    );
+    return json(await services.kickMember(currentUser, memberId, payload.reason));
   }
 
   if (method === "POST" && url.pathname.match(/^\/regear\/[^/]+\/approve$/)) {

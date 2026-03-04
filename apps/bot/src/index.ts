@@ -42,6 +42,7 @@ const activeRoleIds = {
   CORE: process.env.DISCORD_ROLE_CORE_ID,
   BENCHED: process.env.DISCORD_ROLE_BENCHED_ID
 } as const;
+const supabaseHost = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL).host : "n/a";
 
 const slotsCommand = new SlashCommandBuilder()
   .setName("slots")
@@ -141,6 +142,12 @@ if (!token) {
   process.exit(0);
 }
 
+console.log("[bot] startup config", {
+  repositoryProvider: process.env.REPOSITORY_PROVIDER === "supabase" ? "supabase" : "memory",
+  supabaseHost,
+  guildId: guildId ?? "global"
+});
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -177,49 +184,56 @@ client.once("clientReady", async () => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (interaction.isAutocomplete()) {
+  try {
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName === "crearcta") {
+        await handleCreateCtaAutocomplete(interaction);
+      } else if (interaction.commandName === "finalizarcta") {
+        await handleFinalizeCtaAutocomplete(interaction);
+      }
+      return;
+    }
+
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId.startsWith("cta-signup:")) {
+        await handleCtaSignupSelect(interaction);
+      }
+      return;
+    }
+
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
+
+    if (interaction.commandName === "slots") {
+      const slots = await repository.getOpenSlots();
+      await interaction.reply(`Open slots: ${slots.slotsOpen}/${slots.memberCap}`);
+      return;
+    }
+
+    if (interaction.commandName === "recruit") {
+      await handleRecruitCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "syncmember") {
+      await handleSyncMemberCommand(interaction);
+      return;
+    }
+
     if (interaction.commandName === "crearcta") {
-      await handleCreateCtaAutocomplete(interaction);
-    } else if (interaction.commandName === "finalizarcta") {
-      await handleFinalizeCtaAutocomplete(interaction);
+      await handleCreateCtaCommand(interaction);
+      return;
     }
-    return;
-  }
 
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId.startsWith("cta-signup:")) {
-      await handleCtaSignupSelect(interaction);
+    if (interaction.commandName === "finalizarcta") {
+      await handleFinalizeCtaCommand(interaction);
     }
-    return;
-  }
-
-  if (!interaction.isChatInputCommand()) {
-    return;
-  }
-
-  if (interaction.commandName === "slots") {
-    const slots = await repository.getOpenSlots();
-    await interaction.reply(`Open slots: ${slots.slotsOpen}/${slots.memberCap}`);
-    return;
-  }
-
-  if (interaction.commandName === "recruit") {
-    await handleRecruitCommand(interaction);
-    return;
-  }
-
-  if (interaction.commandName === "syncmember") {
-    await handleSyncMemberCommand(interaction);
-    return;
-  }
-
-  if (interaction.commandName === "crearcta") {
-    await handleCreateCtaCommand(interaction);
-    return;
-  }
-
-  if (interaction.commandName === "finalizarcta") {
-    await handleFinalizeCtaCommand(interaction);
+  } catch (error) {
+    if (isDiscordInteractionAlreadyAcknowledged(error)) {
+      return;
+    }
+    console.error("Interaction handler failed", error);
   }
 });
 
@@ -236,6 +250,14 @@ client.on("guildMemberUpdate", async (_oldMember, newMember) => {
 });
 
 client.login(token);
+
+function isDiscordInteractionAlreadyAcknowledged(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  return "code" in error && Number((error as { code?: unknown }).code) === 40060;
+}
 
 async function handleRecruitCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -258,7 +280,7 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
 
   const existingMember = await repository.getMemberByUserId(user.id);
   if (existingMember) {
-    if (existingMember.status === "PENDING") {
+    if (existingMember.status === "PENDING" || existingMember.status === "REJECTED") {
       const updatedMember = await repository.updateMemberStatus(existingMember.id, "TRIAL");
       if (!updatedMember) {
         await interaction.reply({
@@ -710,6 +732,14 @@ async function syncWebStatusFromDiscordMember(guildMember: GuildMember) {
   }
 
   if (!member) {
+    return;
+  }
+
+  if (member.kickedAt) {
+    if (nextStatus) {
+      await replaceManagedRoles(guildMember);
+    }
+    await repository.setMemberDiscordRoleStatus(member.id, undefined);
     return;
   }
 

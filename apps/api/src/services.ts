@@ -113,6 +113,7 @@ export interface ApiServices {
     ctaId: string
   ): Promise<{ cta: CTA; generatedPoints: Array<{ memberId: string; points: number }> }>;
   updateMemberStatus(actor: User, memberId: string, nextStatus: GuildMember["status"]): Promise<GuildMember>;
+  kickMember(actor: User, memberId: string, reason?: string): Promise<GuildMember>;
   updateMemberBombGroup(actor: User, memberId: string, bombGroupName?: string): Promise<GuildMember>;
   approveRegear(actor: User, regearId: string): Promise<{ approved: true; regearId: string }>;
   listComps(): Promise<Awaited<ReturnType<DatabaseRepository["getComps"]>>>;
@@ -378,7 +379,7 @@ export function createApiServices(
         );
       }
 
-      return members.map((member) => {
+      return members.filter((member) => !member.kickedAt).map((member) => {
         const user = usersById.get(member.userId);
         const attendanceCount = attendanceCountByMemberId.get(member.id) ?? 0;
         return {
@@ -662,6 +663,25 @@ export function createApiServices(
       const updated = await repository.updateMemberStatus(memberId, status);
       if (!updated) {
         throw new Error("Member not found during status update");
+      }
+
+      return updated;
+    },
+
+    async kickMember(actor, memberId, reason) {
+      assertOfficerOrAdmin(actor.role);
+      const member = await repository.getMemberById(memberId);
+      if (!member) {
+        throw new DomainError("Member not found");
+      }
+
+      const updated = await repository.kickMember(memberId, {
+        kickedByUserId: actor.id,
+        reason
+      });
+
+      if (!updated) {
+        throw new DomainError("Member not found");
       }
 
       return updated;

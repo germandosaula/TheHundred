@@ -121,7 +121,10 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       joinedAt: new Date().toISOString(),
       bombGroupName: undefined,
       discordRoleStatus: undefined,
-      discordRoleSyncedAt: undefined
+      discordRoleSyncedAt: undefined,
+      kickedAt: undefined,
+      kickedByUserId: undefined,
+      kickReason: undefined
     };
 
     this.state.members.push(member);
@@ -135,6 +138,29 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     }
 
     member.status = status;
+    if (status !== "REJECTED") {
+      member.kickedAt = undefined;
+      member.kickedByUserId = undefined;
+      member.kickReason = undefined;
+    }
+    return member;
+  }
+
+  async kickMember(
+    memberId: string,
+    input: { kickedByUserId: string; reason?: string }
+  ): Promise<GuildMember | null> {
+    const member = this.state.members.find((item) => item.id === memberId) ?? null;
+    if (!member) {
+      return null;
+    }
+
+    member.status = "REJECTED";
+    member.kickedAt = new Date().toISOString();
+    member.kickedByUserId = input.kickedByUserId;
+    member.kickReason = input.reason?.trim() || undefined;
+    member.discordRoleStatus = "REJECTED";
+    member.discordRoleSyncedAt = new Date().toISOString();
     return member;
   }
 

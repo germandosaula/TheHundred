@@ -22,6 +22,9 @@ export interface GuildMember {
   bombGroupName?: string;
   discordRoleStatus?: MemberStatus;
   discordRoleSyncedAt?: string;
+  kickedAt?: string;
+  kickedByUserId?: string;
+  kickReason?: string;
 }
 
 export interface CTA {

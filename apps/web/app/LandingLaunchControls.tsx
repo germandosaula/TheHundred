@@ -1,0 +1,74 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+interface LandingLaunchControlsProps {
+  devLoginUrl: string | null;
+  loginUrl?: string;
+  enforceCountdown: boolean;
+}
+
+const launchAt = new Date("2026-03-23T12:00:00+01:00").getTime();
+
+export function LandingLaunchControls({
+  devLoginUrl,
+  loginUrl,
+  enforceCountdown
+}: LandingLaunchControlsProps) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, []);
+
+  const remainingMs = launchAt - now;
+  const hasLaunched = remainingMs <= 0;
+  const countdownText = useMemo(() => formatCountdown(remainingMs), [remainingMs]);
+  const shouldLockLogin = enforceCountdown && !hasLaunched;
+  const canLogin = !shouldLockLogin && Boolean(loginUrl);
+  const loginLabel = shouldLockLogin ? `Login (${countdownText})` : "Login";
+
+  return (
+    <>
+      <div className="landing-countdown" aria-live="polite">
+        <span>The Hundred se abre en:</span>
+        <strong>{hasLaunched ? "Abierto ahora" : countdownText}</strong>
+      </div>
+      <div className="landing-actions">
+        {devLoginUrl ? (
+          <a className="button ghost" href={devLoginUrl}>
+            Dev Login
+          </a>
+        ) : null}
+        <a
+          aria-disabled={!canLogin}
+          className={`button primary ${!canLogin ? "is-disabled" : ""}`}
+          href={canLogin ? loginUrl : "#"}
+        >
+          {loginLabel}
+        </a>
+      </div>
+    </>
+  );
+}
+
+function formatCountdown(value: number): string {
+  const clamped = Math.max(0, value);
+  const totalSeconds = Math.floor(clamped / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${days}d ${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}

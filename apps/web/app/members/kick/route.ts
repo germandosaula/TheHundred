@@ -8,21 +8,21 @@ export async function POST(request: Request) {
   const discordId = (await cookies()).get("th_discord_id")?.value;
   const payload = (await request.json()) as {
     memberId?: string;
-    status?: "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+    reason?: string;
   };
 
-  if (!payload.memberId || !payload.status) {
-    return NextResponse.json({ error: "memberId and status are required" }, { status: 400 });
+  if (!payload.memberId) {
+    return NextResponse.json({ error: "memberId is required" }, { status: 400 });
   }
 
-  const response = await fetch(`${apiBaseUrl}/members/${payload.memberId}/status`, {
+  const response = await fetch(`${apiBaseUrl}/members/${payload.memberId}/kick`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(sessionToken ? { "x-session-token": sessionToken } : {}),
       ...(discordId ? { "x-discord-id": discordId } : {})
     },
-    body: JSON.stringify({ status: payload.status })
+    body: JSON.stringify({ reason: payload.reason })
   });
 
   const body = await response.text();

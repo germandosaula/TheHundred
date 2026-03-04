@@ -273,14 +273,22 @@ export async function getJson<T>(
 export async function getLandingData() {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
-  const [slots, authStart, me, performance] = await Promise.all([
+  const [slots, authStart, me, performance, ctas] = await Promise.all([
     getJson<SlotsData>("/public/slots"),
     getJson<AuthStartData>("/auth/discord/start"),
     getJson<MeData>("/me", sessionToken, discordId),
-    getJson<PublicPerformanceData>("/public/performance")
+    getJson<PublicPerformanceData>("/public/performance"),
+    getJson<CtaEntry[]>("/ctas", sessionToken, discordId)
   ]);
 
-  return { sessionToken, slots, authStart, me, performance };
+  return {
+    sessionToken,
+    slots,
+    authStart,
+    me,
+    performance,
+    hasPrivateAccess: Boolean(ctas)
+  };
 }
 
 export async function getPublicPerformanceData(month?: string) {

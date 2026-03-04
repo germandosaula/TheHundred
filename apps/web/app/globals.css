@@ -185,6 +185,28 @@ li {
   flex-wrap: wrap;
 }
 
+.landing-countdown {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.landing-countdown span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.landing-countdown strong {
+  color: var(--accent-strong);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
 .landing-links a {
   text-decoration: none;
   color: var(--muted);
@@ -214,6 +236,13 @@ li {
   border-color: rgba(240, 200, 90, 0.28);
   background: linear-gradient(135deg, #f4d26a, #bf8716);
   box-shadow: 0 16px 32px rgba(191, 135, 22, 0.22);
+}
+
+.button.primary.is-disabled {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(10, 15, 24, 0.72);
+  background: linear-gradient(135deg, rgba(244, 210, 106, 0.7), rgba(191, 135, 22, 0.68));
+  box-shadow: none;
 }
 
 .button.ghost {
@@ -951,6 +980,12 @@ li {
 .status-chip:disabled {
   opacity: 0.42;
   cursor: default;
+}
+
+.status-chip-danger {
+  border-color: rgba(255, 143, 143, 0.3);
+  color: #ff9c9c;
+  background: rgba(255, 143, 143, 0.08);
 }
 
 @media (max-width: 1580px) {

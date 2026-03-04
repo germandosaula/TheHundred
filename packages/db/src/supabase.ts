@@ -54,6 +54,9 @@ type GuildMemberRow = {
   bomb_group_name: string | null;
   discord_role_status: MemberStatus | null;
   discord_role_synced_at: string | null;
+  kicked_at: string | null;
+  kicked_by_user_id: string | null;
+  kick_reason: string | null;
 };
 
 type CtaRow = {
@@ -277,7 +280,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getMembers(): Promise<GuildMember[]> {
     const { data, error } = await this.client
       .from("guild_members")
-      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
       .returns<GuildMemberRow[]>();
     if (error) {
       throw createSupabaseDomainError("Failed to load guild members from Supabase", error);
@@ -289,7 +292,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getMemberById(memberId: string): Promise<GuildMember | null> {
     const { data, error } = await this.client
       .from("guild_members")
-      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
       .eq("id", memberId)
       .maybeSingle<GuildMemberRow>();
     if (error) {
@@ -302,7 +305,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   async getMemberByUserId(userId: string): Promise<GuildMember | null> {
     const { data, error } = await this.client
       .from("guild_members")
-      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
       .eq("user_id", userId)
       .maybeSingle<GuildMemberRow>();
     if (error) {
@@ -316,7 +319,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     const { data, error } = await this.client
       .from("guild_members")
       .insert({ user_id: userId, status })
-      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
       .single<GuildMemberRow>();
     if (error || !data) {
       throw createSupabaseDomainError("Failed to create guild member in Supabase", error);
@@ -326,14 +329,50 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
   }
 
   async updateMemberStatus(memberId: string, status: MemberStatus): Promise<GuildMember | null> {
+    const update: {
+      status: MemberStatus;
+      kicked_at?: string | null;
+      kicked_by_user_id?: string | null;
+      kick_reason?: string | null;
+    } = { status };
+    if (status !== "REJECTED") {
+      update.kicked_at = null;
+      update.kicked_by_user_id = null;
+      update.kick_reason = null;
+    }
+
     const { data, error } = await this.client
       .from("guild_members")
-      .update({ status })
+      .update(update)
       .eq("id", memberId)
-      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
       .maybeSingle<GuildMemberRow>();
     if (error) {
       throw createSupabaseDomainError("Failed to update member status in Supabase", error);
+    }
+
+    return data ? mapGuildMember(data) : null;
+  }
+
+  async kickMember(
+    memberId: string,
+    input: { kickedByUserId: string; reason?: string }
+  ): Promise<GuildMember | null> {
+    const { data, error } = await this.client
+      .from("guild_members")
+      .update({
+        status: "REJECTED",
+        kicked_at: new Date().toISOString(),
+        kicked_by_user_id: input.kickedByUserId,
+        kick_reason: input.reason?.trim() || null,
+        discord_role_status: "REJECTED",
+        discord_role_synced_at: new Date().toISOString()
+      })
+      .eq("id", memberId)
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
+      .maybeSingle<GuildMemberRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to kick member in Supabase", error);
     }
 
     return data ? mapGuildMember(data) : null;
@@ -344,7 +383,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
       .from("guild_members")
       .update({ bomb_group_name: bombGroupName ?? null })
       .eq("id", memberId)
-      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
       .maybeSingle<GuildMemberRow>();
     if (error) {
       throw createSupabaseDomainError("Failed to update member bomb group in Supabase", error);
@@ -365,7 +404,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
         discord_role_synced_at: status ? syncedAt : null
       })
       .eq("id", memberId)
-      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at")
+      .select("id, user_id, status, joined_at, bomb_group_name, discord_role_status, discord_role_synced_at, kicked_at, kicked_by_user_id, kick_reason")
       .maybeSingle<GuildMemberRow>();
     if (error) {
       throw createSupabaseDomainError("Failed to update member Discord role sync in Supabase", error);
@@ -1116,7 +1155,10 @@ function mapGuildMember(row: GuildMemberRow): GuildMember {
     joinedAt: row.joined_at,
     bombGroupName: row.bomb_group_name ?? undefined,
     discordRoleStatus: row.discord_role_status ?? undefined,
-    discordRoleSyncedAt: row.discord_role_synced_at ?? undefined
+    discordRoleSyncedAt: row.discord_role_synced_at ?? undefined,
+    kickedAt: row.kicked_at ?? undefined,
+    kickedByUserId: row.kicked_by_user_id ?? undefined,
+    kickReason: row.kick_reason ?? undefined
   };
 }
 

@@ -167,6 +167,10 @@ export interface DatabaseRepository {
   getMemberByUserId(userId: string): Promise<GuildMember | null>;
   createMember(userId: string, status?: MemberStatus): Promise<GuildMember>;
   updateMemberStatus(memberId: string, status: MemberStatus): Promise<GuildMember | null>;
+  kickMember(
+    memberId: string,
+    input: { kickedByUserId: string; reason?: string }
+  ): Promise<GuildMember | null>;
   updateMemberBombGroup(memberId: string, bombGroupName?: string): Promise<GuildMember | null>;
   setMemberDiscordRoleStatus(
     memberId: string,

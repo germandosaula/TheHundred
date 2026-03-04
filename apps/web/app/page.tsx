@@ -1,58 +1,44 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getLandingData } from "./lib";
+import { LandingLaunchControls } from "./LandingLaunchControls";
 import { PageEntryLoader } from "./PageEntryLoader";
 
 const defaultDevDiscordId = "173816196720885760";
 
 export default async function LandingPage() {
-  const { authStart, me, slots } = await getLandingData();
-  const hasLinkedUser = Boolean(me);
+  const { authStart, hasPrivateAccess, slots } = await getLandingData();
   const showDevLogin = (process.env.API_BASE_URL ?? "http://localhost:3001").startsWith("http://localhost:");
   const devDiscordId = process.env.DEV_LOGIN_DISCORD_ID ?? defaultDevDiscordId;
   const devLoginUrl =
     showDevLogin && devDiscordId
       ? `${process.env.API_BASE_URL ?? "http://localhost:3001"}/auth/dev-login?discord_id=${encodeURIComponent(devDiscordId)}`
       : null;
+  const enforceLaunchCountdown = process.env.LAUNCH_COUNTDOWN_ENABLED !== "0";
 
   return (
     <PageEntryLoader message="Bienvenido a The Hundred">
       <main className="landing-shell">
         <header className="landing-nav">
-        <Link className="brand-mark" href="/">
-          <Image
-            alt="The Hundred logo"
-            className="brand-logo"
-            height={56}
-            priority
-            src="/thehundred_logo.png"
-            width={56}
+          <Link className="brand-mark" href="/">
+            <Image
+              alt="The Hundred logo"
+              className="brand-logo"
+              height={56}
+              priority
+              src="/thehundred_logo.png"
+              width={56}
+            />
+            <span className="brand-copy">
+              <strong>The Hundred</strong>
+              <span>Spanish ZvZ Guild</span>
+            </span>
+          </Link>
+          <LandingLaunchControls
+            devLoginUrl={devLoginUrl}
+            enforceCountdown={enforceLaunchCountdown}
+            loginUrl={authStart?.authorizationUrl}
           />
-          <span className="brand-copy">
-            <strong>The Hundred</strong>
-            <span>Spanish ZvZ Guild</span>
-          </span>
-        </Link>
-        <nav className="landing-links">
-          <a href="#hero">Inicio</a>
-          <a href="#informacion">Informacion</a>
-          <a href="#requisitos">Requisitos</a>
-        </nav>
-        <div className="landing-actions">
-          {hasLinkedUser ? <Link className="button ghost" href="/app">Abrir dashboard</Link> : null}
-          {devLoginUrl ? (
-            <a className="button ghost" href={devLoginUrl}>
-              Dev Login
-            </a>
-          ) : null}
-          <a
-            className="button primary"
-            href={authStart?.authorizationUrl ?? "#"}
-            aria-disabled={!authStart?.authorizationUrl}
-          >
-            Login
-          </a>
-        </div>
         </header>
 
         <section className="landing-hero" id="hero">
@@ -75,8 +61,8 @@ export default async function LandingPage() {
               >
                 Quiero Unirme
               </a>
-              <Link className="button ghost" href={hasLinkedUser ? "/app" : "#informacion"}>
-                {hasLinkedUser ? "Ir al dashboard" : "Ver requisitos"}
+              <Link className="button ghost" href={hasPrivateAccess ? "/app" : "#informacion"}>
+                {hasPrivateAccess ? "Ir al dashboard" : "Ver requisitos"}
               </Link>
             </div>
             <div className="hero-rail" aria-label="Resumen operativo">
