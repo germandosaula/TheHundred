@@ -6,9 +6,15 @@ interface RegisterFormProps {
   avatarUrl?: string;
   discordId: string;
   suggestedName: string;
+  discordInviteUrl: string;
 }
 
-export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFormProps) {
+export function RegisterForm({
+  avatarUrl,
+  discordId,
+  suggestedName,
+  discordInviteUrl
+}: RegisterFormProps) {
   const [albionName, setAlbionName] = useState("");
   const [primaryRole, setPrimaryRole] = useState("");
   const [secondaryRole, setSecondaryRole] = useState("");
@@ -55,6 +61,7 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
   if (status === "success") {
     return (
       <div className="register-form">
+        <hr className="register-success-separator" />
         <p>Solicitud enviada. El siguiente paso ocurre en el Discord de The Hundred.</p>
         <p className="empty">
           El bot abrira un ticket con tu formulario para que council revise tu entrada y te asigne el rol
@@ -63,14 +70,25 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
         <p className="empty">
           Tu acceso completo se activa cuando tengas estado valido en web y rol sincronizado en Discord.
         </p>
+        <div className="register-form-actions">
+          <a className="button primary" href="/">
+            Volver al inicio
+          </a>
+          <a className="button ghost" href={discordInviteUrl} rel="noreferrer" target="_blank">
+            Ir al Discord
+          </a>
+        </div>
       </div>
     );
   }
 
   return (
     <form className="register-form" onSubmit={onSubmit}>
+      <p className="register-required-note">Todos los campos son obligatorios.</p>
       <label className="field">
-        <span>Nombre en Albion</span>
+        <span>
+          Nombre en Albion <em>*</em>
+        </span>
         <input
           name="albionName"
           onChange={(event) => setAlbionName(event.target.value)}
@@ -80,7 +98,9 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
         />
       </label>
       <label className="field">
-        <span>Rol Principal</span>
+        <span>
+          Rol Principal <em>*</em>
+        </span>
         <input
           name="primaryRole"
           onChange={(event) => setPrimaryRole(event.target.value)}
@@ -89,7 +109,9 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
         />
       </label>
       <label className="field">
-        <span>Rol Secundario</span>
+        <span>
+          Rol Secundario <em>*</em>
+        </span>
         <input
           name="secondaryRole"
           onChange={(event) => setSecondaryRole(event.target.value)}
@@ -98,7 +120,9 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
         />
       </label>
       <label className="field">
-        <span>Disponibilidad UTC</span>
+        <span>
+          Disponibilidad UTC <em>*</em>
+        </span>
         <input
           name="availabilityUtc"
           onChange={(event) => setAvailabilityUtc(event.target.value)}
@@ -108,7 +132,9 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
         />
       </label>
       <label className="field">
-        <span>Gremios Anteriores</span>
+        <span>
+          Gremios Anteriores <em>*</em>
+        </span>
         <input
           name="previousGuilds"
           onChange={(event) => setPreviousGuilds(event.target.value)}
@@ -117,9 +143,11 @@ export function RegisterForm({ avatarUrl, discordId, suggestedName }: RegisterFo
           value={previousGuilds}
         />
       </label>
-      <button className="button primary" disabled={status === "submitting"} type="submit">
-        {status === "submitting" ? "Registrando..." : "Solicitar reclutamiento"}
-      </button>
+      <div className="register-form-actions">
+        <button className="button primary" disabled={status === "submitting"} type="submit">
+          {status === "submitting" ? "Registrando..." : "Solicitar reclutamiento"}
+        </button>
+      </div>
       {error ? <p className="empty">{error}</p> : null}
     </form>
   );

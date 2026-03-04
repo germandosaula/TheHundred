@@ -106,14 +106,10 @@ export default async function DiscordCallbackPage({ searchParams }: CallbackPage
               <RegisterForm
                 avatarUrl={params.avatar_url}
                 discordId={params.discord_id}
+                discordInviteUrl={discordInviteUrl}
                 suggestedName={params.discord_name ?? "Discord User"}
               />
             ) : null}
-            <div className="actions">
-              <a className="button ghost" href={discordInviteUrl} target="_blank" rel="noreferrer">
-                Ir al Discord
-              </a>
-            </div>
           </>
         )}
       </section>

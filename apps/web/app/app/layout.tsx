@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppSidebar } from "./AppSidebar";
 import { getDiscordId, getJson, getSessionToken, type MeData } from "../lib";
+import { PageEntryLoader } from "../PageEntryLoader";
 
 export default async function PrivateLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const sessionToken = await getSessionToken();
@@ -11,5 +12,9 @@ export default async function PrivateLayout({ children }: Readonly<{ children: R
     redirect("/");
   }
 
-  return <AppSidebar me={me}>{children}</AppSidebar>;
+  return (
+    <PageEntryLoader message={`Bienvenido ${me.displayName}`}>
+      <AppSidebar me={me}>{children}</AppSidebar>
+    </PageEntryLoader>
+  );
 }
