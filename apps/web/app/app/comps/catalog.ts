@@ -10,6 +10,8 @@ export interface AlbionWeaponOption {
   id: string;
   name: string;
   role: AlbionCompRole;
+  iconName?: string;
+  aliases?: string[];
 }
 
 export interface AlbionPartySlotTemplate {
@@ -32,10 +34,10 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "heavy-mace", name: "Heavy Mace", role: "Tank" },
   { id: "grovekeeper", name: "Grovekeeper", role: "Tank" },
   { id: "camlann-mace", name: "Camlann Mace", role: "Tank" },
-  { id: "hand-of-justice", name: "Hand of Justice", role: "Tank" },
+  { id: "hand-of-justice", name: "Hand of Justice", role: "Tank", iconName: "T8_2H_HAMMER_AVALON" },
   { id: "realmbreaker", name: "Realmbreaker", role: "Melee" },
   { id: "halberd", name: "Halberd", role: "Melee" },
-  { id: "infernal-scythe", name: "Infernal Scythe", role: "Melee" },
+  { id: "infernal-scythe", name: "Infernal Scythe", role: "Melee", iconName: "T8_2H_SCYTHE_HELL", aliases: ["scythe-hell", "2h-scythe-hell"] },
   { id: "bear-paws", name: "Bear Paws", role: "Melee" },
   { id: "bow", name: "Bow", role: "Ranged" },
   { id: "warbow", name: "Warbow", role: "Ranged" },
@@ -54,38 +56,38 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "cursed-staff", name: "Cursed Staff", role: "Ranged" },
   { id: "great-cursed-staff", name: "Great Cursed Staff", role: "Ranged" },
   { id: "demonic-staff", name: "Demonic Staff", role: "Ranged" },
-  { id: "lifecurse-staff", name: "Lifecurse Staff", role: "Support" },
-  { id: "damnation-staff", name: "Damnation Staff", role: "Support" },
-  { id: "shadowcaller", name: "Shadowcaller", role: "Support" },
+  { id: "lifecurse-staff", name: "Lifecurse Staff", role: "Support", aliases: ["cursedstaff-avalon", "main-cursedstaff-avalon"] },
+  { id: "damnation-staff", name: "Damnation Staff", role: "Support", aliases: ["cursedstaff-morgana", "2h-cursedstaff-morgana"] },
+  { id: "shadowcaller", name: "Shadowcaller", role: "Support", aliases: ["cursedstaff-undead", "main-cursedstaff-undead"] },
   { id: "cursed-skull", name: "Cursed Skull", role: "Ranged" },
   { id: "dagger", name: "Dagger", role: "Melee" },
   { id: "dual-daggers", name: "Dual Daggers", role: "Melee" },
   { id: "claws", name: "Claws", role: "Melee" },
   { id: "dagger-pair", name: "Dagger Pair", role: "Melee" },
   { id: "deathgivers", name: "Deathgivers", role: "Melee" },
-  { id: "bloodletter", name: "Bloodletter", role: "Melee" },
+  { id: "bloodletter", name: "Bloodletter", role: "Melee", iconName: "T8_MAIN_RAPIER_MORGANA", aliases: ["rapier-morgana", "main-rapier-morgana"] },
   { id: "demonfang", name: "Demonfang", role: "Melee" },
   { id: "bridled-fury", name: "Bridled Fury", role: "Melee" },
   { id: "fire-staff", name: "Fire Staff", role: "Ranged" },
   { id: "great-fire-staff", name: "Great Fire Staff", role: "Ranged" },
-  { id: "wildfire-staff", name: "Wildfire Staff", role: "Ranged" },
+  { id: "wildfire-staff", name: "Wildfire Staff", role: "Ranged", iconName: "T8_2H_INFERNOSTAFF_MORGANA", aliases: ["infernostaff-morgana", "2h-infernostaff-morgana"] },
   { id: "infernal-staff", name: "Infernal Staff", role: "Ranged" },
   { id: "brimstone-staff", name: "Brimstone Staff", role: "Ranged" },
   { id: "blazing-staff", name: "Blazing Staff", role: "Ranged" },
-  { id: "dawnsong", name: "Dawnsong", role: "Ranged" },
+  { id: "dawnsong", name: "Dawnsong", role: "Ranged", iconName: "T8_2H_FIRE_RINGPAIR_AVALON", aliases: ["fire-ringpair-avalon", "2h-fire-ringpair-avalon"] },
   { id: "frost-staff", name: "Frost Staff", role: "Ranged" },
   { id: "great-frost-staff", name: "Great Frost Staff", role: "Ranged" },
   { id: "hoarfrost-staff", name: "Hoarfrost Staff", role: "Ranged" },
   { id: "icicle-staff", name: "Icicle Staff", role: "Support" },
   { id: "glacial-staff", name: "Glacial Staff", role: "Ranged" },
-  { id: "permafrost-prism", name: "Permafrost Prism", role: "Ranged" },
+  { id: "permafrost-prism", name: "Permafrost Prism", role: "Ranged", iconName: "T8_2H_ICECRYSTAL_UNDEAD", aliases: ["icecrystal-undead", "2h-icecrystal-undead"] },
   { id: "chillhowl", name: "Chillhowl", role: "Ranged" },
   { id: "hammer", name: "Hammer", role: "Tank" },
-  { id: "polehammer", name: "Polehammer", role: "Tank" },
+  { id: "polehammer", name: "Polehammer", role: "Tank", iconName: "T8_2H_POLEHAMMER" },
   { id: "great-hammer", name: "Great Hammer", role: "Tank" },
   { id: "tombhammer", name: "Tombhammer", role: "Tank" },
   { id: "forge-hammers", name: "Forge Hammers", role: "Tank" },
-  { id: "hallowfall", name: "Hallowfall", role: "Healer" },
+  { id: "hallowfall", name: "Hallowfall", role: "Healer", iconName: "T8_MAIN_HOLYSTAFF_AVALON" },
   { id: "fallen-staff", name: "Fallen Staff", role: "Healer" },
   { id: "great-holy-staff", name: "Great Holy Staff", role: "Healer" },
   { id: "redemption-staff", name: "Redemption Staff", role: "Healer" },
@@ -95,8 +97,8 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "mace", name: "Mace", role: "Tank" },
   { id: "morning-star", name: "Morning Star", role: "Tank" },
   { id: "bedrock-mace", name: "Bedrock Mace", role: "Tank" },
-  { id: "incubus-mace", name: "Incubus Mace", role: "Support" },
-  { id: "oathkeepers", name: "Oathkeepers", role: "Support" },
+  { id: "incubus-mace", name: "Incubus Mace", role: "Support", iconName: "T8_MAIN_MACE_HELL" },
+  { id: "oathkeepers", name: "Oathkeepers", role: "Support", aliases: ["dualmace-avalon", "2h-dualmace-avalon", "main-dualmace-avalon"] },
   { id: "blight-staff", name: "Blight Staff", role: "Healer" },
   { id: "wild-staff", name: "Wild Staff", role: "Healer" },
   { id: "rampant-staff", name: "Rampant Staff", role: "Healer" },
@@ -108,27 +110,27 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "iron-clad-staff", name: "Iron-Clad Staff", role: "Tank" },
   { id: "double-bladed-staff", name: "Double Bladed Staff", role: "Tank" },
   { id: "black-monk-staff", name: "Black Monk Staff", role: "Tank" },
-  { id: "staff-of-balance", name: "Staff of Balance", role: "Tank" },
+  { id: "staff-of-balance", name: "Staff of Balance", role: "Tank", iconName: "T8_2H_ROCKSTAFF_KEEPER", aliases: ["rockstaff-keeper", "2h-rockstaff-keeper"] },
   { id: "soulscythe", name: "Soulscythe", role: "Tank" },
   { id: "grailseeker", name: "Grailseeker", role: "Tank" },
   { id: "spear", name: "Spear", role: "Melee" },
   { id: "pike", name: "Pike", role: "Melee" },
   { id: "glaive", name: "Glaive", role: "Melee" },
   { id: "heron-spear", name: "Heron Spear", role: "Melee" },
-  { id: "spirithunter", name: "Spirithunter", role: "Support" },
+  { id: "spirithunter", name: "Spirithunter", role: "Melee", iconName: "T8_2H_HARPOON_HELL", aliases: ["harpoon-hell", "2h-harpoon-hell"] },
   { id: "trinity-spear", name: "Trinity Spear", role: "Melee" },
   { id: "daybreaker", name: "Daybreaker", role: "Melee" },
   { id: "broadsword", name: "Broadsword", role: "Melee" },
   { id: "claymore", name: "Claymore", role: "Melee" },
   { id: "dual-swords", name: "Dual Swords", role: "Melee" },
-  { id: "carving-sword", name: "Carving Sword", role: "Melee" },
+  { id: "carving-sword", name: "Carving Sword", role: "Melee", iconName: "T8_2H_CLEAVER_HELL", aliases: ["cleaver-hell", "2h-cleaver-hell"] },
   { id: "clarent-blade", name: "Clarent Blade", role: "Melee" },
   { id: "galatine-pair", name: "Galatine Pair", role: "Melee" },
   { id: "kingmaker", name: "Kingmaker", role: "Melee" },
   { id: "brawler-gloves", name: "Brawler Gloves", role: "Melee" },
-  { id: "battle-bracers", name: "Battle Bracers", role: "Melee" },
-  { id: "spiked-gauntlets", name: "Spiked Gauntlets", role: "Melee" },
-  { id: "ursine-maulers", name: "Ursine Maulers", role: "Melee" },
+  { id: "battle-bracers", name: "Battle Bracers", role: "Melee", iconName: "T8_2H_KNUCKLES_SET2", aliases: ["knuckles-set2"] },
+  { id: "spiked-gauntlets", name: "Spiked Gauntlets", role: "Melee", iconName: "T8_2H_KNUCKLES_SET3", aliases: ["knuckles-set3"] },
+  { id: "ursine-maulers", name: "Ursine Maulers", role: "Melee", iconName: "T8_2H_KNUCKLES_KEEPER", aliases: ["knuckles-keeper", "2h-knuckles-keeper"] },
   { id: "hellfire-hands", name: "Hellfire Hands", role: "Melee" },
   { id: "ravenstrike-cestus", name: "Ravenstrike Cestus", role: "Melee" },
   { id: "avalonian-fists", name: "Brawler Gloves", role: "Melee" },
@@ -424,7 +426,10 @@ function normalizeWeaponKey(value: string): string {
   return value
     .trim()
     .replace(/^T\d+_/, "")
-    .replace(/@\d+$/, "")
+    .replace(/@.*$/, "")
+    .replace(/Q\d+$/, "")
+    .replace(/\b[4-8](?:\.[0-4])\b/g, " ")
+    .replace(/\b(?:tier|t)\s*[4-8]\b/gi, " ")
     .replace(/^2H_/, "")
     .replace(/^MAIN_/, "")
     .replace(/^OFF_/, "")
@@ -455,8 +460,10 @@ export function resolveAlbionWeapon(input?: string): AlbionWeaponOption | null {
   const directCatalogMatch =
     albionWeaponCatalog.find((entry) => normalizeWeaponKey(entry.name) === normalized) ??
     albionWeaponCatalog.find((entry) => normalizeWeaponKey(entry.id) === normalized) ??
+    albionWeaponCatalog.find((entry) => entry.aliases?.some((alias) => normalizeWeaponKey(alias) === normalized)) ??
     albionWeaponCatalog.find((entry) => compactWeaponKey(entry.name) === compact) ??
-    albionWeaponCatalog.find((entry) => compactWeaponKey(entry.id) === compact);
+    albionWeaponCatalog.find((entry) => compactWeaponKey(entry.id) === compact) ??
+    albionWeaponCatalog.find((entry) => entry.aliases?.some((alias) => compactWeaponKey(alias) === compact));
 
   if (directCatalogMatch) {
     return directCatalogMatch;
@@ -467,14 +474,17 @@ export function resolveAlbionWeapon(input?: string): AlbionWeaponOption | null {
     const id = normalizeWeaponKey(entry.id);
     const compactName = compactWeaponKey(entry.name);
     const compactId = compactWeaponKey(entry.id);
+    const aliases = entry.aliases ?? [];
     return (
       normalized.includes(name) ||
       name.includes(normalized) ||
       normalized.includes(id) ||
+      aliases.some((alias) => normalized.includes(normalizeWeaponKey(alias)) || normalizeWeaponKey(alias).includes(normalized)) ||
       compact.includes(compactName) ||
       compactName.includes(compact) ||
       compact.includes(compactId) ||
-      compactId.includes(compact)
+      compactId.includes(compact) ||
+      aliases.some((alias) => compact.includes(compactWeaponKey(alias)) || compactWeaponKey(alias).includes(compact))
     );
   });
 
@@ -496,6 +506,77 @@ export function resolveAlbionWeapon(input?: string): AlbionWeaponOption | null {
   };
 }
 
+function isAlbionItemType(value: string): boolean {
+  return /^T\d+_/.test(value.trim());
+}
+
+export function getResolvedWeaponIconName(input?: string): string | null {
+  const canonical = isAlbionItemType(input ?? "") ? toTier8WeaponIconName(input) : null;
+  if (canonical) {
+    return canonical;
+  }
+
+  const resolved = resolveAlbionWeapon(input);
+  return resolved?.iconName ?? null;
+}
+
+function isAlbionRenderItemType(value: string): boolean {
+  return /^T\d+_.+@\d+$/i.test(value.trim()) || /^T\d+_.+$/i.test(value.trim());
+}
+
+function resolveCatalogIconName(input?: string): string | null {
+  if (!input) {
+    return null;
+  }
+
+  const resolved = resolveAlbionWeapon(input);
+  return resolved?.iconName ?? null;
+}
+
+function buildAlbionBbCdnItemUrl(name: string): string {
+  return `https://cdn.albionbb.com/items/${encodeURIComponent(name)}.png`;
+}
+
 export function getWeaponIconUrl(name: string): string {
-  return `https://render.albiononline.com/v1/item/${encodeURIComponent(name)}.png?locale=en&size=128&quality=1`;
+  const trimmed = name.trim().replace(/\.+$/, "");
+  if (!trimmed) {
+    return "";
+  }
+
+  if (isAlbionRenderItemType(trimmed) || /^T\d+_.+@\d+Q\d+$/i.test(trimmed)) {
+    return buildAlbionBbCdnItemUrl(trimmed);
+  }
+
+  const catalogIconName = resolveCatalogIconName(trimmed);
+  if (catalogIconName) {
+    return buildAlbionBbCdnItemUrl(catalogIconName);
+  }
+
+  return `https://render.albiononline.com/v1/item/${encodeURIComponent(trimmed)}.png?locale=en&size=128&quality=1`;
+}
+
+export function getItemIconUrl(name: string): string {
+  return getWeaponIconUrl(name);
+}
+
+export function canonicalWeaponVariantKey(input?: string): string | null {
+  if (!input) {
+    return null;
+  }
+
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.replace(/@.*$/, "").replace(/^T\d+_/, "T8_");
+}
+
+export function toTier8WeaponIconName(input?: string): string | null {
+  const canonical = canonicalWeaponVariantKey(input);
+  if (!canonical) {
+    return null;
+  }
+
+  return canonical;
 }

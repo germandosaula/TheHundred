@@ -520,6 +520,22 @@ function mapAlbionBbBattleDetail(
   const detailPlayers = readBattlePlayers(record, guildEntries);
   const killFeedPlayers = killsFeed ? readBattlePlayersFromKillsFeed(killsFeed) : [];
   const guildPlayers = mergeBattlePlayerSources(detailPlayers, killFeedPlayers);
+  const playersWithoutWeapon = guildPlayers.filter(
+    (entry) => !entry.weaponName && !entry.weaponIconName
+  );
+  if (playersWithoutWeapon.length > 0) {
+    console.log("[battles] players without weapon sample", {
+      total: playersWithoutWeapon.length,
+      sample: playersWithoutWeapon.slice(0, 8).map((entry) => ({
+        name: entry.name,
+        guildName: entry.guildName,
+        allianceName: entry.allianceName,
+        kills: entry.kills,
+        deaths: entry.deaths,
+        fame: entry.fame
+      }))
+    });
+  }
   const guildsSummary = guildEntries
     .map((entry) => mapGuildSummaryEntry(entry))
     .filter((entry): entry is BattleGuildEntry => Boolean(entry))
@@ -562,8 +578,8 @@ function readBattlePlayersFromKillsFeed(value: unknown): BattlePlayerEntry[] {
     console.log("[battles] albionbb kills sample", {
       rootKeys: Object.keys(record),
       killKeys: Object.keys(kills[0]),
-      killerKeys: Object.keys(readRecord(kills[0].Killer ?? kills[0].killer)),
-      victimKeys: Object.keys(readRecord(kills[0].Victim ?? kills[0].victim))
+      killerKeys: Object.keys(readRecord(kills[0].Killer ?? kills[0].killer ?? {})),
+      victimKeys: Object.keys(readRecord(kills[0].Victim ?? kills[0].victim ?? {}))
     });
   }
 
@@ -583,7 +599,7 @@ function readBattlePlayersFromKillsFeed(value: unknown): BattlePlayerEntry[] {
       readNestedRecord(kill, ["victim"]) ??
       readNestedRecord(kill, ["Death"]) ??
       readNestedRecord(kill, ["player"]);
-    mergeBattlePlayer(players, mapBattlePlayer(victim), {
+    mergeBattlePlayer(players, mapBattlePlayer(readRecord(victim)), {
       deaths: 1,
       fame: killFame
     });
@@ -593,7 +609,7 @@ function readBattlePlayersFromKillsFeed(value: unknown): BattlePlayerEntry[] {
       readNestedRecord(kill, ["killer"]) ??
       readNestedRecord(kill, ["finalBlow"]) ??
       readNestedRecord(kill, ["FinalBlow"]);
-    mergeBattlePlayer(players, mapBattlePlayer(killer), {
+    mergeBattlePlayer(players, mapBattlePlayer(readRecord(killer)), {
       kills: 1
     });
 
@@ -629,7 +645,7 @@ function mergeBattlePlayerSources(
   const players = new Map<string, BattlePlayerEntry>();
 
   for (const entry of detailPlayers) {
-    players.set(entry.id || entry.name, entry);
+    players.set(getBattlePlayerMergeKey(entry), entry);
   }
 
   for (const entry of killFeedPlayers) {
@@ -648,7 +664,7 @@ function mergeBattlePlayer(
     return;
   }
 
-  const key = entry.id || entry.name;
+  const key = getBattlePlayerMergeKey(entry);
   const existing = players.get(key);
   const next = {
     ...entry,
@@ -675,6 +691,11 @@ function mergeBattlePlayer(
   });
 }
 
+function getBattlePlayerMergeKey(entry: Pick<BattlePlayerEntry, "id" | "name">): string {
+  const normalizedName = entry.name.trim().toLowerCase();
+  return normalizedName || entry.id;
+}
+
 function pickPreferredWeaponName(current?: string, candidate?: string): string | undefined {
   if (!current) {
     return candidate;
@@ -684,7 +705,14 @@ function pickPreferredWeaponName(current?: string, candidate?: string): string |
     return current;
   }
 
-  return scoreWeaponName(candidate) > scoreWeaponName(current) ? candidate : current;
+  const candidateScore = scoreWeaponName(candidate);
+  const currentScore = scoreWeaponName(current);
+
+  if (candidateScore === currentScore) {
+    return candidate.length > current.length ? candidate : current;
+  }
+
+  return candidateScore > currentScore ? candidate : current;
 }
 
 function scoreWeaponName(value: string): number {
@@ -694,8 +722,12 @@ function scoreWeaponName(value: string): number {
     score += 4;
   }
 
-  if (/@\d+$/.test(value)) {
+  if (/@\d+(Q\d+)?$/i.test(value)) {
     score += 3;
+  }
+
+  if (/Q\d+$/i.test(value)) {
+    score += 2;
   }
 
   if (/^(MAIN|2H|OFF|MOUNT)_/.test(value)) {
@@ -721,6 +753,15 @@ function readBattlePlayers(record: JsonRecord, guildEntries: JsonRecord[]): Batt
     []).map((entry) => readRecord(entry));
 
   if (rootPlayers.length > 0) {
+    console.log("[battles] detail root player sample", {
+      playerKeys: Object.keys(readRecord(rootPlayers[0])),
+      equipmentKeys: Object.keys(
+        readRecord(
+          readNestedRecord(readRecord(rootPlayers[0]), ["Equipment"]) ??
+            readNestedRecord(readRecord(rootPlayers[0]), ["equipment"])
+        )
+      )
+    });
     return rootPlayers
       .map((entry) => mapBattlePlayer(entry))
       .filter((entry): entry is BattlePlayerEntry => Boolean(entry));
@@ -735,7 +776,25 @@ function readBattlePlayers(record: JsonRecord, guildEntries: JsonRecord[]): Batt
       readString(guildEntry, "allianceTag") ??
       undefined;
 
-    return (readArray(guildEntry, "players") ?? [])
+    const guildPlayers = (readArray(guildEntry, "players") ??
+      readArray(guildEntry, "Players") ??
+      [])
+      .map((entry) => readRecord(entry));
+
+    if (guildPlayers[0]) {
+      console.log("[battles] detail guild player sample", {
+        guildKeys: Object.keys(guildEntry),
+        playerKeys: Object.keys(readRecord(guildPlayers[0])),
+        equipmentKeys: Object.keys(
+          readRecord(
+            readNestedRecord(readRecord(guildPlayers[0]), ["Equipment"]) ??
+              readNestedRecord(readRecord(guildPlayers[0]), ["equipment"])
+          )
+        )
+      });
+    }
+
+    return guildPlayers
       .map((entry) => mapBattlePlayer(readRecord(entry), guildName, allianceName))
       .filter((player): player is BattlePlayerEntry => Boolean(player));
   });
@@ -853,28 +912,48 @@ function mapBattlePlayer(
     fame: readNumber(entry, "fame") ?? readNumber(entry, "killFame") ?? 0,
     weaponName:
       readString(entry, "weaponName") ??
+      readString(entry, "WeaponName") ??
+      readNestedString(entry, ["weapon", "name"]) ??
+      readNestedString(entry, ["Weapon", "name"]) ??
+      readNestedString(entry, ["weapon", "Name"]) ??
+      readNestedString(entry, ["Weapon", "Name"]) ??
       readString(entry, "weaponLabel") ??
+      readString(entry, "WeaponLabel") ??
       readString(entry, "weaponDisplayName") ??
+      readString(entry, "WeaponDisplayName") ??
       readString(entry, "mainHandName") ??
+      readString(entry, "MainHandName") ??
       readString(entry, "mainhandName") ??
+      readString(entry, "MainhandName") ??
       readString(entry, "itemName") ??
+      readString(entry, "ItemName") ??
+      readString(entry, "weapon") ??
+      readString(entry, "Weapon") ??
+      readString(entry, "mainHand") ??
+      readString(entry, "MainHand") ??
+      readString(entry, "mainhand") ??
+      readString(entry, "Mainhand") ??
+      readString(entry, "itemId") ??
+      readString(entry, "ItemId") ??
+      readString(entry, "weaponId") ??
+      readString(entry, "WeaponId") ??
+      readString(entry, "mainHandType") ??
+      readString(entry, "MainHandType") ??
+      readString(entry, "mainhandType") ??
+      readString(entry, "MainhandType") ??
+      readString(entry, "mainHandUniqueName") ??
+      readString(entry, "MainHandUniqueName") ??
       readNestedString(entry, ["Equipment", "MainHand", "Name"]) ??
       readNestedString(entry, ["Equipment", "Mainhand", "Name"]) ??
+      readNestedString(entry, ["Equipment", "Weapon", "Name"]) ??
       readNestedString(entry, ["equipment", "mainHand", "name"]) ??
       readNestedString(entry, ["equipment", "mainhand", "name"]) ??
       readNestedString(entry, ["equipment", "weapon", "name"]) ??
       readNestedString(entry, ["gear", "mainHand", "name"]) ??
-      readString(entry, "weapon") ??
-      readString(entry, "weaponId") ??
-      readString(entry, "mainHand") ??
-      readString(entry, "mainHandType") ??
-      readString(entry, "mainhand") ??
-      readString(entry, "mainhandType") ??
       readString(entry, "equipmentMainHand") ??
-      readString(entry, "itemId") ??
-      readString(entry, "mainHandUniqueName") ??
       readNestedString(entry, ["Equipment", "MainHand", "Type"]) ??
       readNestedString(entry, ["Equipment", "Mainhand", "Type"]) ??
+      readNestedString(entry, ["Equipment", "Weapon", "Type"]) ??
       readNestedString(entry, ["equipment", "mainHand", "uniqueName"]) ??
       readNestedString(entry, ["equipment", "mainhand", "uniqueName"]) ??
       readNestedString(entry, ["equipment", "weapon", "uniqueName"]) ??
@@ -882,14 +961,26 @@ function mapBattlePlayer(
       undefined,
     weaponIconName:
       readString(entry, "weaponIconName") ??
+      readString(entry, "WeaponIconName") ??
+      readNestedString(entry, ["weapon", "type"]) ??
+      readNestedString(entry, ["Weapon", "type"]) ??
+      readNestedString(entry, ["weapon", "Type"]) ??
+      readNestedString(entry, ["Weapon", "Type"]) ??
       readString(entry, "weaponType") ??
+      readString(entry, "WeaponType") ??
       readString(entry, "weaponUniqueName") ??
+      readString(entry, "WeaponUniqueName") ??
       readString(entry, "mainHandType") ??
+      readString(entry, "MainHandType") ??
       readString(entry, "mainhandType") ??
+      readString(entry, "MainhandType") ??
       readString(entry, "mainHandUniqueName") ??
+      readString(entry, "MainHandUniqueName") ??
       readString(entry, "itemId") ??
+      readString(entry, "ItemId") ??
       readNestedString(entry, ["Equipment", "MainHand", "Type"]) ??
       readNestedString(entry, ["Equipment", "Mainhand", "Type"]) ??
+      readNestedString(entry, ["Equipment", "Weapon", "Type"]) ??
       readNestedString(entry, ["equipment", "mainHand", "uniqueName"]) ??
       readNestedString(entry, ["equipment", "mainhand", "uniqueName"]) ??
       readNestedString(entry, ["equipment", "weapon", "uniqueName"]) ??

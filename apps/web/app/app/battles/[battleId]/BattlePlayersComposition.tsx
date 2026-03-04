@@ -2,8 +2,10 @@
 
 import { useMemo, useState, type MouseEvent } from "react";
 import {
+  canonicalWeaponVariantKey,
   compRoleBucketLabels,
-  getWeaponIconUrl,
+  getItemIconUrl,
+  getResolvedWeaponIconName,
   resolveAlbionWeapon,
   type AlbionCompRole
 } from "../../comps/catalog";
@@ -49,10 +51,16 @@ const roleColors: Record<AlbionCompRole, string> = {
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   const angleRad = ((angleDeg - 90) * Math.PI) / 180;
+  const x = cx + r * Math.cos(angleRad);
+  const y = cy + r * Math.sin(angleRad);
   return {
-    x: cx + r * Math.cos(angleRad),
-    y: cy + r * Math.sin(angleRad)
+    x,
+    y
   };
+}
+
+function formatSvgNumber(value: number) {
+  return Number(value.toFixed(4)).toString();
 }
 
 function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
@@ -60,7 +68,12 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
   const end = polarToCartesian(cx, cy, r, startAngle);
   const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
 
-  return [`M ${cx} ${cy}`, `L ${start.x} ${start.y}`, `A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ");
+  return [
+    `M ${formatSvgNumber(cx)} ${formatSvgNumber(cy)}`,
+    `L ${formatSvgNumber(start.x)} ${formatSvgNumber(start.y)}`,
+    `A ${formatSvgNumber(r)} ${formatSvgNumber(r)} 0 ${largeArcFlag} 0 ${formatSvgNumber(end.x)} ${formatSvgNumber(end.y)}`,
+    "Z"
+  ].join(" ");
 }
 
 export function BattlePlayersComposition({ players }: { players: BattlePlayerEntry[] }) {
@@ -126,13 +139,14 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
     const counts = new Map<string, WeaponCount>();
 
     for (const player of filteredPlayers) {
-      const resolved = resolveAlbionWeapon(player.weaponName ?? player.weaponIconName);
+      const sourceWeapon = player.weaponIconName ?? player.weaponName;
+      const resolved = resolveAlbionWeapon(sourceWeapon);
       if (!resolved || resolved.role !== activeRole) {
         continue;
       }
 
-      const icon = player.weaponIconName ?? player.weaponName ?? resolved.name;
-      const key = `${resolved.id}:${icon}`;
+      const icon = getResolvedWeaponIconName(sourceWeapon) ?? resolved.name;
+      const key = canonicalWeaponVariantKey(sourceWeapon) ?? resolved.id;
       const existing = counts.get(key);
       if (existing) {
         existing.count += 1;
@@ -271,7 +285,7 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
             <div className="battle-weapon-grid">
               {weaponCounts.map((weapon) => (
                 <div className="battle-weapon-card" key={weapon.key}>
-                  <img alt={weapon.label} className="battle-weapon-card-icon" src={getWeaponIconUrl(weapon.icon)} />
+                  <img alt={weapon.label} className="battle-weapon-card-icon" src={getItemIconUrl(weapon.icon)} />
                   <span className="battle-weapon-card-count">x {weapon.count}</span>
                 </div>
               ))}

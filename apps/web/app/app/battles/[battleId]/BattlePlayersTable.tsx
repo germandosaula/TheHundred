@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { getWeaponIconUrl } from "../../comps/catalog";
+import { getItemIconUrl, getResolvedWeaponIconName } from "../../comps/catalog";
 import type { BattlePlayerEntry } from "../../../lib";
 
 const PLAYERS_PER_PAGE = 10;
@@ -77,6 +77,14 @@ export function BattlePlayersTable({ players }: { players: BattlePlayerEntry[] }
     );
   }
 
+  function getPlayerIconName(player: BattlePlayerEntry): string | null {
+    if (player.weaponIconName) {
+      return player.weaponIconName;
+    }
+
+    return getResolvedWeaponIconName(player.weaponName);
+  }
+
   return (
     <article className="dashboard-card battle-table-card battle-players-card">
       <div className="section-row battle-table-head">
@@ -112,11 +120,11 @@ export function BattlePlayersTable({ players }: { players: BattlePlayerEntry[] }
               {visiblePlayers.map((player, index) => (
                 <Fragment key={`${player.id}-${index}`}>
                   <div className="battle-table-cell battle-player-cell" key={`${player.id}-${index}-name`}>
-                    {player.weaponIconName || player.weaponName ? (
+                    {getPlayerIconName(player) ? (
                       <img
                         alt={player.weaponName ?? player.weaponIconName ?? player.name}
                         className="battle-player-weapon"
-                        src={getWeaponIconUrl(player.weaponIconName ?? player.weaponName ?? "")}
+                        src={getItemIconUrl(getPlayerIconName(player) ?? "")}
                       />
                     ) : (
                       <div className="battle-player-weapon placeholder" />
