@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type MemberStatus = "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
 
@@ -57,17 +57,29 @@ function formatPercent(value: number) {
 }
 
 export function MemberStatusManager({ members }: MemberStatusManagerProps) {
+  const [localMembers, setLocalMembers] = useState<MemberRow[]>(members);
   const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const [query, setQuery] = useState("");
   const [bombInputByMemberId, setBombInputByMemberId] = useState<Record<string, string>>({});
-  const existingBombGroups = [...new Set(members.map((member) => member.bombGroupName).filter(Boolean))]
-    .sort((left, right) => left!.localeCompare(right!)) as string[];
-  const memberPositionById = new Map(members.map((member, index) => [member.id, index + 1]));
+
+  const existingBombGroups = useMemo(
+    () =>
+      [...new Set(localMembers.map((member) => member.bombGroupName).filter(Boolean))]
+        .sort((left, right) => left!.localeCompare(right!)) as string[],
+    [localMembers]
+  );
+  const memberPositionById = useMemo(
+    () => new Map(localMembers.map((member, index) => [member.id, index + 1])),
+    [localMembers]
+  );
   const normalizedQuery = query.trim().toLowerCase();
   const filteredMembers = normalizedQuery
-    ? members.filter((member) => member.displayName.toLowerCase().includes(normalizedQuery))
-    : members;
+    ? localMembers.filter((member) => member.displayName.toLowerCase().includes(normalizedQuery))
+    : localMembers;
 
   async function updateStatus(memberId: string, status: Exclude<MemberStatus, "PENDING">) {
     setPendingMemberId(memberId);
@@ -87,7 +99,10 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
         throw new Error(payload.error ?? `Update failed with status ${response.status}`);
       }
 
-      window.location.reload();
+      setLocalMembers((current) =>
+        current.map((member) => (member.id === memberId ? { ...member, status } : member))
+      );
+      setPendingMemberId(null);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Update failed");
       setPendingMemberId(null);
@@ -112,7 +127,11 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
         throw new Error(payload.error ?? `Update failed with status ${response.status}`);
       }
 
-      window.location.reload();
+      setLocalMembers((current) =>
+        current.map((member) => (member.id === memberId ? { ...member, bombGroupName } : member))
+      );
+      setBombInputByMemberId((current) => ({ ...current, [memberId]: "" }));
+      setPendingMemberId(null);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Update failed");
       setPendingMemberId(null);
@@ -144,10 +163,50 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
         throw new Error(payload.error ?? `Kick failed with status ${response.status}`);
       }
 
-      window.location.reload();
+      setLocalMembers((current) => current.filter((member) => member.id !== memberId));
+      setPendingMemberId(null);
     } catch (kickError) {
       setError(kickError instanceof Error ? kickError.message : "Kick failed");
       setPendingMemberId(null);
+    }
+  }
+
+  async function createInvite() {
+    setInviteLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/invites", {
+        method: "POST"
+      });
+
+      const payload = (await response.json()) as { inviteUrl?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? `Invite failed with status ${response.status}`);
+      }
+      if (!payload.inviteUrl) {
+        throw new Error("Invite URL missing in response");
+      }
+
+      setInviteUrl(payload.inviteUrl);
+      setCopyState("idle");
+    } catch (createInviteError) {
+      setError(createInviteError instanceof Error ? createInviteError.message : "Invite failed");
+    } finally {
+      setInviteLoading(false);
+    }
+  }
+
+  async function copyInviteUrl() {
+    if (!inviteUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopyState("copied");
+    } catch {
+      setError("No se pudo copiar el link");
     }
   }
 
@@ -161,26 +220,36 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
             value={query}
           />
         </label>
-        <span className="status-badge">{filteredMembers.length} jugadores</span>
+        <div className="member-toolbar-actions">
+          <button
+            className="status-chip member-invite-trigger"
+            disabled={inviteLoading}
+            onClick={() => void createInvite()}
+            type="button"
+          >
+            {inviteLoading ? "Generando..." : "Generar invite"}
+          </button>
+          <span className="status-badge">
+            {filteredMembers.length === localMembers.length
+              ? `${localMembers.length} jugadores`
+              : `${filteredMembers.length} de ${localMembers.length}`}
+          </span>
+        </div>
       </div>
-      <div className="member-list-head">
-        <span>#</span>
-        <span>Jugador</span>
-        <span>Attendance</span>
-        <span>Bomb</span>
-        <span>Estado web</span>
-        <span>Estado Discord</span>
-        <span>Acciones</span>
-      </div>
-      <ul className="member-list member-list-table">
+      <ul className="member-list member-card-grid">
         {filteredMembers.map((member) => (
-          <li className="member-row member-row-list" key={member.id}>
-            <div className="member-cell member-cell-index">
+          <li className="member-card" key={member.id}>
+            <div className="member-card-head">
               <span className="status-badge member-index-badge">
                 #{String(memberPositionById.get(member.id) ?? 0).padStart(2, "0")}
               </span>
+              <div className="member-attendance member-card-attendance">
+                <span className="member-card-label">Attendance</span>
+                <strong>{member.attendanceCount}</strong>
+                <span>{formatPercent(member.attendancePercent)}</span>
+              </div>
             </div>
-            <div className="member-cell member-cell-player">
+            <div className="member-card-player">
               {member.avatarUrl ? (
                 <img alt={member.displayName} className="user-avatar member-avatar" src={member.avatarUrl} />
               ) : (
@@ -191,15 +260,26 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
                 <span className="member-meta">{member.discordId}</span>
               </div>
             </div>
-            <div className="member-cell member-cell-attendance">
-              <span className="member-mobile-label">Attendance</span>
-              <div className="member-attendance">
-                <strong>{member.attendanceCount}</strong>
-                <span>{formatPercent(member.attendancePercent)}</span>
+            <div className="member-card-statuses">
+              <div className="member-status-row">
+                <span className="member-card-label">Web</span>
+                <span className={`status-badge member-status-pill status-${member.status.toLowerCase()}`}>
+                  {currentStatusLabels[member.status]}
+                </span>
+              </div>
+              <div className="member-status-row">
+                <span className="member-card-label">Discord</span>
+                <span
+                  className={`status-badge member-sync-pill ${
+                    member.discordRoleStatus === member.status ? "synced" : "pending"
+                  }`}
+                >
+                  {getDiscordSyncLabel(member)}
+                </span>
               </div>
             </div>
-            <div className="member-cell member-cell-bomb">
-              <span className="member-mobile-label">Bomb</span>
+            <div className="member-card-bomb">
+              <span className="member-card-label">Bomb</span>
               <div className="member-bomb-controls">
                 <select
                   disabled={pendingMemberId === member.id}
@@ -246,42 +326,26 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
                 </div>
               </div>
             </div>
-            <div className="member-cell member-cell-web-status">
-              <span className="member-mobile-label">Estado web</span>
-              <span className={`status-badge member-status-pill status-${member.status.toLowerCase()}`}>
-                {currentStatusLabels[member.status]}
-              </span>
-            </div>
-            <div className="member-cell member-cell-discord-status">
-              <span className="member-mobile-label">Estado Discord</span>
-              <span
-                className={`status-badge member-sync-pill ${
-                  member.discordRoleStatus === member.status ? "synced" : "pending"
-                }`}
-              >
-                {getDiscordSyncLabel(member)}
-              </span>
-            </div>
-            <div className="member-cell member-cell-actions">
-              <span className="member-mobile-label">Acciones</span>
+            <div className="member-card-actions-wrap">
+              <span className="member-card-label">Acciones</span>
               <div className="member-actions member-actions-inline">
-              {allowedTransitions[member.status].map((status) => (
+                {allowedTransitions[member.status].map((status) => (
+                  <button
+                    className="status-chip"
+                    disabled={pendingMemberId === member.id || member.status === status}
+                    key={status}
+                    onClick={() => updateStatus(member.id, status)}
+                    type="button"
+                  >
+                    {pendingMemberId === member.id
+                      ? "..."
+                      : member.status === "REJECTED" && status === "TRIAL"
+                        ? "Reopen"
+                        : statusLabels[status]}
+                  </button>
+                ))}
                 <button
-                  className="status-chip"
-                  disabled={pendingMemberId === member.id || member.status === status}
-                  key={status}
-                  onClick={() => updateStatus(member.id, status)}
-                  type="button"
-                >
-                  {pendingMemberId === member.id
-                    ? "..."
-                    : member.status === "REJECTED" && status === "TRIAL"
-                      ? "Reopen"
-                    : statusLabels[status]}
-                </button>
-              ))}
-                <button
-                  className="status-chip status-chip-danger"
+                  className="status-chip status-chip-danger member-kick-chip"
                   disabled={pendingMemberId === member.id}
                   onClick={() => kickMember(member.id, member.displayName)}
                   type="button"
@@ -295,6 +359,30 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
       </ul>
       {filteredMembers.length === 0 ? <p className="empty">No hay jugadores con ese nombre.</p> : null}
       {error ? <p className="empty">{error}</p> : null}
+      {inviteUrl ? (
+        <div className="member-invite-modal-backdrop" onClick={() => setInviteUrl(null)} role="presentation">
+          <div
+            className="member-invite-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Invite de acceso anticipado"
+          >
+            <span className="card-label">Invite</span>
+            <h3>Link de invitación</h3>
+            <p>Comparte este enlace con el invitado para registrarse antes del lanzamiento.</p>
+            <input readOnly value={inviteUrl} />
+            <div className="member-invite-modal-actions">
+              <button className="button primary" onClick={() => void copyInviteUrl()} type="button">
+                {copyState === "copied" ? "Copiado" : "Copiar link"}
+              </button>
+              <button className="button ghost" onClick={() => setInviteUrl(null)} type="button">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

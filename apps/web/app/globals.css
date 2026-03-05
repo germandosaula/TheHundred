@@ -231,6 +231,13 @@ li {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.discord-button-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  object-fit: contain;
+}
+
 .button.primary {
   color: #0a0f18;
   border-color: rgba(240, 200, 90, 0.28);
@@ -506,6 +513,54 @@ li {
   padding: 14px 0 0;
 }
 
+.landing-footer {
+  width: 100%;
+  margin: 24px auto 0;
+}
+
+.landing-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px 28px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(8, 14, 24, 0.68);
+  backdrop-filter: blur(12px);
+}
+
+.landing-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.landing-footer-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.26);
+}
+
+.landing-footer-brand strong {
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.landing-footer-copy {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .landing-footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .section-heading h2,
 .dashboard-card h2,
 .auth-panel h1,
@@ -720,6 +775,112 @@ li {
   font-weight: 700;
 }
 
+.ranking-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ranking-manager {
+  display: grid;
+  gap: 12px;
+}
+
+.ranking-month-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.ranking-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ranking-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ranking-card-gold {
+  border-color: rgba(240, 200, 90, 0.45);
+  background:
+    radial-gradient(circle at top right, rgba(240, 200, 90, 0.18), transparent 45%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.ranking-card-silver {
+  border-color: rgba(189, 199, 220, 0.38);
+  background:
+    radial-gradient(circle at top right, rgba(189, 199, 220, 0.14), transparent 45%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.ranking-card-bronze {
+  border-color: rgba(196, 134, 88, 0.4);
+  background:
+    radial-gradient(circle at top right, rgba(196, 134, 88, 0.16), transparent 45%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.ranking-position {
+  min-width: 58px;
+}
+
+.ranking-position-gold {
+  background: linear-gradient(135deg, rgba(240, 200, 90, 0.4), rgba(191, 135, 22, 0.35));
+  color: #f6d977;
+}
+
+.ranking-position-silver {
+  background: linear-gradient(135deg, rgba(210, 221, 243, 0.34), rgba(148, 163, 192, 0.3));
+  color: #dfe7f8;
+}
+
+.ranking-position-bronze {
+  background: linear-gradient(135deg, rgba(214, 149, 104, 0.34), rgba(145, 95, 63, 0.3));
+  color: #efc7a9;
+}
+
+.ranking-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ranking-player strong {
+  font-size: 1rem;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ranking-avatar,
+.ranking-avatar-fallback {
+  width: 34px;
+  height: 34px;
+}
+
+.ranking-metric {
+  color: var(--accent-strong);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -743,6 +904,13 @@ li {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.member-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -771,18 +939,11 @@ li {
 .member-list-head,
 .member-row-list {
   display: grid;
-  grid-template-columns: 72px minmax(200px, 1.1fr) minmax(120px, 0.6fr) minmax(210px, 1fr) 124px minmax(170px, 0.9fr) minmax(150px, 0.8fr);
-  gap: 14px;
-  align-items: start;
+  gap: 12px;
 }
 
 .member-list-head {
-  padding: 0 14px 10px;
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .member-list-table {
@@ -790,15 +951,85 @@ li {
   gap: 12px;
 }
 
-.member-row-list {
+.member-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.member-card {
+  display: grid;
+  gap: 12px;
+  min-height: 240px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(216, 166, 40, 0.08), transparent 36%),
+    rgba(8, 14, 24, 0.82);
+}
+
+.member-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.member-card-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.member-card-attendance {
+  justify-items: end;
+}
+
+.member-card-statuses,
+.member-card-bomb,
+.member-card-actions-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.member-card-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.member-row-list {
+  grid-template-columns: 64px minmax(180px, 1fr) minmax(96px, 0.45fr) minmax(300px, 1.1fr) minmax(190px, 0.8fr) minmax(220px, 0.9fr);
+  grid-template-areas:
+    "index player attendance bomb status actions"
+    "index player attendance bomb status actions";
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.015)),
+    rgba(8, 14, 24, 0.78);
 }
 
 .member-cell {
   min-width: 0;
+}
+
+.member-cell-attendance {
+  grid-area: attendance;
+}
+
+.member-cell-bomb {
+  grid-area: bomb;
+}
+
+.member-cell-actions {
+  grid-area: actions;
 }
 
 .member-attendance {
@@ -818,10 +1049,10 @@ li {
 }
 
 .member-mobile-label {
-  display: none;
-  margin-bottom: 8px;
+  display: inline-block;
+  margin-bottom: 0;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -831,6 +1062,7 @@ li {
   display: flex;
   align-items: center;
   justify-content: center;
+  grid-area: index;
 }
 
 .member-index-badge,
@@ -843,6 +1075,7 @@ li {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  grid-area: player;
 }
 
 .member-summary {
@@ -866,7 +1099,9 @@ li {
   max-width: 100%;
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.76rem;
+  line-height: 1.05;
+  letter-spacing: 0;
 }
 
 .member-status {
@@ -918,6 +1153,25 @@ li {
   color: var(--muted);
 }
 
+.member-cell-web-status,
+.member-cell-status-stack {
+  grid-area: status;
+  display: grid;
+  gap: 10px;
+  align-content: center;
+}
+
+.member-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.member-status-row .member-card-label {
+  min-width: 70px;
+}
+
 .member-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -925,7 +1179,11 @@ li {
 }
 
 .member-actions-inline {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.member-kick-chip {
+  grid-column: 1 / -1;
 }
 
 .member-bomb-controls {
@@ -947,7 +1205,7 @@ li {
 
 .member-bomb-custom {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
 }
 
@@ -988,35 +1246,81 @@ li {
   background: rgba(255, 143, 143, 0.08);
 }
 
+.member-invite-trigger {
+  min-width: 152px;
+  width: auto;
+  padding: 0 16px;
+}
+
+.member-invite-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 8, 14, 0.68);
+  backdrop-filter: blur(6px);
+}
+
+.member-invite-modal {
+  width: min(100%, 560px);
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(216, 166, 40, 0.16), transparent 28%),
+    rgba(10, 16, 28, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.member-invite-modal h3 {
+  margin: 0;
+  font-size: clamp(1.3rem, 3vw, 1.8rem);
+  line-height: 1;
+}
+
+.member-invite-modal p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.member-invite-modal input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(136, 156, 196, 0.24);
+  border-radius: 14px;
+  background: rgba(8, 16, 31, 0.72);
+  color: #cfd8ea;
+  font: inherit;
+}
+
+.member-invite-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 1580px) {
-  .member-list-head {
-    display: none;
-  }
-
   .member-row-list {
-    grid-template-columns: 72px minmax(220px, 1fr) minmax(110px, 0.55fr) minmax(230px, 1fr) minmax(170px, 0.7fr) minmax(220px, 0.9fr);
+    grid-template-columns: 64px minmax(180px, 1fr) minmax(96px, 0.5fr) minmax(250px, 1fr) minmax(180px, 0.8fr) minmax(200px, 0.9fr);
     grid-template-areas:
-      "index player attendance bomb web actions"
-      "index player attendance bomb discord actions";
-    align-items: start;
-    padding: 16px;
-  }
-
-  .member-mobile-label {
-    display: inline-block;
-    margin-bottom: 6px;
-    font-size: 0.7rem;
+      "index player attendance bomb status actions"
+      "index player attendance bomb status actions";
   }
 
   .member-cell-index {
-    grid-area: index;
-    align-self: start;
-    padding-top: 2px;
+    align-items: flex-start;
+    padding-top: 8px;
   }
 
   .member-cell-player {
-    grid-area: player;
-    align-self: center;
+    align-self: flex-start;
+    padding-top: 4px;
   }
 
   .member-cell-bomb {
@@ -1027,17 +1331,9 @@ li {
     grid-area: attendance;
   }
 
-  .member-cell-web-status {
-    grid-area: web;
-  }
-
-  .member-cell-discord-status {
-    grid-area: discord;
-  }
-
   .member-cell-actions {
     grid-area: actions;
-    align-self: end;
+    align-self: center;
   }
 
   .member-bomb-controls {
@@ -1056,27 +1352,132 @@ li {
   }
 
   .member-actions-inline {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .member-invite-trigger {
+    min-height: 36px;
   }
 }
 
 @media (max-width: 1320px) {
   .member-row-list {
-    grid-template-columns: 72px minmax(220px, 1.1fr) minmax(120px, 0.6fr) minmax(220px, 1fr) minmax(180px, 0.72fr);
+    grid-template-columns: 64px minmax(220px, 1fr) minmax(220px, 1fr) minmax(180px, 0.8fr);
     grid-template-areas:
-      "index player attendance bomb web"
-      "index player attendance discord actions";
-    align-items: start;
+      "index player attendance status"
+      "index bomb bomb actions";
+    align-items: center;
   }
 
   .member-cell-index {
-    align-self: stretch;
-    align-items: flex-start;
-    padding-top: 6px;
+    align-self: start;
+    padding-top: 10px;
   }
 
   .member-bomb-custom {
     grid-template-columns: 1fr;
+  }
+
+  .member-actions-inline {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1480px) {
+  .member-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .ranking-month-tabs {
+    align-items: stretch;
+  }
+
+  .ranking-month-tabs .button {
+    width: 100%;
+  }
+
+  .ranking-toolbar {
+    align-items: stretch;
+  }
+
+  .ranking-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ranking-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "pos player"
+      "metric metric";
+    align-items: center;
+  }
+
+  .ranking-position {
+    grid-area: pos;
+  }
+
+  .ranking-player {
+    grid-area: player;
+  }
+
+  .ranking-metric {
+    grid-area: metric;
+  }
+
+  .member-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .member-card {
+    min-height: auto;
+  }
+
+  .member-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .member-card-attendance {
+    justify-items: start;
+  }
+
+  .member-row-list {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "player"
+      "attendance"
+      "bomb"
+      "status"
+      "actions";
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .member-cell-index {
+    display: none;
+  }
+
+  .member-cell-player,
+  .member-cell-attendance,
+  .member-cell-bomb,
+  .member-cell-status-stack,
+  .member-cell-actions {
+    align-self: stretch;
+  }
+
+  .member-actions-inline {
+    grid-template-columns: 1fr;
+  }
+
+  .member-toolbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .member-invite-modal-actions .button {
+    width: 100%;
   }
 }
 

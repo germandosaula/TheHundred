@@ -143,6 +143,14 @@ export async function routeRequest(
     return json(await services.getPublicPerformance({ month: url.searchParams.get("month") ?? undefined }));
   }
 
+  if (method === "GET" && url.pathname === "/public/invites/validate") {
+    const code = url.searchParams.get("code")?.trim();
+    if (!code) {
+      return json({ valid: false });
+    }
+    return json(await services.validateInvite(code));
+  }
+
   if (method === "GET" && url.pathname === "/me") {
     return json(requireAuthenticatedUser(context.currentUser));
   }
@@ -151,6 +159,12 @@ export async function routeRequest(
     const payload = requireRegisterPayload(await parseBody<RegisterPayload>(request));
     const result = await services.registerMember(payload);
     return json(result, 201);
+  }
+
+  if (method === "POST" && url.pathname === "/invites") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.createInvite(currentUser), 201);
   }
 
   if (method === "GET" && url.pathname === "/ctas") {
@@ -168,7 +182,7 @@ export async function routeRequest(
   if (method === "GET" && url.pathname === "/ranking") {
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
-    return json(await services.getRanking());
+    return json(await services.getRanking({ month: url.searchParams.get("month") ?? undefined }));
   }
 
   if (method === "GET" && url.pathname === "/battles") {

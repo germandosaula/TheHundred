@@ -47,6 +47,15 @@ export interface RecruitmentApplicationRecord {
   updatedAt: string;
 }
 
+export interface InviteRecord {
+  id: string;
+  code: string;
+  createdBy: string;
+  createdAt: string;
+  consumedBy?: string;
+  consumedAt?: string;
+}
+
 export interface SaveRecruitmentApplicationInput {
   userId: string;
   displayName: string;
@@ -240,4 +249,7 @@ export interface DatabaseRepository {
     applicationId: string,
     status: RecruitmentApplicationStatus
   ): Promise<RecruitmentApplicationRecord | null>;
+  createInvite(createdBy: string): Promise<InviteRecord>;
+  getInviteByCode(code: string): Promise<InviteRecord | null>;
+  consumeInvite(code: string, consumedBy: string): Promise<InviteRecord | null>;
 }

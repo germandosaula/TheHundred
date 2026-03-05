@@ -27,7 +27,10 @@ const services = createApiServices(repository, killboard, {
   albionBattlesGuildId: config.albionBattlesGuildId,
   albionBattlesGuildName: config.albionBattlesGuildName,
   albionBattlesMinGuildPlayers: config.albionBattlesMinGuildPlayers,
-  albionBattlesLimit: config.albionBattlesLimit
+  albionBattlesLimit: config.albionBattlesLimit,
+  launchCountdownEnabled: config.launchCountdownEnabled,
+  launchAtIso: config.launchAtIso,
+  appBaseUrl: config.appBaseUrl
 });
 const auth = createAuthServices(repository, config);
 

@@ -1,9 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 interface LandingLaunchControlsProps {
   devLoginUrl: string | null;
+  discordUrl: string;
+  hasValidInvite: boolean;
   loginUrl?: string;
   enforceCountdown: boolean;
 }
@@ -12,6 +15,8 @@ const launchAt = new Date("2026-03-23T12:00:00+01:00").getTime();
 
 export function LandingLaunchControls({
   devLoginUrl,
+  discordUrl,
+  hasValidInvite,
   loginUrl,
   enforceCountdown
 }: LandingLaunchControlsProps) {
@@ -30,7 +35,7 @@ export function LandingLaunchControls({
   const remainingMs = launchAt - now;
   const hasLaunched = remainingMs <= 0;
   const countdownText = useMemo(() => formatCountdown(remainingMs), [remainingMs]);
-  const shouldLockLogin = enforceCountdown && !hasLaunched;
+  const shouldLockLogin = enforceCountdown && !hasLaunched && !hasValidInvite;
   const canLogin = !shouldLockLogin && Boolean(loginUrl);
   const loginLabel = shouldLockLogin ? `Login (${countdownText})` : "Login";
 
@@ -41,6 +46,17 @@ export function LandingLaunchControls({
         <strong>{hasLaunched ? "Abierto ahora" : countdownText}</strong>
       </div>
       <div className="landing-actions">
+        <a className="button ghost" href={discordUrl} rel="noreferrer" target="_blank">
+          <Image
+            alt=""
+            aria-hidden
+            className="discord-button-icon"
+            height={18}
+            src="/discord-white-icon.webp"
+            width={18}
+          />
+          Discord
+        </a>
         {devLoginUrl ? (
           <a className="button ghost" href={devLoginUrl}>
             Dev Login

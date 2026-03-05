@@ -22,12 +22,15 @@ export interface ApiServices {
     displayName: string;
     discordId: string;
     albionName: string;
+    inviteCode?: string;
     avatarUrl?: string;
     timezone: string;
     mainRole: string;
     zvzExperience: string;
     notes?: string;
   }): Promise<{ userId: string; alreadyRegistered: boolean; applicationId: string }>;
+  validateInvite(code: string): Promise<{ valid: boolean }>;
+  createInvite(actor: User): Promise<{ code: string; inviteUrl: string }>;
   requirePrivateAccess(actor: User): Promise<void>;
   getPublicPerformance(input?: { month?: string }): Promise<{
     trackedBattles: number;
@@ -106,7 +109,21 @@ export interface ApiServices {
       }
     >
   >;
-  getRanking(): Promise<Array<{ memberId: string; points: number }>>;
+  getRanking(input?: { month?: string }): Promise<{
+    selectedMonth: string;
+    selectedMonthLabel: string;
+    pagination: {
+      previousMonth?: string;
+      nextMonth?: string;
+    };
+    entries: Array<{
+      memberId: string;
+      displayName: string;
+      avatarUrl?: string;
+      attendanceCount: number;
+      attendancePercent: number;
+    }>;
+  }>;
   createCta(actor: User, title: string, datetimeUtc: string): Promise<CTA>;
   finalizeCta(
     actor: User,
@@ -167,6 +184,9 @@ export function createApiServices(
     albionBattlesGuildName?: string;
     albionBattlesMinGuildPlayers: number;
     albionBattlesLimit: number;
+    launchCountdownEnabled: boolean;
+    launchAtIso: string;
+    appBaseUrl: string;
   }
 ): ApiServices {
   const compRoleOrder = ["Tank", "Healer", "Support", "Melee", "Ranged", "Battlemount"];
@@ -185,6 +205,18 @@ export function createApiServices(
     },
 
     async registerMember(input) {
+      if (isPrelaunchActive(options)) {
+        const inviteCode = input.inviteCode?.trim();
+        if (!inviteCode) {
+          throw new DomainError("Invite required before launch");
+        }
+
+        const invite = await repository.getInviteByCode(inviteCode);
+        if (!invite || invite.consumedAt) {
+          throw new DomainError("Invite is invalid or already used");
+        }
+      }
+
       const existingUser = await repository.getUserByDiscordId(input.discordId);
       let userId: string;
       let alreadyRegistered: boolean;
@@ -219,7 +251,32 @@ export function createApiServices(
         notes: input.notes ?? ""
       });
 
+      if (isPrelaunchActive(options) && input.inviteCode) {
+        const consumedInvite = await repository.consumeInvite(input.inviteCode.trim(), userId);
+        if (!consumedInvite) {
+          throw new DomainError("Invite is invalid or already used");
+        }
+      }
+
       return { userId, alreadyRegistered, applicationId: application.id };
+    },
+
+    async validateInvite(code) {
+      const invite = await repository.getInviteByCode(code.trim());
+      return {
+        valid: Boolean(invite && !invite.consumedAt)
+      };
+    },
+
+    async createInvite(actor) {
+      assertOfficerOrAdmin(actor.role);
+      const invite = await repository.createInvite(actor.id);
+      const inviteUrl = new URL("/", options.appBaseUrl);
+      inviteUrl.searchParams.set("invite", invite.code);
+      return {
+        code: invite.code,
+        inviteUrl: inviteUrl.toString()
+      };
     },
 
     async requirePrivateAccess(actor) {
@@ -502,8 +559,86 @@ export function createApiServices(
       });
     },
 
-    async getRanking() {
-      return repository.getRanking();
+    async getRanking(input) {
+      await syncLatestBattlePerformanceSnapshots({
+        repository,
+        killboard,
+        guildId: options.albionBattlesGuildId?.trim() || undefined,
+        guildName: options.albionBattlesGuildName?.trim() || undefined,
+        minGuildPlayers: options.albionBattlesMinGuildPlayers,
+        limit: options.albionBattlesLimit
+      });
+
+      const [members, users, snapshots, attendances] = await Promise.all([
+        repository.getMembers(),
+        repository.getUsers(),
+        repository.getBattlePerformanceSnapshots(),
+        repository.getBattleMemberAttendances()
+      ]);
+      const selectedMonth = resolveSelectedMonth(input?.month);
+      const selectedMonthLabel = formatSelectedMonthLabel(selectedMonth);
+      const monthRange = getMonthRange(selectedMonth);
+
+      const usersById = new Map(users.map((user) => [user.id, user]));
+      const attendanceCountByMemberId = new Map<string, number>();
+      const snapshotIdsInMonth = new Set(
+        snapshots
+          .filter((snapshot) => {
+            const time = new Date(snapshot.startTime).getTime();
+            return time >= monthRange.start.getTime() && time < monthRange.end.getTime();
+          })
+          .map((snapshot) => snapshot.battleId)
+      );
+
+      for (const attendance of attendances) {
+        if (!snapshotIdsInMonth.has(attendance.battleId)) {
+          continue;
+        }
+        attendanceCountByMemberId.set(
+          attendance.memberId,
+          (attendanceCountByMemberId.get(attendance.memberId) ?? 0) + 1
+        );
+      }
+
+      const totalBattles = snapshotIdsInMonth.size;
+
+      const entries = members
+        .filter((member) => !member.kickedAt)
+        .map((member) => {
+          const attendanceCount = attendanceCountByMemberId.get(member.id) ?? 0;
+          const attendancePercent = totalBattles > 0 ? (attendanceCount / totalBattles) * 100 : 0;
+          const user = usersById.get(member.userId);
+          const displayName = user?.displayName ?? member.userId;
+
+          return {
+            memberId: member.id,
+            displayName,
+            avatarUrl: user?.avatarUrl,
+            attendanceCount,
+            attendancePercent
+          };
+        })
+        .sort((left, right) => {
+          if (right.attendanceCount !== left.attendanceCount) {
+            return right.attendanceCount - left.attendanceCount;
+          }
+
+          if (right.attendancePercent !== left.attendancePercent) {
+            return right.attendancePercent - left.attendancePercent;
+          }
+
+          return left.displayName.localeCompare(right.displayName, "es");
+        });
+
+      return {
+        selectedMonth,
+        selectedMonthLabel,
+        pagination: {
+          previousMonth: shiftMonth(selectedMonth, -1),
+          nextMonth: shiftMonth(selectedMonth, 1)
+        },
+        entries
+      };
     },
 
     async listBattles(actor) {
@@ -1039,4 +1174,20 @@ async function syncBattlesWithRosterSplit(args: {
       };
     })
   );
+}
+
+function isPrelaunchActive(options: {
+  launchCountdownEnabled: boolean;
+  launchAtIso: string;
+}): boolean {
+  if (!options.launchCountdownEnabled) {
+    return false;
+  }
+
+  const launchAt = Date.parse(options.launchAtIso);
+  if (Number.isNaN(launchAt)) {
+    return false;
+  }
+
+  return Date.now() < launchAt;
 }

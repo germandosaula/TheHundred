@@ -25,6 +25,7 @@ import type {
   CompSlotRecord,
   CreateCtaInput,
   DatabaseRepository,
+  InviteRecord,
   RecruitmentApplicationRecord,
   RecruitmentApplicationStatus,
   RegisterMemberInput,
@@ -141,6 +142,15 @@ type CtaSignupRow = {
   weapon_name: string;
   player_name: string;
   reacted_at: string;
+};
+
+type InviteRow = {
+  id: string;
+  code: string;
+  created_by: string;
+  created_at: string;
+  consumed_by: string | null;
+  consumed_at: string | null;
 };
 
 type BattlePerformanceSnapshotRow = {
@@ -1128,6 +1138,54 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
 
     return data ? mapRecruitmentApplication(data) : null;
   }
+
+  async createInvite(createdBy: string): Promise<InviteRecord> {
+    const code = randomUUID().replace(/-/g, "");
+    const { data, error } = await this.client
+      .from("invites")
+      .insert({
+        code,
+        created_by: createdBy
+      })
+      .select("id, code, created_by, created_at, consumed_by, consumed_at")
+      .single<InviteRow>();
+    if (error || !data) {
+      throw createSupabaseDomainError("Failed to create invite in Supabase", error);
+    }
+
+    return mapInvite(data);
+  }
+
+  async getInviteByCode(code: string): Promise<InviteRecord | null> {
+    const { data, error } = await this.client
+      .from("invites")
+      .select("id, code, created_by, created_at, consumed_by, consumed_at")
+      .eq("code", code)
+      .maybeSingle<InviteRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load invite by code from Supabase", error);
+    }
+
+    return data ? mapInvite(data) : null;
+  }
+
+  async consumeInvite(code: string, consumedBy: string): Promise<InviteRecord | null> {
+    const { data, error } = await this.client
+      .from("invites")
+      .update({
+        consumed_by: consumedBy,
+        consumed_at: new Date().toISOString()
+      })
+      .eq("code", code)
+      .is("consumed_at", null)
+      .select("id, code, created_by, created_at, consumed_by, consumed_at")
+      .maybeSingle<InviteRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to consume invite in Supabase", error);
+    }
+
+    return data ? mapInvite(data) : null;
+  }
 }
 
 export function createSupabaseRepository(
@@ -1194,6 +1252,17 @@ function mapPointsEntry(row: PointsEntryRow): PointsEntry {
     points: row.points,
     createdAt: row.created_at,
     reversedAt: row.reversed_at ?? undefined
+  };
+}
+
+function mapInvite(row: InviteRow): InviteRecord {
+  return {
+    id: row.id,
+    code: row.code,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    consumedBy: row.consumed_by ?? undefined,
+    consumedAt: row.consumed_at ?? undefined
   };
 }
 

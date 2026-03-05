@@ -4,7 +4,9 @@ import { cookies } from "next/headers";
 const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
 
 export async function POST(request: Request) {
-  const sessionToken = (await cookies()).get("th_session")?.value;
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get("th_session")?.value;
+  const inviteCode = cookieStore.get("th_invite_code")?.value;
   const payload = (await request.json()) as {
     displayName?: string;
     discordId?: string;
@@ -22,15 +24,27 @@ export async function POST(request: Request) {
       "content-type": "application/json",
       ...(sessionToken ? { "x-session-token": sessionToken } : {})
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      ...payload,
+      inviteCode
+    })
   });
 
   const body = await response.text();
 
-  return new NextResponse(body, {
+  const nextResponse = new NextResponse(body, {
     status: response.status,
     headers: {
       "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8"
     }
   });
+
+  if (response.ok && inviteCode) {
+    nextResponse.cookies.set("th_invite_code", "", {
+      path: "/",
+      maxAge: 0
+    });
+  }
+
+  return nextResponse;
 }

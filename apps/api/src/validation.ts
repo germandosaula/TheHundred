@@ -4,6 +4,7 @@ export interface RegisterPayload {
   displayName: string;
   discordId: string;
   albionName: string;
+  inviteCode?: string;
   avatarUrl?: string;
   timezone: string;
   mainRole: string;
@@ -74,6 +75,7 @@ export function requireRegisterPayload(payload: RegisterPayload | null): Registe
     displayName: payload.displayName.trim(),
     discordId: payload.discordId.trim(),
     albionName: payload.albionName.trim(),
+    inviteCode: payload.inviteCode?.trim() || undefined,
     avatarUrl: payload.avatarUrl?.trim() || undefined,
     timezone: payload.timezone?.trim() || "",
     mainRole: payload.mainRole?.trim() || "",

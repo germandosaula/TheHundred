@@ -5,15 +5,26 @@ import { LandingLaunchControls } from "./LandingLaunchControls";
 import { PageEntryLoader } from "./PageEntryLoader";
 
 const defaultDevDiscordId = "173816196720885760";
+const defaultDiscordInviteUrl = "https://discord.gg/uad2bAXQdz";
 
-export default async function LandingPage() {
-  const { authStart, hasPrivateAccess, slots } = await getLandingData();
+interface LandingPageProps {
+  searchParams: Promise<{
+    invite?: string;
+  }>;
+}
+
+export default async function LandingPage({ searchParams }: LandingPageProps) {
+  const params = await searchParams;
+  const inviteCode = params.invite?.trim();
+  const { authStartUrl, hasPrivateAccess, inviteValid, slots } = await getLandingData(inviteCode);
+  const currentYear = new Date().getUTCFullYear();
   const showDevLogin = (process.env.API_BASE_URL ?? "http://localhost:3001").startsWith("http://localhost:");
   const devDiscordId = process.env.DEV_LOGIN_DISCORD_ID ?? defaultDevDiscordId;
   const devLoginUrl =
     showDevLogin && devDiscordId
       ? `${process.env.API_BASE_URL ?? "http://localhost:3001"}/auth/dev-login?discord_id=${encodeURIComponent(devDiscordId)}`
       : null;
+  const discordInviteUrl = process.env.DISCORD_INVITE_URL ?? defaultDiscordInviteUrl;
   const enforceLaunchCountdown = process.env.LAUNCH_COUNTDOWN_ENABLED !== "0";
 
   return (
@@ -36,8 +47,10 @@ export default async function LandingPage() {
           </Link>
           <LandingLaunchControls
             devLoginUrl={devLoginUrl}
+            discordUrl={discordInviteUrl}
             enforceCountdown={enforceLaunchCountdown}
-            loginUrl={authStart?.authorizationUrl}
+            hasValidInvite={inviteValid}
+            loginUrl={authStartUrl}
           />
         </header>
 
@@ -56,8 +69,7 @@ export default async function LandingPage() {
             <div className="hero-actions">
               <a
                 className="button primary"
-                href={authStart?.authorizationUrl ?? "#"}
-                aria-disabled={!authStart?.authorizationUrl}
+                href={authStartUrl}
               >
                 Quiero Unirme
               </a>
@@ -181,6 +193,23 @@ export default async function LandingPage() {
             </article>
           </div>
         </section>
+
+        <footer className="landing-footer">
+          <div className="landing-footer-inner">
+            <div className="landing-footer-brand">
+              <Image
+                alt="The Hundred logo"
+                className="landing-footer-logo"
+                height={40}
+                src="/thehundred_logo.png"
+                width={40}
+              />
+              <strong>The Hundred</strong>
+            </div>
+            <p className="landing-footer-copy">© {currentYear} The Hundred</p>
+            <p className="landing-footer-copy">Desarrollado por LaHuella</p>
+          </div>
+        </footer>
       </main>
     </PageEntryLoader>
   );

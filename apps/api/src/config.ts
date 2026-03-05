@@ -16,6 +16,8 @@ export interface ApiConfig {
   albionBattlesGuildName: string;
   albionBattlesMinGuildPlayers: number;
   albionBattlesLimit: number;
+  launchCountdownEnabled: boolean;
+  launchAtIso: string;
 }
 
 export function loadApiConfig(): ApiConfig {
@@ -44,7 +46,9 @@ export function loadApiConfig(): ApiConfig {
     albionBattlesGuildId: process.env.ALBION_BATTLES_GUILD_ID ?? "",
     albionBattlesGuildName: process.env.ALBION_BATTLES_GUILD_NAME ?? "The Hundred",
     albionBattlesMinGuildPlayers: Number(process.env.ALBION_BATTLES_MIN_GUILD_PLAYERS ?? 20),
-    albionBattlesLimit: Number(process.env.ALBION_BATTLES_LIMIT ?? 12)
+    albionBattlesLimit: Number(process.env.ALBION_BATTLES_LIMIT ?? 12),
+    launchCountdownEnabled: process.env.LAUNCH_COUNTDOWN_ENABLED !== "0",
+    launchAtIso: process.env.LAUNCH_AT_ISO ?? "2026-03-23T12:00:00+01:00"
   };
 }
 

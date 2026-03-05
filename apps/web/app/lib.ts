@@ -53,7 +53,20 @@ export interface MeData {
 
 export interface RankingEntry {
   memberId: string;
-  points: number;
+  displayName: string;
+  avatarUrl?: string;
+  attendanceCount: number;
+  attendancePercent: number;
+}
+
+export interface RankingData {
+  selectedMonth: string;
+  selectedMonthLabel: string;
+  pagination: {
+    previousMonth?: string;
+    nextMonth?: string;
+  };
+  entries: RankingEntry[];
 }
 
 export interface BattleEntry {
@@ -208,6 +221,10 @@ export interface AuthStartData {
   authorizationUrl: string;
 }
 
+export interface InviteValidationData {
+  valid: boolean;
+}
+
 export interface CompSlotEntry {
   id: string;
   position: number;
@@ -270,24 +287,27 @@ export async function getJson<T>(
   }
 }
 
-export async function getLandingData() {
+export async function getLandingData(inviteCode?: string) {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
-  const [slots, authStart, me, performance, ctas] = await Promise.all([
+  const inviteQuery = inviteCode ? `?code=${encodeURIComponent(inviteCode)}` : "";
+  const [slots, me, performance, ctas, inviteValidation] = await Promise.all([
     getJson<SlotsData>("/public/slots"),
-    getJson<AuthStartData>("/auth/discord/start"),
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<PublicPerformanceData>("/public/performance"),
-    getJson<CtaEntry[]>("/ctas", sessionToken, discordId)
+    getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
+    inviteCode ? getJson<InviteValidationData>(`/public/invites/validate${inviteQuery}`) : Promise.resolve(null)
   ]);
 
   return {
     sessionToken,
     slots,
-    authStart,
+    authStartUrl: inviteCode ? `/auth/start?invite=${encodeURIComponent(inviteCode)}` : "/auth/start",
     me,
     performance,
-    hasPrivateAccess: Boolean(ctas)
+    hasPrivateAccess: Boolean(ctas),
+    inviteCode,
+    inviteValid: Boolean(inviteValidation?.valid)
   };
 }
 
@@ -296,13 +316,14 @@ export async function getPublicPerformanceData(month?: string) {
   return getJson<PublicPerformanceData>(`/public/performance${query}`);
 }
 
-export async function getPrivateDashboardData() {
+export async function getPrivateDashboardData(month?: string) {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
+  const rankingPath = month ? `/ranking?month=${encodeURIComponent(month)}` : "/ranking";
 
   const [me, ranking, ctas, slots] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
-    getJson<RankingEntry[]>("/ranking", sessionToken, discordId),
+    getJson<RankingData>(rankingPath, sessionToken, discordId),
     getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
     getJson<SlotsData>("/public/slots")
   ]);

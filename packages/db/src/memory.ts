@@ -22,6 +22,7 @@ import type {
   CompSlotRecord,
   CreateCtaInput,
   DatabaseRepository,
+  InviteRecord,
   RecruitmentApplicationRecord,
   RecruitmentApplicationStatus,
   RegisterMemberInput,
@@ -42,6 +43,7 @@ export interface RepositoryState {
   battleMemberAttendances: BattleMemberAttendanceRecord[];
   comps: CompRecord[];
   recruitmentApplications: RecruitmentApplicationRecord[];
+  invites: InviteRecord[];
 }
 
 export class InMemoryDatabaseRepository implements DatabaseRepository {
@@ -579,6 +581,32 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     application.updatedAt = new Date().toISOString();
     return application;
   }
+
+  async createInvite(createdBy: string): Promise<InviteRecord> {
+    const invite: InviteRecord = {
+      id: randomUUID(),
+      code: randomUUID().replace(/-/g, ""),
+      createdBy,
+      createdAt: new Date().toISOString()
+    };
+    this.state.invites.push(invite);
+    return invite;
+  }
+
+  async getInviteByCode(code: string): Promise<InviteRecord | null> {
+    return this.state.invites.find((entry) => entry.code === code) ?? null;
+  }
+
+  async consumeInvite(code: string, consumedBy: string): Promise<InviteRecord | null> {
+    const invite = await this.getInviteByCode(code);
+    if (!invite || invite.consumedAt) {
+      return null;
+    }
+
+    invite.consumedBy = consumedBy;
+    invite.consumedAt = new Date().toISOString();
+    return invite;
+  }
 }
 
 export function createSeedState(): RepositoryState {
@@ -660,6 +688,7 @@ export function createSeedState(): RepositoryState {
     battleMemberAttendances: [],
     comps: [],
     recruitmentApplications: [],
+    invites: [],
     config: {
       attendancePoints: 10,
       absencePenalty: 5,
