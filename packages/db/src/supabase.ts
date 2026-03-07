@@ -16,13 +16,19 @@ import {
   type UserRole
 } from "@thehundred/domain";
 import type {
+  BuildTemplateRecord,
   BattleMemberAttendanceRecord,
   BattlePerformanceBombRecord,
   BattlePerformanceSnapshotRecord,
+  BuildTemplateItemSlot,
+  CouncilTaskCategory,
+  CouncilTaskRecord,
+  CouncilTaskStatus,
   CtaSignupRecord,
   CompRecord,
   CompPartyRecord,
   CompSlotRecord,
+  CreateCouncilTaskInput,
   CreateCtaInput,
   DatabaseRepository,
   InviteRecord,
@@ -30,7 +36,9 @@ import type {
   RecruitmentApplicationStatus,
   RegisterMemberInput,
   SaveCompInput,
-  SaveRecruitmentApplicationInput
+  SaveBuildTemplateInput,
+  SaveRecruitmentApplicationInput,
+  UpdateCouncilTaskInput
 } from "./repository.ts";
 
 interface SupabaseRepositoryOptions {
@@ -115,7 +123,40 @@ type CompSlotRow = {
   role: string;
   weapon_id: string;
   weapon_name: string;
+  build_id: string | null;
   notes: string | null;
+};
+
+type BuildTemplateRow = {
+  id: string;
+  name: string;
+  role: string;
+  weapon_id: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type BuildTemplateItemRow = {
+  id: string;
+  build_id: string;
+  slot: BuildTemplateItemSlot;
+  item_id: string;
+  item_name: string;
+  position: number;
+};
+
+type CouncilTaskRow = {
+  id: string;
+  title: string;
+  description: string;
+  category: CouncilTaskCategory;
+  status: CouncilTaskStatus;
+  assigned_member_id: string | null;
+  execute_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type RecruitmentApplicationRow = {
@@ -799,7 +840,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     if (compIds.length > 0) {
       const { data: slotRows, error: slotsError } = await this.client
         .from("comp_slots")
-        .select("id, comp_id, party_key, party_name, party_position, position, label, player_user_id, player_name, role, weapon_id, weapon_name, notes")
+        .select("id, comp_id, party_key, party_name, party_position, position, label, player_user_id, player_name, role, weapon_id, weapon_name, build_id, notes")
         .in("comp_id", compIds)
         .order("party_position", { ascending: true })
         .order("position", { ascending: true })
@@ -894,6 +935,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
         role: slot.role,
         weapon_id: slot.weaponId,
         weapon_name: slot.weaponName,
+        build_id: slot.buildId ?? null,
         notes: slot.notes || null
       }))
     );
@@ -902,7 +944,7 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
       const { data: savedSlots, error: slotError } = await this.client
         .from("comp_slots")
         .insert(flattenedSlots)
-        .select("id, comp_id, party_key, party_name, party_position, position, label, player_user_id, player_name, role, weapon_id, weapon_name, notes")
+        .select("id, comp_id, party_key, party_name, party_position, position, label, player_user_id, player_name, role, weapon_id, weapon_name, build_id, notes")
         .order("party_position", { ascending: true })
         .order("position", { ascending: true })
         .returns<CompSlotRow[]>();
@@ -948,6 +990,302 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
       .maybeSingle<{ id: string }>();
     if (error) {
       throw createSupabaseDomainError("Failed to delete comp in Supabase", error);
+    }
+
+    return Boolean(data?.id);
+  }
+
+  async getBuildTemplates(): Promise<BuildTemplateRecord[]> {
+    const { data: builds, error: buildsError } = await this.client
+      .from("build_templates")
+      .select("id, name, role, weapon_id, created_by, created_at, updated_at")
+      .order("updated_at", { ascending: false })
+      .returns<BuildTemplateRow[]>();
+    if (buildsError) {
+      throw createSupabaseDomainError("Failed to load build templates from Supabase", buildsError);
+    }
+
+    const buildIds = (builds ?? []).map((build) => build.id);
+    let items: BuildTemplateItemRow[] = [];
+
+    if (buildIds.length > 0) {
+      const { data: itemRows, error: itemsError } = await this.client
+        .from("build_template_items")
+        .select("id, build_id, slot, item_id, item_name, position")
+        .in("build_id", buildIds)
+        .order("position", { ascending: true })
+        .returns<BuildTemplateItemRow[]>();
+      if (itemsError) {
+        throw createSupabaseDomainError("Failed to load build template items from Supabase", itemsError);
+      }
+      items = itemRows ?? [];
+    }
+
+    const itemsByBuildId = new Map<string, BuildTemplateRecord["items"]>();
+    for (const item of items) {
+      const current = itemsByBuildId.get(item.build_id) ?? [];
+      current.push({
+        slot: item.slot,
+        itemId: item.item_id,
+        itemName: item.item_name
+      });
+      itemsByBuildId.set(item.build_id, current);
+    }
+
+    return (builds ?? []).map((build) => ({
+      id: build.id,
+      name: build.name,
+      role: build.role,
+      weaponId: build.weapon_id,
+      createdBy: build.created_by ?? undefined,
+      createdAt: build.created_at,
+      updatedAt: build.updated_at,
+      items: itemsByBuildId.get(build.id) ?? []
+    }));
+  }
+
+  async getBuildTemplateById(buildId: string): Promise<BuildTemplateRecord | null> {
+    const { data, error } = await this.client
+      .from("build_templates")
+      .select("id, name, role, weapon_id, created_by, created_at, updated_at")
+      .eq("id", buildId)
+      .maybeSingle<BuildTemplateRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load build template by id from Supabase", error);
+    }
+    if (!data) {
+      return null;
+    }
+
+    const { data: items, error: itemsError } = await this.client
+      .from("build_template_items")
+      .select("id, build_id, slot, item_id, item_name, position")
+      .eq("build_id", buildId)
+      .order("position", { ascending: true })
+      .returns<BuildTemplateItemRow[]>();
+    if (itemsError) {
+      throw createSupabaseDomainError("Failed to load build template items by id from Supabase", itemsError);
+    }
+
+    return {
+      id: data.id,
+      name: data.name,
+      role: data.role,
+      weaponId: data.weapon_id,
+      createdBy: data.created_by ?? undefined,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      items: (items ?? []).map((item) => ({
+        slot: item.slot,
+        itemId: item.item_id,
+        itemName: item.item_name
+      }))
+    };
+  }
+
+  async saveBuildTemplate(input: SaveBuildTemplateInput): Promise<BuildTemplateRecord> {
+    const payload = {
+      name: input.name,
+      role: input.role,
+      weapon_id: input.weaponId,
+      updated_at: new Date().toISOString()
+    };
+
+    const buildMutation = input.id
+      ? this.client.from("build_templates").update(payload).eq("id", input.id)
+      : this.client.from("build_templates").insert({
+          ...payload,
+          created_by: input.createdBy ?? null
+        });
+
+    const { data: build, error: buildError } = await buildMutation
+      .select("id, name, role, weapon_id, created_by, created_at, updated_at")
+      .single<BuildTemplateRow>();
+    if (buildError || !build) {
+      throw createSupabaseDomainError("Failed to save build template in Supabase", buildError);
+    }
+
+    const { error: deleteItemsError } = await this.client
+      .from("build_template_items")
+      .delete()
+      .eq("build_id", build.id);
+    if (deleteItemsError) {
+      throw createSupabaseDomainError("Failed to replace build template items in Supabase", deleteItemsError);
+    }
+
+    const normalizedItems = input.items
+      .map((item) => ({
+        slot: item.slot,
+        item_id: item.itemId,
+        item_name: item.itemName
+      }))
+      .filter((item) => item.item_id.trim().length > 0 && item.item_name.trim().length > 0);
+
+    if (normalizedItems.length > 0) {
+      const { error: insertItemsError } = await this.client.from("build_template_items").insert(
+        normalizedItems.map((item, index) => ({
+          build_id: build.id,
+          slot: item.slot,
+          item_id: item.item_id,
+          item_name: item.item_name,
+          position: index + 1
+        }))
+      );
+      if (insertItemsError) {
+        throw createSupabaseDomainError("Failed to save build template items in Supabase", insertItemsError);
+      }
+    }
+
+    const result = await this.getBuildTemplateById(build.id);
+    if (!result) {
+      throw new DomainError("Build template not found after save");
+    }
+    return result;
+  }
+
+  async deleteBuildTemplate(buildId: string): Promise<boolean> {
+    const { error: clearSlotsError } = await this.client
+      .from("comp_slots")
+      .update({ build_id: null })
+      .eq("build_id", buildId);
+    if (clearSlotsError) {
+      throw createSupabaseDomainError("Failed to unlink build template from comp slots", clearSlotsError);
+    }
+
+    const { data, error } = await this.client
+      .from("build_templates")
+      .delete()
+      .eq("id", buildId)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to delete build template in Supabase", error);
+    }
+    return Boolean(data?.id);
+  }
+
+  async getCouncilTasks(): Promise<CouncilTaskRecord[]> {
+    const { data, error } = await this.client
+      .from("council_tasks")
+      .select("id, title, description, category, status, assigned_member_id, execute_at, created_by, created_at, updated_at")
+      .order("execute_at", { ascending: true, nullsFirst: false })
+      .order("updated_at", { ascending: false })
+      .returns<CouncilTaskRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load council tasks from Supabase", error);
+    }
+
+    return (data ?? []).map(mapCouncilTask);
+  }
+
+  async getCouncilTaskById(taskId: string): Promise<CouncilTaskRecord | null> {
+    const { data, error } = await this.client
+      .from("council_tasks")
+      .select("id, title, description, category, status, assigned_member_id, execute_at, created_by, created_at, updated_at")
+      .eq("id", taskId)
+      .maybeSingle<CouncilTaskRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load council task by id from Supabase", error);
+    }
+
+    return data ? mapCouncilTask(data) : null;
+  }
+
+  async createCouncilTask(input: CreateCouncilTaskInput): Promise<CouncilTaskRecord> {
+    const { data, error } = await this.client
+      .from("council_tasks")
+      .insert({
+        title: input.title,
+        description: input.description,
+        category: input.category,
+        status: input.status ?? "TODO",
+        assigned_member_id: input.assignedMemberId ?? null,
+        execute_at: input.executeAt ?? null,
+        created_by: input.createdBy
+      })
+      .select("id, title, description, category, status, assigned_member_id, execute_at, created_by, created_at, updated_at")
+      .single<CouncilTaskRow>();
+    if (error || !data) {
+      throw createSupabaseDomainError("Failed to create council task in Supabase", error);
+    }
+
+    return mapCouncilTask(data);
+  }
+
+  async updateCouncilTask(taskId: string, input: UpdateCouncilTaskInput): Promise<CouncilTaskRecord | null> {
+    const updates: {
+      title?: string;
+      description?: string;
+      category?: CouncilTaskCategory;
+      status?: CouncilTaskStatus;
+      assigned_member_id?: string | null;
+      execute_at?: string | null;
+      updated_at: string;
+    } = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (typeof input.title === "string") {
+      updates.title = input.title;
+    }
+    if (typeof input.description === "string") {
+      updates.description = input.description;
+    }
+    if (typeof input.category === "string") {
+      updates.category = input.category;
+    }
+    if (typeof input.status === "string") {
+      updates.status = input.status;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "assignedMemberId")) {
+      updates.assigned_member_id = input.assignedMemberId ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "executeAt")) {
+      updates.execute_at = input.executeAt ?? null;
+    }
+
+    const { data, error } = await this.client
+      .from("council_tasks")
+      .update(updates)
+      .eq("id", taskId)
+      .select("id, title, description, category, status, assigned_member_id, execute_at, created_by, created_at, updated_at")
+      .maybeSingle<CouncilTaskRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to update council task in Supabase", error);
+    }
+
+    return data ? mapCouncilTask(data) : null;
+  }
+
+  async updateCouncilTaskStatus(
+    taskId: string,
+    status: CouncilTaskStatus
+  ): Promise<CouncilTaskRecord | null> {
+    const { data, error } = await this.client
+      .from("council_tasks")
+      .update({
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", taskId)
+      .select("id, title, description, category, status, assigned_member_id, execute_at, created_by, created_at, updated_at")
+      .maybeSingle<CouncilTaskRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to update council task status in Supabase", error);
+    }
+
+    return data ? mapCouncilTask(data) : null;
+  }
+
+  async deleteCouncilTask(taskId: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("council_tasks")
+      .delete()
+      .eq("id", taskId)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to delete council task in Supabase", error);
     }
 
     return Boolean(data?.id);
@@ -1317,6 +1655,7 @@ function mapCompSlot(row: CompSlotRow): CompSlotRecord {
     role: row.role,
     weaponId: row.weapon_id,
     weaponName: row.weapon_name,
+    buildId: row.build_id ?? undefined,
     notes: row.notes ?? ""
   };
 }
@@ -1350,6 +1689,21 @@ function mapCtaSignup(row: CtaSignupRow): CtaSignupRecord {
     weaponName: row.weapon_name,
     playerName: row.player_name,
     reactedAt: row.reacted_at
+  };
+}
+
+function mapCouncilTask(row: CouncilTaskRow): CouncilTaskRecord {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    category: row.category,
+    status: row.status,
+    assignedMemberId: row.assigned_member_id ?? undefined,
+    executeAt: row.execute_at ?? undefined,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 

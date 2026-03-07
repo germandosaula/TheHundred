@@ -12,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ authenticated: false, hasPrivateAccess: false }, { status: 200 });
   }
 
-  const [meResponse, ctasResponse] = await Promise.all([
+  const [meResponse, accessResponse] = await Promise.all([
     fetch(`${apiBaseUrl}/me`, {
       headers: {
         ...(sessionToken ? { "x-session-token": sessionToken } : {}),
@@ -20,7 +20,7 @@ export async function GET() {
       },
       cache: "no-store"
     }),
-    fetch(`${apiBaseUrl}/ctas`, {
+    fetch(`${apiBaseUrl}/private/access`, {
       headers: {
         ...(sessionToken ? { "x-session-token": sessionToken } : {}),
         ...(discordId ? { "x-discord-id": discordId } : {})
@@ -35,6 +35,6 @@ export async function GET() {
 
   return NextResponse.json({
     authenticated: true,
-    hasPrivateAccess: ctasResponse.ok
+    hasPrivateAccess: accessResponse.ok
   });
 }

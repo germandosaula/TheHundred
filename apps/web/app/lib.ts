@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
 
@@ -175,7 +176,9 @@ export interface CtaEntry {
       slotKey: string;
       role: string;
       label: string;
+      weaponId: string;
       weaponName: string;
+      buildId?: string;
       playerName?: string;
       playerUserId?: string;
     }>;
@@ -199,11 +202,11 @@ export interface MemberEntry {
   albionName?: string;
   discordId: string;
   avatarUrl?: string;
-  status: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+  status: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "COUNCIL" | "REJECTED";
   bombGroupName?: string;
   attendanceCount: number;
   attendancePercent: number;
-  discordRoleStatus?: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+  discordRoleStatus?: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "COUNCIL" | "REJECTED";
   discordRoleSyncedAt?: string;
 }
 
@@ -213,8 +216,50 @@ export interface AssignableCompPlayerEntry {
   displayName: string;
   discordId: string;
   avatarUrl?: string;
-  status: "TRIAL" | "CORE" | "BENCHED";
-  discordRoleStatus?: "TRIAL" | "CORE" | "BENCHED";
+  status: "TRIAL" | "CORE" | "BENCHED" | "COUNCIL";
+  discordRoleStatus?: "TRIAL" | "CORE" | "BENCHED" | "COUNCIL";
+}
+
+export interface CouncilMemberEntry {
+  memberId: string;
+  userId: string;
+  displayName: string;
+  discordId: string;
+  avatarUrl?: string;
+}
+
+export interface CouncilTaskEntry {
+  id: string;
+  title: string;
+  description: string;
+  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  status: "TODO" | "IN_PROGRESS" | "DONE";
+  assignedMemberId?: string;
+  assignedDisplayName?: string;
+  executeAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlbionPlayerLookupData {
+  query: string;
+  player?: {
+    id: string;
+    name: string;
+    guildName?: string;
+    killFame: number;
+    deathFame: number;
+    kdFame: number;
+    previousGuilds: string[];
+    guildHistory: Array<{
+      guildName: string;
+      joinedAt?: string;
+      leftAt?: string;
+    }>;
+    guildHistorySource?: "official" | "albiondb" | "unavailable";
+    guildHistoryNote?: string;
+  };
 }
 
 export interface AuthStartData {
@@ -234,6 +279,7 @@ export interface CompSlotEntry {
   role: string;
   weaponId: string;
   weaponName: string;
+  buildId?: string;
   notes: string;
 }
 
@@ -252,6 +298,33 @@ export interface CompEntry {
   parties: CompPartyEntry[];
 }
 
+export type BuildItemSlotKey =
+  | "MAIN_HAND"
+  | "OFF_HAND"
+  | "HEAD"
+  | "ARMOR"
+  | "SHOES"
+  | "CAPE"
+  | "BAG"
+  | "MOUNT"
+  | "FOOD"
+  | "POTION";
+
+export interface BuildTemplateEntry {
+  id: string;
+  name: string;
+  role: string;
+  weaponId: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  items: Array<{
+    slot: BuildItemSlotKey;
+    itemId: string;
+    itemName: string;
+  }>;
+}
+
 export async function getSessionToken(): Promise<string | undefined> {
   return (await cookies()).get("th_session")?.value;
 }
@@ -260,11 +333,11 @@ export async function getDiscordId(): Promise<string | undefined> {
   return (await cookies()).get("th_discord_id")?.value;
 }
 
-export async function getJson<T>(
+const getJsonCached = cache(async (
   path: string,
   sessionToken?: string,
   discordId?: string
-): Promise<T | null> {
+): Promise<unknown | null> => {
   try {
     const response = await fetch(`${apiBaseUrl}${path}`, {
       cache: "no-store",
@@ -281,21 +354,30 @@ export async function getJson<T>(
       return null;
     }
 
-    return (await response.json()) as T;
+    return await response.json();
   } catch {
     return null;
   }
+});
+
+export async function getJson<T>(
+  path: string,
+  sessionToken?: string,
+  discordId?: string
+): Promise<T | null> {
+  const payload = await getJsonCached(path, sessionToken, discordId);
+  return payload as T | null;
 }
 
 export async function getLandingData(inviteCode?: string) {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
   const inviteQuery = inviteCode ? `?code=${encodeURIComponent(inviteCode)}` : "";
-  const [slots, me, performance, ctas, inviteValidation] = await Promise.all([
+  const [slots, me, performance, privateAccessProbe, inviteValidation] = await Promise.all([
     getJson<SlotsData>("/public/slots"),
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<PublicPerformanceData>("/public/performance"),
-    getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
+    getJson<{ ok: true }>("/private/access", sessionToken, discordId),
     inviteCode ? getJson<InviteValidationData>(`/public/invites/validate${inviteQuery}`) : Promise.resolve(null)
   ]);
 
@@ -305,7 +387,7 @@ export async function getLandingData(inviteCode?: string) {
     authStartUrl: inviteCode ? `/auth/start?invite=${encodeURIComponent(inviteCode)}` : "/auth/start",
     me,
     performance,
-    hasPrivateAccess: Boolean(ctas),
+    hasPrivateAccess: Boolean(privateAccessProbe),
     inviteCode,
     inviteValid: Boolean(inviteValidation?.valid)
   };
@@ -321,34 +403,163 @@ export async function getPrivateDashboardData(month?: string) {
   const discordId = await getDiscordId();
   const rankingPath = month ? `/ranking?month=${encodeURIComponent(month)}` : "/ranking";
 
-  const [me, ranking, ctas, slots] = await Promise.all([
+  const [me, ranking, ctas, slots, builds] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<RankingData>(rankingPath, sessionToken, discordId),
     getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
-    getJson<SlotsData>("/public/slots")
+    getJson<SlotsData>("/public/slots"),
+    getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId)
   ]);
 
-  const canReadMembers = me?.role === "OFFICER" || me?.role === "ADMIN";
-  const members = canReadMembers
-    ? await getJson<MemberEntry[]>("/members", sessionToken, discordId)
-    : null;
-  const assignablePlayers = canReadMembers
-    ? await getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
-    : null;
+  const [members, assignablePlayers] = await Promise.all([
+    getJson<MemberEntry[]>("/members", sessionToken, discordId),
+    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+  ]);
+  const canManageCouncil = Boolean(members);
+  const canEditCompsAndCtas = Boolean(assignablePlayers);
 
   return {
     sessionToken,
     me,
     ranking,
     ctas,
+    builds: builds ?? [],
     members,
     assignablePlayers: assignablePlayers ?? [],
+    canManageCouncil,
+    canEditCompsAndCtas,
     slots,
     hasPrivateAccess: Boolean(ranking && ctas)
   };
 }
 
 export async function getPrivateCompsData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, comps, assignablePlayers, builds] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<CompEntry[]>("/comps", sessionToken, discordId),
+    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId),
+    getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId)
+  ]);
+
+  return {
+    sessionToken,
+    me,
+    comps: comps ?? [],
+    assignablePlayers: assignablePlayers ?? [],
+    canEditCompsAndCtas: Boolean(assignablePlayers),
+    builds: builds ?? []
+  };
+}
+
+export async function getPrivateOverviewData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, ctas, slots, managementProbe] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
+    getJson<SlotsData>("/public/slots"),
+    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    ctas,
+    slots,
+    canManageCouncil: Boolean(managementProbe)
+  };
+}
+
+export async function getPrivateRankingData(month?: string) {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+  const rankingPath = month ? `/ranking?month=${encodeURIComponent(month)}` : "/ranking";
+
+  const [me, ranking] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<RankingData>(rankingPath, sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    ranking
+  };
+}
+
+export async function getPrivateCtasData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, ctas, assignablePlayers, builds, councilProbe] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
+    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId),
+    getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId),
+    getJson<CouncilMemberEntry[]>("/council/members", sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    ctas,
+    assignablePlayers: assignablePlayers ?? [],
+    canEditCompsAndCtas: Boolean(assignablePlayers),
+    canCancelCta: Boolean(councilProbe),
+    builds: builds ?? []
+  };
+}
+
+export async function getPrivateMembersData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, members] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<MemberEntry[]>("/members", sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    members,
+    canManageCouncil: Boolean(members)
+  };
+}
+
+export async function getPrivateScoutingData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, managementProbe] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    canManageCouncil: Boolean(managementProbe)
+  };
+}
+
+export async function getPrivateCouncilTasksData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+  const [me, councilMembers, councilTasks] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<CouncilMemberEntry[]>("/council/members", sessionToken, discordId),
+    getJson<CouncilTaskEntry[]>("/council/tasks", sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    councilMembers: councilMembers ?? [],
+    councilTasks: councilTasks ?? [],
+    canAccessCouncilTasks: Boolean(councilMembers && councilTasks)
+  };
+}
+
+export async function getPrivateCompsOverviewData() {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
 
@@ -359,11 +570,14 @@ export async function getPrivateCompsData() {
   ]);
 
   return {
-    sessionToken,
     me,
     comps: comps ?? [],
-    assignablePlayers: assignablePlayers ?? []
+    canEditCompsAndCtas: Boolean(assignablePlayers)
   };
+}
+
+export async function getPrivateCompsEditorData() {
+  return getPrivateCompsData();
 }
 
 export async function getPrivateBattlesData() {
@@ -379,6 +593,18 @@ export async function getPrivateBattlesData() {
     me,
     battles
   };
+}
+
+export async function getPrivateAlbionPlayerLookup(name?: string) {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  if (!name?.trim()) {
+    return null;
+  }
+
+  const query = `?name=${encodeURIComponent(name.trim())}`;
+  return getJson<AlbionPlayerLookupData>(`/albion/players/search${query}`, sessionToken, discordId);
 }
 
 export async function getPrivateBattleDetailData(battleId: string) {

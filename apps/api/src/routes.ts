@@ -8,15 +8,23 @@ import {
   requireAssignCtaSlotPayload,
   requireMemberBombGroupPayload,
   requireKickMemberPayload,
+  requireCreateCouncilTaskPayload,
+  requireUpdateCouncilTaskPayload,
+  requireCouncilTaskStatusPayload,
   requireMemberStatusPayload,
   requireRegisterPayload,
+  requireSaveBuildPayload,
   requireSaveCompPayload,
   type CreateCtaPayload,
   type RegisterPayload,
   type SaveCompPayload,
   type UpdateMemberBombGroupPayload,
   type KickMemberPayload,
-  type UpdateMemberStatusPayload
+  type SaveBuildPayload,
+  type UpdateMemberStatusPayload,
+  type CreateCouncilTaskPayload,
+  type UpdateCouncilTaskPayload,
+  type UpdateCouncilTaskStatusPayload
 } from "./validation.ts";
 
 const defaultDevDiscordId = "173816196720885760";
@@ -155,6 +163,12 @@ export async function routeRequest(
     return json(requireAuthenticatedUser(context.currentUser));
   }
 
+  if (method === "GET" && url.pathname === "/private/access") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json({ ok: true });
+  }
+
   if (method === "POST" && url.pathname === "/register") {
     const payload = requireRegisterPayload(await parseBody<RegisterPayload>(request));
     const result = await services.registerMember(payload);
@@ -179,10 +193,105 @@ export async function routeRequest(
     return json(await services.listMembers(currentUser));
   }
 
+  if (method === "GET" && url.pathname === "/council/members") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.listCouncilMembers(currentUser));
+  }
+
+  if (method === "GET" && url.pathname === "/council/tasks") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.listCouncilTasks(currentUser));
+  }
+
+  if (method === "POST" && url.pathname === "/council/tasks") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const payload = requireCreateCouncilTaskPayload(
+      await parseBody<CreateCouncilTaskPayload>(request)
+    );
+    return json(await services.createCouncilTask(currentUser, payload), 201);
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/council\/tasks\/[^/]+$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const taskId = url.pathname.split("/")[3];
+    const payload = requireUpdateCouncilTaskPayload(
+      await parseBody<UpdateCouncilTaskPayload>(request)
+    );
+    return json(await services.updateCouncilTask(currentUser, taskId, payload));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/council\/tasks\/[^/]+\/status$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const taskId = url.pathname.split("/")[3];
+    const payload = requireCouncilTaskStatusPayload(
+      await parseBody<UpdateCouncilTaskStatusPayload>(request)
+    );
+    return json(await services.updateCouncilTaskStatus(currentUser, taskId, payload.status));
+  }
+
+  if (method === "DELETE" && url.pathname.match(/^\/council\/tasks\/[^/]+$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const taskId = url.pathname.split("/")[3];
+    return json(await services.deleteCouncilTask(currentUser, taskId));
+  }
+
   if (method === "GET" && url.pathname === "/ranking") {
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
     return json(await services.getRanking({ month: url.searchParams.get("month") ?? undefined }));
+  }
+
+  if (method === "GET" && url.pathname === "/albion/players/search") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const name = url.searchParams.get("name")?.trim();
+    if (!name) {
+      return json({ error: "name is required" }, 400);
+    }
+    return json(await services.getAlbionPlayerByName(currentUser, name));
+  }
+
+  if (method === "GET" && url.pathname === "/albion/items/search") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const query = url.searchParams.get("q")?.trim();
+    const slot = url.searchParams.get("slot")?.trim();
+    if (!query) {
+      return json({ error: "q is required" }, 400);
+    }
+    const allowedSlots = new Set([
+      "MAIN_HAND",
+      "OFF_HAND",
+      "HEAD",
+      "ARMOR",
+      "SHOES",
+      "CAPE",
+      "BAG",
+      "MOUNT",
+      "FOOD",
+      "POTION"
+    ]);
+    if (slot && !allowedSlots.has(slot)) {
+      return json({ error: "slot is invalid" }, 400);
+    }
+    return json(await services.searchAlbionItems(currentUser, query, slot as
+      | "MAIN_HAND"
+      | "OFF_HAND"
+      | "HEAD"
+      | "ARMOR"
+      | "SHOES"
+      | "CAPE"
+      | "BAG"
+      | "MOUNT"
+      | "FOOD"
+      | "POTION"
+      | undefined));
   }
 
   if (method === "GET" && url.pathname === "/battles") {
@@ -220,6 +329,12 @@ export async function routeRequest(
     return json(await services.listAssignableCompPlayers(currentUser));
   }
 
+  if (method === "GET" && url.pathname === "/builds") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.listBuildTemplates(currentUser));
+  }
+
   if (method === "POST" && url.pathname === "/ctas") {
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
@@ -232,6 +347,13 @@ export async function routeRequest(
     await services.requirePrivateAccess(currentUser);
     const ctaId = url.pathname.split("/")[2];
     return json(await services.finalizeCta(currentUser, ctaId));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/cancel$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    return json(await services.cancelCta(currentUser, ctaId));
   }
 
   if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/slots$/)) {
@@ -294,9 +416,26 @@ export async function routeRequest(
             ...slot,
             playerUserId: slot.playerUserId,
             playerName: slot.playerName ?? "",
+            buildId: slot.buildId,
             notes: slot.notes ?? ""
           }))
         }))
+      }),
+      201
+    );
+  }
+
+  if (method === "POST" && url.pathname === "/builds") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const payload = requireSaveBuildPayload(await parseBody<SaveBuildPayload>(request));
+    return json(
+      await services.saveBuildTemplate(currentUser, {
+        id: payload.id,
+        name: payload.name,
+        role: payload.role,
+        weaponId: payload.weaponId,
+        items: payload.items
       }),
       201
     );
@@ -307,6 +446,13 @@ export async function routeRequest(
     await services.requirePrivateAccess(currentUser);
     const compId = url.pathname.split("/")[2];
     return json(await services.deleteComp(currentUser, compId));
+  }
+
+  if (method === "DELETE" && url.pathname.match(/^\/builds\/[^/]+$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const buildId = url.pathname.split("/")[2];
+    return json(await services.deleteBuildTemplate(currentUser, buildId));
   }
 
   return json({ error: "Not found" }, 404);

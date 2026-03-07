@@ -1,15 +1,15 @@
 import { redirect } from "next/navigation";
 import { CompsOverview } from "./CompsOverview";
-import { getPrivateCompsData, getPrivateDashboardData } from "../../lib";
+import { getPrivateCompsOverviewData } from "../../lib";
 
 export default async function CompsPage() {
-  const { me, comps } = await getPrivateCompsData();
+  const { me, comps, canEditCompsAndCtas } = await getPrivateCompsOverviewData();
 
   if (!me) {
     redirect("/");
   }
 
-  const canEdit = me.role === "OFFICER" || me.role === "ADMIN";
+  const canEdit = canEditCompsAndCtas;
 
   return <CompsOverview canEdit={canEdit} comps={comps} />;
 }

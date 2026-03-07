@@ -45,8 +45,31 @@ export interface SaveCompPayload {
       role: string;
       weaponId: string;
       weaponName: string;
+      buildId?: string;
       notes?: string;
     }>;
+  }>;
+}
+
+export interface SaveBuildPayload {
+  id?: string;
+  name: string;
+  role: string;
+  weaponId: string;
+  items: Array<{
+    slot:
+      | "MAIN_HAND"
+      | "OFF_HAND"
+      | "HEAD"
+      | "ARMOR"
+      | "SHOES"
+      | "CAPE"
+      | "BAG"
+      | "MOUNT"
+      | "FOOD"
+      | "POTION";
+    itemId: string;
+    itemName: string;
   }>;
 }
 
@@ -55,7 +78,28 @@ export interface AssignCtaSlotPayload {
   slotKey: string;
 }
 
-const allowedMemberStatuses = new Set<MemberStatus>(["TRIAL", "CORE", "BENCHED", "REJECTED"]);
+export interface CreateCouncilTaskPayload {
+  title: string;
+  description: string;
+  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  assignedMemberId?: string;
+  executeAt?: string;
+}
+
+export interface UpdateCouncilTaskPayload {
+  title?: string;
+  description?: string;
+  category?: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  assignedMemberId?: string;
+  executeAt?: string;
+  status?: "TODO" | "IN_PROGRESS" | "DONE";
+}
+
+export interface UpdateCouncilTaskStatusPayload {
+  status: "TODO" | "IN_PROGRESS" | "DONE";
+}
+
+const allowedMemberStatuses = new Set<MemberStatus>(["TRIAL", "CORE", "BENCHED", "COUNCIL", "REJECTED"]);
 
 export function requireRegisterPayload(payload: RegisterPayload | null): RegisterPayload {
   if (
@@ -103,7 +147,7 @@ export function requireMemberStatusPayload(
   payload: UpdateMemberStatusPayload | null
 ): UpdateMemberStatusPayload {
   if (!payload?.status || !allowedMemberStatuses.has(payload.status)) {
-    throw new DomainError("status must be one of TRIAL, CORE, BENCHED, REJECTED");
+    throw new DomainError("status must be one of TRIAL, CORE, BENCHED, COUNCIL, REJECTED");
   }
 
   return payload;
@@ -186,6 +230,7 @@ export function requireSaveCompPayload(payload: SaveCompPayload | null): SaveCom
             role: slot.role.trim(),
             weaponId: slot.weaponId.trim(),
             weaponName: slot.weaponName.trim(),
+            buildId: slot.buildId?.trim() || undefined,
             notes: slot.notes?.trim() ?? ""
           };
         })
@@ -203,4 +248,145 @@ export function requireAssignCtaSlotPayload(payload: AssignCtaSlotPayload | null
     slotKey: payload.slotKey.trim(),
     playerUserId: payload.playerUserId?.trim() || undefined
   };
+}
+
+const allowedBuildSlots = new Set([
+  "MAIN_HAND",
+  "OFF_HAND",
+  "HEAD",
+  "ARMOR",
+  "SHOES",
+  "CAPE",
+  "BAG",
+  "MOUNT",
+  "FOOD",
+  "POTION"
+]);
+const allowedCouncilTaskCategories = new Set(["LOGISTICA", "ECONOMIA", "CONTENT", "ANUNCIOS"]);
+const allowedCouncilTaskStatuses = new Set(["TODO", "IN_PROGRESS", "DONE"]);
+
+export function requireSaveBuildPayload(payload: SaveBuildPayload | null): SaveBuildPayload {
+  if (
+    !payload?.name?.trim() ||
+    !payload?.role?.trim() ||
+    !payload?.weaponId?.trim() ||
+    !Array.isArray(payload.items)
+  ) {
+    throw new DomainError("name, role, weaponId and items are required");
+  }
+
+  const seenSlots = new Set<string>();
+  const items = payload.items.map((item, index) => {
+    if (
+      !item?.slot ||
+      !allowedBuildSlots.has(item.slot) ||
+      !item?.itemId?.trim() ||
+      !item?.itemName?.trim()
+    ) {
+      throw new DomainError(`build item ${index + 1} is invalid`);
+    }
+
+    if (seenSlots.has(item.slot)) {
+      throw new DomainError("build item slots must be unique");
+    }
+
+    seenSlots.add(item.slot);
+    return {
+      slot: item.slot,
+      itemId: item.itemId.trim(),
+      itemName: item.itemName.trim()
+    };
+  });
+
+  return {
+    id: payload.id,
+    name: payload.name.trim(),
+    role: payload.role.trim(),
+    weaponId: payload.weaponId.trim(),
+    items
+  };
+}
+
+export function requireCreateCouncilTaskPayload(
+  payload: CreateCouncilTaskPayload | null
+): CreateCouncilTaskPayload {
+  if (
+    !payload?.title?.trim() ||
+    !payload?.description?.trim() ||
+    !payload?.category ||
+    !allowedCouncilTaskCategories.has(payload.category)
+  ) {
+    throw new DomainError("title, description and valid category are required");
+  }
+
+  const executeAt = payload.executeAt?.trim() || undefined;
+  if (executeAt && Number.isNaN(Date.parse(executeAt))) {
+    throw new DomainError("executeAt must be a valid ISO date");
+  }
+
+  return {
+    title: payload.title.trim(),
+    description: payload.description.trim(),
+    category: payload.category,
+    assignedMemberId: payload.assignedMemberId?.trim() || undefined,
+    executeAt
+  };
+}
+
+export function requireUpdateCouncilTaskPayload(
+  payload: UpdateCouncilTaskPayload | null
+): UpdateCouncilTaskPayload {
+  if (!payload || typeof payload !== "object") {
+    throw new DomainError("payload is required");
+  }
+
+  const hasAnyField =
+    payload.title !== undefined ||
+    payload.description !== undefined ||
+    payload.category !== undefined ||
+    payload.assignedMemberId !== undefined ||
+    payload.executeAt !== undefined ||
+    payload.status !== undefined;
+
+  if (!hasAnyField) {
+    throw new DomainError("at least one field is required");
+  }
+
+  if (payload.title !== undefined && !payload.title.trim()) {
+    throw new DomainError("title cannot be empty");
+  }
+  if (payload.description !== undefined && !payload.description.trim()) {
+    throw new DomainError("description cannot be empty");
+  }
+  if (payload.category !== undefined && !allowedCouncilTaskCategories.has(payload.category)) {
+    throw new DomainError("category is invalid");
+  }
+  if (payload.status !== undefined && !allowedCouncilTaskStatuses.has(payload.status)) {
+    throw new DomainError("status is invalid");
+  }
+
+  const executeAt = payload.executeAt?.trim();
+  if (executeAt && Number.isNaN(Date.parse(executeAt))) {
+    throw new DomainError("executeAt must be a valid ISO date");
+  }
+
+  return {
+    title: payload.title?.trim(),
+    description: payload.description?.trim(),
+    category: payload.category,
+    assignedMemberId:
+      payload.assignedMemberId === undefined ? undefined : payload.assignedMemberId.trim() || undefined,
+    executeAt: payload.executeAt === undefined ? undefined : executeAt || undefined,
+    status: payload.status
+  };
+}
+
+export function requireCouncilTaskStatusPayload(
+  payload: UpdateCouncilTaskStatusPayload | null
+): UpdateCouncilTaskStatusPayload {
+  if (!payload?.status || !allowedCouncilTaskStatuses.has(payload.status)) {
+    throw new DomainError("status must be TODO, IN_PROGRESS or DONE");
+  }
+
+  return payload;
 }

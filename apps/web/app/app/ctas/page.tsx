@@ -1,17 +1,18 @@
 import { redirect } from "next/navigation";
-import { getPrivateDashboardData } from "../../lib";
+import { getPrivateCtasData } from "../../lib";
 import { CtasLiveRefresh } from "./CtasLiveRefresh";
 import { CtaBoard } from "./CtaBoard";
 
 export default async function CtasPage() {
-  const { me, ctas, assignablePlayers } = await getPrivateDashboardData();
+  const { me, ctas, assignablePlayers, builds, canEditCompsAndCtas, canCancelCta } =
+    await getPrivateCtasData();
 
   if (!me) {
     redirect("/");
   }
-  const canEdit = me.role === "OFFICER" || me.role === "ADMIN";
+  const canEdit = canEditCompsAndCtas;
 
-  const visibleCtas = ctas?.filter((cta) => cta.status !== "FINALIZED") ?? [];
+  const visibleCtas = ctas?.filter((cta) => cta.status !== "FINALIZED" && cta.status !== "CANCELED") ?? [];
 
   return (
     <section className="dashboard-stack ctas-page">
@@ -20,17 +21,12 @@ export default async function CtasPage() {
         <div className="section-row">
           <div>
             <span className="card-label">CTAs</span>
-            <h2>La agenda de guerra del roster.</h2>
+            <h2>CTAs de hoy</h2>
           </div>
           <div className="actions">
             <span className="status-badge">{visibleCtas.length} activas</span>
           </div>
         </div>
-        <p className="lede">
-          Aqui entra el contenido que importa: llamadas activas, compos vinculadas y como va el
-          signup real del roster para cada CTA abierta desde Discord. Esta vista se refresca sola
-          para seguir el estado del bot.
-        </p>
       </article>
       {!ctas ? (
         <article className="dashboard-card">
@@ -39,12 +35,19 @@ export default async function CtasPage() {
       ) : visibleCtas.length > 0 ? (
         <div className="cta-board-list">
           {visibleCtas.map((cta) => (
-            <CtaBoard assignablePlayers={assignablePlayers} canEdit={canEdit} cta={cta} key={cta.id} />
+            <CtaBoard
+              assignablePlayers={assignablePlayers}
+              builds={builds}
+              canCancel={canCancelCta}
+              canEdit={canEdit}
+              cta={cta}
+              key={cta.id}
+            />
           ))}
         </div>
       ) : (
         <article className="dashboard-card">
-          <p className="empty">Ahora mismo no hay CTAs abiertas en el war room.</p>
+          <p className="empty">Aún no hay ping disponible.</p>
         </article>
       )}
     </section>

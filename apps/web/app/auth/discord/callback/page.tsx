@@ -25,7 +25,7 @@ async function hasPrivateAccess(sessionToken?: string): Promise<boolean> {
   }
 
   try {
-    const response = await fetch(`${apiBaseUrl}/ctas`, {
+    const response = await fetch(`${apiBaseUrl}/private/access`, {
       cache: "no-store",
       headers: {
         "x-session-token": sessionToken

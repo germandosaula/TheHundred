@@ -1,8 +1,8 @@
 export type UserRole = "PLAYER" | "OFFICER" | "ADMIN";
-export type MemberStatus = "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+export type MemberStatus = "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "COUNCIL" | "REJECTED";
 export type AttendanceDecision = "YES" | "NO" | "JUSTIFIED";
 export type AttendanceState = "PRESENT" | "ABSENT";
-export type CTAStatus = "CREATED" | "OPEN" | "FINALIZED";
+export type CTAStatus = "CREATED" | "OPEN" | "FINALIZED" | "CANCELED";
 export type RegearStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED";
 
 export interface User {
@@ -62,7 +62,8 @@ export interface GuildConfig {
   memberCap: number;
 }
 
-const slotConsumingStatuses: MemberStatus[] = ["TRIAL", "CORE", "BENCHED"];
+const slotConsumingStatuses: MemberStatus[] = ["TRIAL", "CORE", "BENCHED", "COUNCIL"];
+const privateAccessStatuses: MemberStatus[] = ["TRIAL", "CORE", "COUNCIL"];
 
 export class DomainError extends Error {
   constructor(message: string) {
@@ -72,17 +73,19 @@ export class DomainError extends Error {
 }
 
 const allowedStatusTransitions: Record<MemberStatus, MemberStatus[]> = {
-  PENDING: ["TRIAL", "REJECTED"],
-  TRIAL: ["CORE", "REJECTED"],
-  CORE: ["BENCHED", "REJECTED"],
-  BENCHED: ["CORE", "REJECTED"],
+  PENDING: ["TRIAL", "COUNCIL", "REJECTED"],
+  TRIAL: ["CORE", "COUNCIL", "REJECTED"],
+  CORE: ["BENCHED", "COUNCIL", "REJECTED"],
+  BENCHED: ["CORE", "COUNCIL", "REJECTED"],
+  COUNCIL: ["CORE", "BENCHED", "REJECTED"],
   REJECTED: ["TRIAL"]
 };
 
 const allowedCtaTransitions: Record<CTAStatus, CTAStatus[]> = {
-  CREATED: ["OPEN"],
-  OPEN: ["FINALIZED"],
-  FINALIZED: []
+  CREATED: ["OPEN", "CANCELED"],
+  OPEN: ["FINALIZED", "CANCELED"],
+  FINALIZED: [],
+  CANCELED: []
 };
 
 export function transitionMemberStatus(
@@ -151,7 +154,7 @@ export function memberHasPrivateAccess(member: GuildMember | null): boolean {
     return false;
   }
 
-  return slotConsumingStatuses.includes(member.status) && member.discordRoleStatus === member.status;
+  return privateAccessStatuses.includes(member.status) && member.discordRoleStatus === member.status;
 }
 
 export function generateAttendancePointsEntries(args: {

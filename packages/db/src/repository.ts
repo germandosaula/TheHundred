@@ -74,7 +74,81 @@ export interface CompSlotRecord {
   role: string;
   weaponId: string;
   weaponName: string;
+  buildId?: string;
   notes: string;
+}
+
+export type BuildTemplateItemSlot =
+  | "MAIN_HAND"
+  | "OFF_HAND"
+  | "HEAD"
+  | "ARMOR"
+  | "SHOES"
+  | "CAPE"
+  | "BAG"
+  | "MOUNT"
+  | "FOOD"
+  | "POTION";
+
+export interface BuildTemplateItemRecord {
+  slot: BuildTemplateItemSlot;
+  itemId: string;
+  itemName: string;
+}
+
+export interface BuildTemplateRecord {
+  id: string;
+  name: string;
+  role: string;
+  weaponId: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  items: BuildTemplateItemRecord[];
+}
+
+export interface SaveBuildTemplateInput {
+  id?: string;
+  name: string;
+  role: string;
+  weaponId: string;
+  createdBy?: string;
+  items: BuildTemplateItemRecord[];
+}
+
+export type CouncilTaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
+export type CouncilTaskCategory = "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+
+export interface CouncilTaskRecord {
+  id: string;
+  title: string;
+  description: string;
+  category: CouncilTaskCategory;
+  status: CouncilTaskStatus;
+  assignedMemberId?: string;
+  executeAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCouncilTaskInput {
+  title: string;
+  description: string;
+  category: CouncilTaskCategory;
+  status?: CouncilTaskStatus;
+  assignedMemberId?: string;
+  executeAt?: string;
+  createdBy: string;
+}
+
+export interface UpdateCouncilTaskInput {
+  title?: string;
+  description?: string;
+  category?: CouncilTaskCategory;
+  status?: CouncilTaskStatus;
+  assignedMemberId?: string;
+  executeAt?: string;
 }
 
 export interface CompPartyRecord {
@@ -133,6 +207,7 @@ export interface SaveCompInput {
       role: string;
       weaponId: string;
       weaponName: string;
+      buildId?: string;
       notes: string;
     }>;
   }>;
@@ -233,6 +308,16 @@ export interface DatabaseRepository {
   getCompById(compId: string): Promise<CompRecord | null>;
   saveComp(input: SaveCompInput): Promise<CompRecord>;
   deleteComp(compId: string): Promise<boolean>;
+  getBuildTemplates(): Promise<BuildTemplateRecord[]>;
+  getBuildTemplateById(buildId: string): Promise<BuildTemplateRecord | null>;
+  saveBuildTemplate(input: SaveBuildTemplateInput): Promise<BuildTemplateRecord>;
+  deleteBuildTemplate(buildId: string): Promise<boolean>;
+  getCouncilTasks(): Promise<CouncilTaskRecord[]>;
+  getCouncilTaskById(taskId: string): Promise<CouncilTaskRecord | null>;
+  createCouncilTask(input: CreateCouncilTaskInput): Promise<CouncilTaskRecord>;
+  updateCouncilTask(taskId: string, input: UpdateCouncilTaskInput): Promise<CouncilTaskRecord | null>;
+  updateCouncilTaskStatus(taskId: string, status: CouncilTaskStatus): Promise<CouncilTaskRecord | null>;
+  deleteCouncilTask(taskId: string): Promise<boolean>;
   getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]>;
   upsertCtaSignup(input: SaveCtaSignupInput): Promise<CtaSignupRecord>;
   deleteCtaSignup(ctaId: string, memberId: string): Promise<boolean>;

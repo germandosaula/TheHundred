@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { CompsBuilder } from "../CompsBuilder";
-import { getPrivateCompsData, getPrivateDashboardData } from "../../../lib";
+import { getPrivateCompsEditorData } from "../../../lib";
 
 interface NewCompPageProps {
   searchParams: Promise<{
@@ -10,13 +10,13 @@ interface NewCompPageProps {
 
 export default async function NewCompPage({ searchParams }: NewCompPageProps) {
   const params = await searchParams;
-  const { me, comps, assignablePlayers } = await getPrivateCompsData();
+  const { me, comps, builds, canEditCompsAndCtas } = await getPrivateCompsEditorData();
 
   if (!me) {
     redirect("/");
   }
 
-  const canEdit = me.role === "OFFICER" || me.role === "ADMIN";
+  const canEdit = canEditCompsAndCtas;
   const isViewingExistingComp = Boolean(params.comp);
 
   if (!canEdit && !isViewingExistingComp) {
@@ -29,8 +29,8 @@ export default async function NewCompPage({ searchParams }: NewCompPageProps) {
 
   return (
     <CompsBuilder
-      assignablePlayers={assignablePlayers}
       canEdit={canEdit}
+      initialBuilds={builds}
       initialActiveCompId={params.comp}
       initialComps={initialComps}
     />

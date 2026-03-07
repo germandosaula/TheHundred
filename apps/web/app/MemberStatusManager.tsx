@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-type MemberStatus = "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+type MemberStatus = "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "COUNCIL" | "REJECTED";
 
 interface MemberRow {
   id: string;
@@ -21,36 +21,14 @@ interface MemberStatusManagerProps {
   members: MemberRow[];
 }
 
-const allowedTransitions: Record<MemberStatus, Array<Exclude<MemberStatus, "PENDING">>> = {
-  PENDING: ["TRIAL", "REJECTED"],
-  TRIAL: ["CORE", "REJECTED"],
-  CORE: ["BENCHED", "REJECTED"],
-  BENCHED: ["CORE", "REJECTED"],
-  REJECTED: ["TRIAL"]
-};
-
-const statusLabels: Record<Exclude<MemberStatus, "PENDING">, string> = {
-  TRIAL: "Trial",
-  CORE: "Core",
-  BENCHED: "Benched",
-  REJECTED: "Reject"
-};
-
 const currentStatusLabels: Record<MemberStatus, string> = {
   PENDING: "Pendiente",
   TRIAL: "Trial",
   CORE: "Core",
   BENCHED: "Benched",
+  COUNCIL: "Council",
   REJECTED: "Rechazado"
 };
-
-function getDiscordSyncLabel(member: MemberRow) {
-  if (member.discordRoleStatus === member.status) {
-    return currentStatusLabels[member.status];
-  }
-
-  return `Discord pendiente (${member.discordRoleStatus ?? "sin rol de guild"})`;
-}
 
 function formatPercent(value: number) {
   return `${value.toFixed(1).replace(/\.0$/, "").replace(".", ",")}%`;
@@ -262,19 +240,15 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
             </div>
             <div className="member-card-statuses">
               <div className="member-status-row">
-                <span className="member-card-label">Web</span>
-                <span className={`status-badge member-status-pill status-${member.status.toLowerCase()}`}>
-                  {currentStatusLabels[member.status]}
-                </span>
-              </div>
-              <div className="member-status-row">
-                <span className="member-card-label">Discord</span>
+                <span className="member-card-label">Rol</span>
                 <span
-                  className={`status-badge member-sync-pill ${
-                    member.discordRoleStatus === member.status ? "synced" : "pending"
-                  }`}
+                  className={`status-badge member-status-pill status-${(
+                    member.discordRoleStatus ?? "PENDING"
+                  ).toLowerCase()}`}
                 >
-                  {getDiscordSyncLabel(member)}
+                  {member.discordRoleStatus
+                    ? currentStatusLabels[member.discordRoleStatus]
+                    : "Sin rol"}
                 </span>
               </div>
             </div>
@@ -329,21 +303,14 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
             <div className="member-card-actions-wrap">
               <span className="member-card-label">Acciones</span>
               <div className="member-actions member-actions-inline">
-                {allowedTransitions[member.status].map((status) => (
-                  <button
-                    className="status-chip"
-                    disabled={pendingMemberId === member.id || member.status === status}
-                    key={status}
-                    onClick={() => updateStatus(member.id, status)}
-                    type="button"
-                  >
-                    {pendingMemberId === member.id
-                      ? "..."
-                      : member.status === "REJECTED" && status === "TRIAL"
-                        ? "Reopen"
-                        : statusLabels[status]}
-                  </button>
-                ))}
+                <button
+                  className="status-chip member-reject-chip"
+                  disabled={pendingMemberId === member.id || member.status === "REJECTED"}
+                  onClick={() => updateStatus(member.id, "REJECTED")}
+                  type="button"
+                >
+                  {pendingMemberId === member.id ? "..." : "Reject"}
+                </button>
                 <button
                   className="status-chip status-chip-danger member-kick-chip"
                   disabled={pendingMemberId === member.id}

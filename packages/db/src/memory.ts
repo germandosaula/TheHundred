@@ -14,12 +14,16 @@ import {
   type UserRole
 } from "@thehundred/domain";
 import type {
+  BuildTemplateRecord,
   BattleMemberAttendanceRecord,
   BattlePerformanceBombRecord,
   BattlePerformanceSnapshotRecord,
+  CouncilTaskRecord,
+  CouncilTaskStatus,
   CtaSignupRecord,
   CompRecord,
   CompSlotRecord,
+  CreateCouncilTaskInput,
   CreateCtaInput,
   DatabaseRepository,
   InviteRecord,
@@ -27,6 +31,7 @@ import type {
   RecruitmentApplicationStatus,
   RegisterMemberInput,
   SaveCompInput,
+  UpdateCouncilTaskInput,
   SaveRecruitmentApplicationInput
 } from "./repository.ts";
 
@@ -42,6 +47,8 @@ export interface RepositoryState {
   battlePerformanceBombs: BattlePerformanceBombRecord[];
   battleMemberAttendances: BattleMemberAttendanceRecord[];
   comps: CompRecord[];
+  buildTemplates: BuildTemplateRecord[];
+  councilTasks: CouncilTaskRecord[];
   recruitmentApplications: RecruitmentApplicationRecord[];
   invites: InviteRecord[];
 }
@@ -425,6 +432,7 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
               role: slot.role,
               weaponId: slot.weaponId,
               weaponName: slot.weaponName,
+              buildId: slot.buildId,
               notes: slot.notes
             }))
             .sort((left, right) => left.position - right.position)
@@ -446,6 +454,157 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     const nextLength = this.state.comps.filter((comp) => comp.id !== compId).length;
     const deleted = nextLength !== this.state.comps.length;
     this.state.comps = this.state.comps.filter((comp) => comp.id !== compId);
+    return deleted;
+  }
+
+  async getBuildTemplates(): Promise<BuildTemplateRecord[]> {
+    return [...this.state.buildTemplates].sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async getBuildTemplateById(buildId: string): Promise<BuildTemplateRecord | null> {
+    return this.state.buildTemplates.find((build) => build.id === buildId) ?? null;
+  }
+
+  async saveBuildTemplate(input: {
+    id?: string;
+    name: string;
+    role: string;
+    weaponId: string;
+    createdBy?: string;
+    items: Array<{ slot: string; itemId: string; itemName: string }>;
+  }): Promise<BuildTemplateRecord> {
+    const now = new Date().toISOString();
+    const existing = input.id
+      ? this.state.buildTemplates.find((entry) => entry.id === input.id) ?? null
+      : null;
+
+    const next: BuildTemplateRecord = {
+      id: existing?.id ?? input.id ?? randomUUID(),
+      name: input.name,
+      role: input.role,
+      weaponId: input.weaponId,
+      createdBy: existing?.createdBy ?? input.createdBy,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      items: input.items.map((item) => ({
+        slot: item.slot as BuildTemplateRecord["items"][number]["slot"],
+        itemId: item.itemId,
+        itemName: item.itemName
+      }))
+    };
+
+    const index = this.state.buildTemplates.findIndex((entry) => entry.id === next.id);
+    if (index >= 0) {
+      this.state.buildTemplates[index] = next;
+    } else {
+      this.state.buildTemplates.push(next);
+    }
+
+    return next;
+  }
+
+  async deleteBuildTemplate(buildId: string): Promise<boolean> {
+    const nextLength = this.state.buildTemplates.filter((build) => build.id !== buildId).length;
+    const deleted = nextLength !== this.state.buildTemplates.length;
+    this.state.buildTemplates = this.state.buildTemplates.filter((build) => build.id !== buildId);
+    this.state.comps = this.state.comps.map((comp) => ({
+      ...comp,
+      parties: comp.parties.map((party) => ({
+        ...party,
+        slots: party.slots.map((slot) =>
+          slot.buildId === buildId
+            ? {
+                ...slot,
+                buildId: undefined
+              }
+            : slot
+        )
+      }))
+    }));
+    return deleted;
+  }
+
+  async getCouncilTasks(): Promise<CouncilTaskRecord[]> {
+    return [...this.state.councilTasks].sort((left, right) => {
+      const leftTime = left.executeAt ? new Date(left.executeAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const rightTime = right.executeAt ? new Date(right.executeAt).getTime() : Number.MAX_SAFE_INTEGER;
+      if (leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    });
+  }
+
+  async getCouncilTaskById(taskId: string): Promise<CouncilTaskRecord | null> {
+    return this.state.councilTasks.find((task) => task.id === taskId) ?? null;
+  }
+
+  async createCouncilTask(input: CreateCouncilTaskInput): Promise<CouncilTaskRecord> {
+    const now = new Date().toISOString();
+    const next: CouncilTaskRecord = {
+      id: randomUUID(),
+      title: input.title,
+      description: input.description,
+      category: input.category,
+      status: input.status ?? "TODO",
+      assignedMemberId: input.assignedMemberId,
+      executeAt: input.executeAt,
+      createdBy: input.createdBy,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.state.councilTasks.push(next);
+    return next;
+  }
+
+  async updateCouncilTask(
+    taskId: string,
+    input: UpdateCouncilTaskInput
+  ): Promise<CouncilTaskRecord | null> {
+    const task = this.state.councilTasks.find((entry) => entry.id === taskId) ?? null;
+    if (!task) {
+      return null;
+    }
+
+    if (typeof input.title === "string") {
+      task.title = input.title;
+    }
+    if (typeof input.description === "string") {
+      task.description = input.description;
+    }
+    if (typeof input.category === "string") {
+      task.category = input.category;
+    }
+    if (typeof input.status === "string") {
+      task.status = input.status;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "assignedMemberId")) {
+      task.assignedMemberId = input.assignedMemberId;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "executeAt")) {
+      task.executeAt = input.executeAt;
+    }
+    task.updatedAt = new Date().toISOString();
+    return task;
+  }
+
+  async updateCouncilTaskStatus(
+    taskId: string,
+    status: CouncilTaskStatus
+  ): Promise<CouncilTaskRecord | null> {
+    const task = this.state.councilTasks.find((entry) => entry.id === taskId) ?? null;
+    if (!task) {
+      return null;
+    }
+    task.status = status;
+    task.updatedAt = new Date().toISOString();
+    return task;
+  }
+
+  async deleteCouncilTask(taskId: string): Promise<boolean> {
+    const next = this.state.councilTasks.filter((task) => task.id !== taskId);
+    const deleted = next.length !== this.state.councilTasks.length;
+    this.state.councilTasks = next;
     return deleted;
   }
 
@@ -687,6 +846,8 @@ export function createSeedState(): RepositoryState {
     battlePerformanceBombs: [],
     battleMemberAttendances: [],
     comps: [],
+    buildTemplates: [],
+    councilTasks: [],
     recruitmentApplications: [],
     invites: [],
     config: {

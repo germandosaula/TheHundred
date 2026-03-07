@@ -39,10 +39,6 @@ export function CompsOverview({ canEdit, comps }: CompsOverviewProps) {
             <span className="status-badge">Solo consulta</span>
           )}
         </div>
-        <p className="lede">
-          Aqui se consultan todas las comps compartidas de The Hundred. Los players pueden revisarlas;
-          officers y admins son quienes las construyen y actualizan.
-        </p>
       </article>
 
       <div className="comps-overview-list">

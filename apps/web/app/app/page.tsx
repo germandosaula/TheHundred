@@ -1,59 +1,90 @@
 import { redirect } from "next/navigation";
-import { getPrivateDashboardData } from "../lib";
+import Link from "next/link";
+import {
+  getPrivateOverviewData,
+  getPublicPerformanceData,
+} from "../lib";
+import { OverviewAnnouncements } from "./OverviewAnnouncements";
+import { OverviewPlayerPerformanceCard } from "./OverviewPlayerPerformanceCard";
 
 export default async function PrivateOverviewPage() {
-  const { me, slots, ctas, members, hasPrivateAccess } = await getPrivateDashboardData();
+  const [{ me, slots, ctas, canManageCouncil }, performance] = await Promise.all([
+    getPrivateOverviewData(),
+    getPublicPerformanceData(),
+  ]);
 
   if (!me || !slots) {
     redirect("/");
   }
+
+  const openCtas = (ctas ?? []).filter((cta) => cta.status !== "FINALIZED" && cta.status !== "CANCELED");
+  const occupiedSlots = Math.max(0, slots.memberCap - slots.slotsOpen);
+  const canEditAnnouncements = canManageCouncil;
 
   return (
     <section className="dashboard-stack">
       <article className="dashboard-card">
         <div className="section-row">
           <div>
-            <span className="card-label">Situacion actual</span>
-            <h2>
-              {hasPrivateAccess
-                ? "La guild entra a pelear con estructura real."
-                : "Tu acceso esta enlazado, pero aun no esta operativo del todo."}
-            </h2>
+            <span className="card-label">Resumen</span>
+            <h2>Bienvenido a The Hundred</h2>
           </div>
         </div>
-        <p className="lede">
-          {hasPrivateAccess
-            ? "Este war room no existe para decorar. Aqui se refleja quien esta dentro, cuantas plazas quedan vivas y que contenido ya esta abierto para el roster aprobado."
-            : "Tu cuenta ya esta dentro del entorno privado, pero todavia faltan datos operativos o sincronizacion final para abrir todas las vistas de guild."}
-        </p>
       </article>
-      <div className="dashboard-grid">
+
+      <OverviewAnnouncements canEdit={canEditAnnouncements} />
+
+      <div className="dashboard-grid overview-grid">
         <article className="dashboard-card metric-card">
-          <span className="card-label">Huecos reales</span>
+          <span className="card-label">Slots disponibles</span>
           <strong>
             {slots.slotsOpen}/{slots.memberCap}
           </strong>
-          <p>{slots.memberCap - slots.slotsOpen} plazas ya estan ocupadas por miembros activos de guild.</p>
+          <p>{occupiedSlots} ocupados en roster activo.</p>
         </article>
+
         <article className="dashboard-card metric-card">
-          <span className="card-label">CTAs visibles</span>
-          <strong>{ctas?.length ?? "--"}</strong>
+          <span className="card-label">Rendimiento</span>
+          <strong>
+            {Math.round(performance?.attendance.averagePercent ?? 0)}%
+          </strong>
           <p>
-            {ctas
-              ? "Eventos ya visibles para miembros aprobados dentro de The Hundred."
-              : "Las CTAs se abriran aqui cuando el acceso privado quede resuelto por completo."}
+            Attendance medio · Main{" "}
+            {Math.round(performance?.main.sharePercent ?? 0)}% · Bomb{" "}
+            {Math.round(performance?.bombTotals.sharePercent ?? 0)}%.
           </p>
         </article>
-        <article className="dashboard-card metric-card">
-          <span className="card-label">Roster conectado</span>
-          <strong>{members?.length ?? "--"}</strong>
-          <p>
-            {members
-              ? "Miembros sincronizados con la misma base operativa que usa el bot de Discord."
-              : "Vista operacional reservada para officers y admins."}
-          </p>
-        </article>
+
+        <OverviewPlayerPerformanceCard albionName={me.albionName} displayName={me.displayName} />
       </div>
+
+      <article className="dashboard-card">
+        <div className="section-row">
+          <div>
+            <span className="card-label">CTAs activas</span>
+            <h2>Próximas CTAS</h2>
+          </div>
+          <Link className="button ghost compact" href="/app/ctas">
+            Ver más
+          </Link>
+        </div>
+        {openCtas.length > 0 ? (
+          <div className="overview-cta-links">
+            {openCtas.map((cta) => (
+              <Link
+                className="status-badge"
+                href={`/app/ctas#cta-${cta.id}`}
+                key={cta.id}
+              >
+                {cta.title} ·{" "}
+                {new Date(cta.datetimeUtc).toLocaleDateString("es-ES")}
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="empty">No hay CTAs activas.</p>
+        )}
+      </article>
     </section>
   );
 }

@@ -16,12 +16,14 @@ function formatBattleTime(value: string) {
 function formatCompactNumber(value: number) {
   return new Intl.NumberFormat("es-ES", {
     notation: value >= 1000 ? "compact" : "standard",
-    maximumFractionDigits: 1
+    maximumFractionDigits: 1,
   }).format(value);
 }
 
 function formatBattleTitle(guildName: string, opponentGuilds: string[]) {
-  const uniqueGuilds = Array.from(new Set([guildName, ...opponentGuilds].filter(Boolean)));
+  const uniqueGuilds = Array.from(
+    new Set([guildName, ...opponentGuilds].filter(Boolean)),
+  );
   const visibleGuilds = uniqueGuilds.slice(0, 3).join(", ");
   return uniqueGuilds.length > 3 ? `${visibleGuilds}, ...` : visibleGuilds;
 }
@@ -41,16 +43,18 @@ export default async function BattlesPage() {
         <div className="section-row">
           <div>
             <span className="card-label">Battles</span>
-            <h2>Las peleas donde el roster sí estuvo dentro.</h2>
+            <h2>Battleboard privado de The Hundred</h2>
           </div>
           <div className="actions">
-            <span className="status-badge">{battles?.battles.length ?? 0} detectadas</span>
+            <span className="status-badge">
+              {battles?.battles.length ?? 0} detectadas
+            </span>
           </div>
         </div>
         <p className="lede">
-          Esta vista lee Albion directamente y lista solo batallas donde {guildLabel} metió al menos{" "}
-          {battles?.minGuildPlayers ?? 20} jugadores. Sirve para revisar actividad real sin depender del bot
-          ni de CTAs manuales.
+          Batallas de {guildLabel} donde almenos hubo{" "}
+          {battles?.minGuildPlayers ?? 20} jugadores. <br />
+          Únicamente trackea content ZvZ, para lo demás AlbionBB.
         </p>
       </article>
 
@@ -61,7 +65,10 @@ export default async function BattlesPage() {
       ) : battles.battles.length > 0 ? (
         <div className="battle-list">
           {battles.battles.map((battle, index) => (
-            <article className="dashboard-card battle-card battle-card-link" key={`${battle.id}-${battle.startTime}-${index}`}>
+            <article
+              className="dashboard-card battle-card battle-card-link"
+              key={`${battle.id}-${battle.startTime}-${index}`}
+            >
               <Link
                 aria-label={`Abrir battle ${battle.id}`}
                 className="battle-card-link-overlay"
@@ -70,11 +77,21 @@ export default async function BattlesPage() {
               <div className="section-row">
                 <div>
                   <span className="card-label">Battle</span>
-                  <h2>{formatBattleTitle(battle.guildName, battle.opponentGuilds)}</h2>
+                  <h2>
+                    {formatBattleTitle(battle.guildName, battle.opponentGuilds)}
+                  </h2>
                 </div>
                 <div className="battle-card-meta">
-                  {battle.mainKills ? <span className="status-badge">Main Kills: {battle.mainKills}</span> : null}
-                  {battle.bombKills ? <span className="status-badge">Bomb Kills: {battle.bombKills}</span> : null}
+                  {battle.mainKills ? (
+                    <span className="status-badge">
+                      Main Kills: {battle.mainKills}
+                    </span>
+                  ) : null}
+                  {battle.bombKills ? (
+                    <span className="status-badge">
+                      Bomb Kills: {battle.bombKills}
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -102,8 +119,8 @@ export default async function BattlesPage() {
       ) : (
         <article className="dashboard-card">
           <p className="empty">
-            No hay batallas recientes que cumplan el umbral de {battles.minGuildPlayers} jugadores para{" "}
-            {guildLabel}.
+            No hay batallas recientes que cumplan el umbral de{" "}
+            {battles.minGuildPlayers} jugadores para {guildLabel}.
           </p>
         </article>
       )}

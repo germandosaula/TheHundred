@@ -51,16 +51,20 @@ const slotsCommand = new SlashCommandBuilder()
 const recruitCommand = new SlashCommandBuilder()
   .setName("recruit")
   .setDescription("Approves a linked Discord user for guild/private dashboard access")
-  .addStringOption((option) =>
-    option.setName("discord_id").setDescription("Discord user id").setRequired(true)
+  .addUserOption((option) =>
+    option.setName("usuario").setDescription("Usuario de Discord").setRequired(true)
   );
 
 const syncMemberCommand = new SlashCommandBuilder()
   .setName("syncmember")
   .setDescription("Syncs the Discord guild role from the current web guild status")
-  .addStringOption((option) =>
-    option.setName("discord_id").setDescription("Discord user id").setRequired(true)
+  .addUserOption((option) =>
+    option.setName("usuario").setDescription("Usuario de Discord").setRequired(true)
   );
+
+const rolesAuditCommand = new SlashCommandBuilder()
+  .setName("roles-audit")
+  .setDescription("Audita desincronizaciones entre Discord y Web");
 
 const createCtaCommand = new SlashCommandBuilder()
   .setName("crearcta")
@@ -126,6 +130,16 @@ const ctaSlotEmojiPool = [
   "🇯"
 ] as const;
 
+const ctaReminderThresholds = [
+  { label: "2h", ms: 2 * 60 * 60 * 1000 },
+  { label: "1h", ms: 60 * 60 * 1000 },
+  { label: "30m", ms: 30 * 60 * 1000 },
+  { label: "10m", ms: 10 * 60 * 1000 }
+] as const;
+const ctaReminderToleranceMs = 60 * 1000;
+const ctaReminderChannelId = "1479151829832171731";
+const sentCtaReminders = new Set<string>();
+
 type CtaCompRole = keyof typeof ctaRoleEmojiMap;
 type CtaSignupSlot = {
   key: string;
@@ -136,6 +150,38 @@ type CtaSignupSlot = {
   weaponName: string;
   emoji: string;
 };
+
+function formatCtaCountdownLabel(targetUtc: string): string {
+  const diffMs = new Date(targetUtc).getTime() - Date.now();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) {
+    return "0m";
+  }
+
+  const totalMinutes = Math.ceil(diffMs / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts: string[] = [];
+
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0 || days > 0) {
+    parts.push(`${hours}h`);
+  }
+  parts.push(`${minutes}m`);
+
+  return parts.join(" ");
+}
+
+async function sendCtaReminderMessage(title: string, label: string): Promise<void> {
+  const channel = await client.channels.fetch(ctaReminderChannelId).catch(() => null);
+  if (!channel?.isTextBased() || !("send" in channel)) {
+    return;
+  }
+
+  await channel.send(`@everyone queda ${label} para la CTA ${title}.`);
+}
 
 if (!token) {
   console.log("DISCORD_BOT_TOKEN is not configured. Bot bootstrap skipped.");
@@ -162,12 +208,14 @@ client.once("clientReady", async () => {
     await client.application?.commands.create(slotsCommand, guildId);
     await client.application?.commands.create(recruitCommand, guildId);
     await client.application?.commands.create(syncMemberCommand, guildId);
+    await client.application?.commands.create(rolesAuditCommand, guildId);
     await client.application?.commands.create(createCtaCommand, guildId);
     await client.application?.commands.create(finalizeCtaCommand, guildId);
   } else {
     await client.application?.commands.create(slotsCommand);
     await client.application?.commands.create(recruitCommand);
     await client.application?.commands.create(syncMemberCommand);
+    await client.application?.commands.create(rolesAuditCommand);
     await client.application?.commands.create(createCtaCommand);
     await client.application?.commands.create(finalizeCtaCommand);
   }
@@ -176,9 +224,11 @@ client.once("clientReady", async () => {
   if (guildId) {
     void ensureRecruitmentTickets();
     void reconcileGuildRoleSync();
+    void ensureCtaReminders();
     setInterval(() => {
       void ensureRecruitmentTickets();
       void reconcileGuildRoleSync();
+      void ensureCtaReminders();
     }, syncIntervalMs);
   }
 });
@@ -218,6 +268,11 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "syncmember") {
       await handleSyncMemberCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "roles-audit") {
+      await handleRolesAuditCommand(interaction);
       return;
     }
 
@@ -268,7 +323,8 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
     return;
   }
 
-  const discordId = interaction.options.getString("discord_id", true);
+  const discordUser = interaction.options.getUser("usuario", true);
+  const discordId = discordUser.id;
   const user = await repository.getUserByDiscordId(discordId);
   if (!user) {
     await interaction.reply({
@@ -338,7 +394,8 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
     return;
   }
 
-  const discordId = interaction.options.getString("discord_id", true);
+  const discordUser = interaction.options.getUser("usuario", true);
+  const discordId = discordUser.id;
   const user = await repository.getUserByDiscordId(discordId);
   if (!user) {
     await interaction.reply({
@@ -365,7 +422,7 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
 
       if (!detectedStatus) {
         await interaction.reply({
-          content: "The user is linked on web but has no Trial/Core/Benched role in Discord yet.",
+          content: "The user is linked on web but has no Trial/Core/Benched/Council role in Discord yet.",
           ephemeral: true
         });
         return;
@@ -395,8 +452,31 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
   }
 
   try {
-    await syncDiscordGuildRole(discordId, member);
-    await interaction.reply(`Discord roles synced for ${user.displayName}. Web status: ${member.status}.`);
+    if (!guildId) {
+      await syncDiscordGuildRole(discordId, member);
+      await interaction.reply(`Discord roles synced for ${user.displayName}. Web status: ${member.status}.`);
+      return;
+    }
+
+    const guild = await client.guilds.fetch(guildId);
+    const guildMember = await guild.members.fetch(discordId);
+    const detectedStatus = getStatusFromDiscordRoles(guildMember);
+
+    if (!detectedStatus) {
+      await repository.setMemberDiscordRoleStatus(member.id, undefined);
+      await interaction.reply(
+        `No se detecto rol Trial/Core/Benched/Council en Discord para ${user.displayName}.`
+      );
+      return;
+    }
+
+    if (member.status !== detectedStatus) {
+      await repository.updateMemberStatus(member.id, detectedStatus);
+    }
+    await repository.setMemberDiscordRoleStatus(member.id, detectedStatus);
+    await interaction.reply(
+      `Estado sincronizado desde Discord para ${user.displayName}: ${detectedStatus}.`
+    );
   } catch (error) {
     await interaction.reply({
       content:
@@ -405,6 +485,111 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
           : "Discord sync failed.",
       ephemeral: true
     });
+  }
+}
+
+async function handleRolesAuditCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+    await interaction.reply({
+      content: "Manage Guild permission required.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  if (!guildId) {
+    await interaction.reply({
+      content: "DISCORD_GUILD_ID no configurado.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const guild = await client.guilds.fetch(guildId);
+    await guild.members.fetch();
+
+    const [members, users] = await Promise.all([repository.getMembers(), repository.getUsers()]);
+    const usersById = new Map(users.map((user) => [user.id, user]));
+    const usersByDiscordId = new Map(users.map((user) => [user.discordId, user]));
+    const membersByUserId = new Map(members.map((member) => [member.userId, member]));
+    const issues: string[] = [];
+
+    for (const member of members) {
+      const user = usersById.get(member.userId);
+      if (!user) {
+        issues.push(`• [${member.id}] miembro sin user asociado en web`);
+        continue;
+      }
+
+      const guildMember = guild.members.cache.get(user.discordId) ?? null;
+      const detectedStatus = guildMember ? getStatusFromDiscordRoles(guildMember) : undefined;
+      const expectedStatus = member.kickedAt ? undefined : member.status;
+
+      if (!guildMember) {
+        issues.push(`• ${user.displayName}: no está en Discord guild`);
+        continue;
+      }
+
+      if (expectedStatus !== detectedStatus) {
+        issues.push(
+          `• ${user.displayName}: mismatch web=${formatMemberStatus(expectedStatus)} discord=${formatMemberStatus(detectedStatus)}`
+        );
+      }
+
+      if ((member.discordRoleStatus ?? undefined) !== detectedStatus) {
+        issues.push(
+          `• ${user.displayName}: discordRoleStatus guardado=${formatMemberStatus(member.discordRoleStatus)} detectado=${formatMemberStatus(detectedStatus)}`
+        );
+      }
+    }
+
+    for (const guildMember of guild.members.cache.values()) {
+      const detectedStatus = getStatusFromDiscordRoles(guildMember);
+      if (!detectedStatus) {
+        continue;
+      }
+      const user = usersByDiscordId.get(guildMember.user.id);
+      if (!user) {
+        issues.push(`• ${guildMember.user.tag}: tiene rol ${detectedStatus} en Discord pero no existe en web`);
+        continue;
+      }
+      const member = membersByUserId.get(user.id);
+      if (!member) {
+        issues.push(`• ${user.displayName}: tiene rol ${detectedStatus} en Discord pero no tiene guild_member`);
+      }
+    }
+
+    if (issues.length === 0) {
+      await interaction.editReply("Audit OK: no hay desincronizaciones Discord↔Web.");
+      return;
+    }
+
+    const header = `Audit detectó ${issues.length} incidencia(s):`;
+    const maxLen = 1900;
+    let chunk = header;
+    const chunks: string[] = [];
+
+    for (const issue of issues) {
+      if ((chunk + "\n" + issue).length > maxLen) {
+        chunks.push(chunk);
+        chunk = issue;
+      } else {
+        chunk += `\n${issue}`;
+      }
+    }
+    chunks.push(chunk);
+
+    await interaction.editReply(chunks[0]);
+    for (let index = 1; index < chunks.length; index += 1) {
+      await interaction.followUp({ content: chunks[index], ephemeral: true });
+    }
+  } catch (error) {
+    await interaction.editReply(
+      error instanceof Error ? `roles-audit falló: ${error.message}` : "roles-audit falló."
+    );
   }
 }
 
@@ -519,8 +704,32 @@ async function handleCreateCtaCommand(interaction: ChatInputCommandInteraction):
       signupMessageId: signupMessage.id
     });
 
+    // Send immediate reminder on CTA creation in the fixed reminders channel.
+    await sendCtaReminderMessage(cta.title, formatCtaCountdownLabel(cta.datetimeUtc));
+
+    const totalSlots = comp.parties.reduce((total, party) => total + party.slots.length, 0);
+    const roleSummary = getCompRoleSummary(comp);
+    const roleSummaryText = [...roleSummary.entries()]
+      .map(([role, count]) => `${ctaRoleEmojiMap[role]} ${role}: ${count}`)
+      .join(" | ");
+
+    const summaryEmbed = new EmbedBuilder()
+      .setColor(0xd8a628)
+      .setTitle("CTA creada")
+      .addFields(
+        { name: "Titulo", value: title, inline: false },
+        { name: "Fecha UTC", value: formatShortUtcDate(datetimeUtc), inline: true },
+        { name: "Hora UTC", value: formatShortUtcTime(datetimeUtc), inline: true },
+        { name: "Comp", value: comp.name, inline: true },
+        { name: "Slots", value: String(totalSlots), inline: true },
+        { name: "Canal signup", value: `<#${signupMessage.channelId}>`, inline: true },
+        { name: "Roles", value: roleSummaryText || "Sin roles", inline: false }
+      )
+      .setTimestamp(new Date(datetimeUtc));
+
     await interaction.editReply({
-      content: `CTA creada: ${title} (${formatUtcDateTime(datetimeUtc)}) con la comp ${comp.name}.`,
+      content: `Mensaje publicado: https://discord.com/channels/${signupMessage.guildId}/${signupMessage.channelId}/${signupMessage.id}`,
+      embeds: [summaryEmbed]
     });
   } catch (error) {
     if (interaction.deferred || interaction.replied) {
@@ -621,6 +830,11 @@ async function syncDiscordGuildRole(discordId: string, member: { id: string; sta
   const guildMember = await guild.members.fetch(discordId);
   const nextRoleId = getDiscordRoleIdForStatus(member.status);
 
+  if (member.status === "COUNCIL" && !nextRoleId) {
+    await repository.setMemberDiscordRoleStatus(member.id, "COUNCIL");
+    return;
+  }
+
   if (!nextRoleId) {
     await replaceManagedRoles(guildMember);
     await repository.setMemberDiscordRoleStatus(member.id, undefined);
@@ -632,7 +846,10 @@ async function syncDiscordGuildRole(discordId: string, member: { id: string; sta
 }
 
 async function replaceManagedRoles(guildMember: GuildMember, nextRoleId?: string) {
-  const roleIdsToRemove = Object.values(activeRoleIds).filter((roleId): roleId is string => Boolean(roleId));
+  const roleIdsToRemove = [
+    ...Object.values(activeRoleIds).filter((roleId): roleId is string => Boolean(roleId)),
+    ...councilRoleIds
+  ];
   const nextRoles = guildMember.roles.cache
     .filter((role) => !roleIdsToRemove.includes(role.id))
     .map((role) => role.id);
@@ -645,6 +862,10 @@ async function replaceManagedRoles(guildMember: GuildMember, nextRoleId?: string
 }
 
 function getDiscordRoleIdForStatus(status: MemberStatus): string | undefined {
+  if (status === "COUNCIL") {
+    return councilRoleIds[0];
+  }
+
   if (status === "TRIAL") {
     return activeRoleIds.TRIAL;
   }
@@ -661,6 +882,10 @@ function getDiscordRoleIdForStatus(status: MemberStatus): string | undefined {
 }
 
 function getStatusFromDiscordRoles(guildMember: GuildMember): MemberStatus | undefined {
+  if (councilRoleIds.some((roleId) => guildMember.roles.cache.has(roleId))) {
+    return "COUNCIL";
+  }
+
   if (activeRoleIds.CORE && guildMember.roles.cache.has(activeRoleIds.CORE)) {
     return "CORE";
   }
@@ -679,11 +904,72 @@ function getStatusFromDiscordRoles(guildMember: GuildMember): MemberStatus | und
 function memberNeedsDiscordSync(member: { status: MemberStatus; discordRoleStatus?: MemberStatus }) {
   const expectedRoleId = getDiscordRoleIdForStatus(member.status);
 
+  if (member.status === "COUNCIL" && !expectedRoleId) {
+    return member.discordRoleStatus !== "COUNCIL";
+  }
+
   if (!expectedRoleId) {
     return Boolean(member.discordRoleStatus);
   }
 
   return member.discordRoleStatus !== member.status;
+}
+
+function formatMemberStatus(status?: MemberStatus): string {
+  return status ?? "NONE";
+}
+
+async function ensureCtaReminders() {
+  try {
+    const ctas = await repository.getCtas();
+    const now = Date.now();
+
+    for (const cta of ctas) {
+      if (cta.status !== "OPEN") {
+        continue;
+      }
+
+      const ctaTime = new Date(cta.datetimeUtc).getTime();
+      if (Number.isNaN(ctaTime)) {
+        continue;
+      }
+
+      for (const threshold of ctaReminderThresholds) {
+        const key = `${cta.id}:${threshold.label}`;
+        if (sentCtaReminders.has(key)) {
+          continue;
+        }
+
+        const diff = ctaTime - now;
+        if (diff < 0) {
+          sentCtaReminders.add(key);
+          continue;
+        }
+
+        if (Math.abs(diff - threshold.ms) > ctaReminderToleranceMs) {
+          continue;
+        }
+
+        await sendCtaReminderMessage(cta.title, threshold.label);
+        sentCtaReminders.add(key);
+      }
+    }
+
+    for (const key of [...sentCtaReminders]) {
+      const [ctaId] = key.split(":");
+      const cta = ctas.find((entry) => entry.id === ctaId);
+      if (!cta) {
+        sentCtaReminders.delete(key);
+        continue;
+      }
+      const ctaTime = new Date(cta.datetimeUtc).getTime();
+      if (Number.isNaN(ctaTime) || ctaTime + 6 * 60 * 60 * 1000 < now) {
+        sentCtaReminders.delete(key);
+      }
+    }
+  } catch (error) {
+    console.error("CTA reminders failed", error);
+  }
 }
 
 async function reconcileGuildRoleSync() {
@@ -791,19 +1077,53 @@ async function ensureRecruitmentTickets() {
         permissionOverwrites: buildRecruitmentOverwrites(guild, guildMember)
       });
 
-      await channel.send(
-        [
-          `Nuevo reclutamiento de <@${user.discordId}>`,
-          "",
-          `Display name: ${application.displayName}`,
-          `Timezone: ${application.timezone}`,
-          `Main role: ${application.mainRole}`,
-          `Experiencia ZvZ: ${application.zvzExperience}`,
-          `Notas: ${application.notes || "Ninguna"}`,
-          "",
-          "Council puede validar aqui y asignar Trial, Core o Benched en Discord para abrir el acceso web."
-        ].join("\n")
-      );
+      const recruitmentEmbed = new EmbedBuilder()
+        .setColor(0xd8a628)
+        .setTitle("Nuevo ticket de reclutamiento")
+        .setDescription(
+          "Solicitud recibida desde la web. Revisad el perfil y decidid el estado en Discord para sincronizar acceso."
+        )
+        .addFields(
+          {
+            name: "Usuario",
+            value: `<@${user.discordId}>`,
+            inline: true
+          },
+          {
+            name: "Nombre (web)",
+            value: application.displayName,
+            inline: true
+          },
+          {
+            name: "Discord ID",
+            value: user.discordId,
+            inline: true
+          },
+          {
+            name: "Disponibilidad UTC",
+            value: application.timezone,
+            inline: true
+          },
+          {
+            name: "Rol principal",
+            value: application.mainRole,
+            inline: true
+          },
+          {
+            name: "Contexto de experiencia",
+            value: application.zvzExperience || "No especificado",
+            inline: false
+          }
+        )
+        .setFooter({
+          text: "Accion requerida: asignar Trial/Core/Benched/Council en Discord para sincronizar web"
+        })
+        .setTimestamp(new Date(application.createdAt));
+
+      await channel.send({
+        content: `<@${user.discordId}>`,
+        embeds: [recruitmentEmbed]
+      });
 
       await repository.markRecruitmentApplicationTicketOpened(application.id, channel.id);
     } catch (error) {
@@ -834,7 +1154,9 @@ async function handleCtaSignupSelect(interaction: StringSelectMenuInteraction) {
   const member = await repository.getMemberByUserId(user.id);
   if (
     !member ||
-    (member.status !== "TRIAL" && member.status !== "CORE" && member.status !== "BENCHED") ||
+    (member.status !== "TRIAL" &&
+      member.status !== "CORE" &&
+      member.status !== "COUNCIL") ||
     member.discordRoleStatus !== member.status
   ) {
     await interaction.reply({

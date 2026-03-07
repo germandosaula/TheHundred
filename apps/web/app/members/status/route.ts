@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const discordId = (await cookies()).get("th_discord_id")?.value;
   const payload = (await request.json()) as {
     memberId?: string;
-    status?: "TRIAL" | "CORE" | "BENCHED" | "REJECTED";
+    status?: "TRIAL" | "CORE" | "BENCHED" | "COUNCIL" | "REJECTED";
   };
 
   if (!payload.memberId || !payload.status) {

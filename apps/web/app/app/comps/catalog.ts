@@ -23,7 +23,7 @@ export interface AlbionPartySlotTemplate {
 }
 
 export const albionWeaponCatalog: AlbionWeaponOption[] = [
-  { id: "arcane-staff", name: "Arcane Staff", role: "Support" },
+  { id: "arcane-staff", name: "Arcane Staff", role: "Melee" },
   { id: "great-arcane-staff", name: "Great Arcane Staff", role: "Tank" },
   { id: "enigmatic-staff", name: "Enigmatic Staff", role: "Support" },
   { id: "witchwork-staff", name: "Witchwork Staff", role: "Ranged" },

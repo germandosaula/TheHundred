@@ -8,6 +8,8 @@ import type { MeData } from "../lib";
 
 interface AppSidebarProps {
   me: MeData;
+  canManageCouncil: boolean;
+  isCouncil: boolean;
   children: React.ReactNode;
 }
 
@@ -49,7 +51,32 @@ function ToggleSidebarIcon({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function getGuildRoleLabel(role: MeData["role"]) {
+function LogoutIcon() {
+  return (
+    <svg aria-hidden="true" className="nav-icon" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M10 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-2"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M15 12H3m0 0 3-3m-3 3 3 3"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function getGuildRoleLabel(role: MeData["role"], canManageCouncil: boolean) {
+  if (canManageCouncil && role === "PLAYER") {
+    return "Council";
+  }
+
   switch (role) {
     case "ADMIN":
       return "Admin";
@@ -60,13 +87,12 @@ function getGuildRoleLabel(role: MeData["role"]) {
   }
 }
 
-export function AppSidebar({ me, children }: AppSidebarProps) {
+export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const isOfficerOrAdmin = me.role === "OFFICER" || me.role === "ADMIN";
   const navItems = [
     {
       href: "/app",
@@ -99,7 +125,21 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
       icon: "M12 3 5 7v5c0 4.5 2.8 7.7 7 9 4.2-1.3 7-4.5 7-9V7l-7-4Z"
     }
   ];
-  if (isOfficerOrAdmin) {
+  if (canManageCouncil) {
+    navItems.push({
+      href: "/app/scouting",
+      label: "Scouting",
+      icon: "M11 19a8 8 0 1 1 5.3-14l4.7 4.7m-2.1 7.4-3.7-3.7"
+    });
+  }
+  if (isCouncil) {
+    navItems.push({
+      href: "/app/council-tasks",
+      label: "Tareas Council",
+      icon: "M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"
+    });
+  }
+  if (canManageCouncil) {
     navItems.push({
       href: "/app/members",
       label: "Miembros",
@@ -147,7 +187,7 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
             {!collapsed ? (
               <div className="sidebar-brand-copy">
                 <strong>{me.displayName}</strong>
-                <span>{getGuildRoleLabel(me.role)}</span>
+                <span>{getGuildRoleLabel(me.role, canManageCouncil)}</span>
               </div>
             ) : null}
           </div>
@@ -171,7 +211,7 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
         </nav>
         <div className={`sidebar-actions ${collapsed ? "collapsed" : ""}`}>
           <button className="button ghost sidebar-logout" disabled={loggingOut} onClick={handleLogout} type="button">
-            {!collapsed ? (loggingOut ? "Cerrando..." : "Cerrar sesion") : "x"}
+            {!collapsed ? (loggingOut ? "Cerrando..." : "Cerrar sesion") : <LogoutIcon />}
           </button>
         </div>
       </aside>
@@ -179,14 +219,7 @@ export function AppSidebar({ me, children }: AppSidebarProps) {
       <div className={`sidebar-backdrop ${sidebarOpen ? "show" : ""}`} onClick={() => setSidebarOpen(false)} />
 
       <section className="app-main">
-        <header className="app-topbar">
-          <div>
-            <p className="eyebrow">The Hundred | War Room</p>
-            <h1>Dashboard privado</h1>
-            <p className="lede">
-              Estado del roster, CTAs y acceso interno.
-            </p>
-          </div>
+        <header className="app-topbar app-topbar-minimal">
           <div className="topbar-actions">
             <button className="sidebar-toggle mobile-only" onClick={() => setSidebarOpen(true)} type="button">
               <ToggleSidebarIcon collapsed />
