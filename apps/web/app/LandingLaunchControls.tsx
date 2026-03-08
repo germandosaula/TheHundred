@@ -37,7 +37,7 @@ export function LandingLaunchControls({
   const countdownText = useMemo(() => formatCountdown(remainingMs), [remainingMs]);
   const shouldLockLogin = enforceCountdown && !hasLaunched && !hasValidInvite;
   const canLogin = !shouldLockLogin && Boolean(loginUrl);
-  const loginLabel = shouldLockLogin ? `Login (${countdownText})` : "Login";
+  const loginLabel = "Login";
 
   return (
     <>
