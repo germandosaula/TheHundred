@@ -32,7 +32,10 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
   const enforceLaunchCountdown = process.env.LAUNCH_COUNTDOWN_ENABLED !== "0";
 
   return (
-    <PageEntryLoader message="Bienvenido a The Hundred" storageKey="entry-loader-landing">
+    <PageEntryLoader
+      message="Bienvenido a The Hundred"
+      storageKey="entry-loader-landing"
+    >
       <main className="landing-shell">
         <header className="landing-nav">
           <Link className="brand-mark" href="/">
@@ -98,14 +101,14 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
                   <span className="hero-rail-value">ZvZ</span>
                   <span className="hero-rail-label">
                     Contenido principal, mediana escala, búsqueda de contenido
-                    directo.
+                    directo. Full LootSplit.
                   </span>
                 </div>
                 <div className="hero-rail-item">
                   <span className="hero-rail-value">Organización</span>
                   <span className="hero-rail-label">
-                    Estructura clara de roles, participación en el council y
-                    sistema basado en mérito y contribución.
+                    Estructura clara de roles, promoción interna y sistema
+                    basado en mérito y contribución.
                   </span>
                 </div>
               </div>
@@ -138,8 +141,7 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
                   <span className="card-label">Como acceder</span>
                   <ul className="signal-list">
                     <li>Aplicas a través de la web</li>
-                    <li>Un oficial se pondrá en contacto contigo en Discord</li>
-                    <li>Tienes acceso a la War Room y Discord</li>
+                    <li>Se te abrirá un ticket en Discord.</li>
                     <li>
                       Mantienes tu culo limpio y te comportas como un adulto
                     </li>
@@ -173,15 +175,15 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
               <h3>Meritocracia y Votaciones</h3>
               <p>
                 Todas las decisiones serán votadas por los jugadores, además de
-                que el que lo merezca tendrá la oportunidad de formar parte del
-                council.
+                que el que lo merezca tendrá la oportunidad de crecer en la
+                organización.
               </p>
             </article>
             <article className="feature-card">
               <span className="card-label">Valores</span>
               <h3>The 100th</h3>
               <p>
-                The Hundred se concibe como guild que busca ser única, solo 100
+                The Hundred se concibe como guild que busca ser única, cap 100
                 jugadores, todos con la misma mentalidad, todos con el mismo
                 objetivo, si no cumples tu plaza la ocupara otro.
               </p>

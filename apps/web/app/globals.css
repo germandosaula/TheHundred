@@ -350,7 +350,7 @@ li {
 
 .hero-copy h1 {
   margin: 8px 0 16px;
-  font-size: clamp(3.8rem, 9vw, 7rem);
+  font-size: clamp(2.9rem, 7.2vw, 5.6rem);
   line-height: 0.88;
   letter-spacing: -0.06em;
   text-wrap: balance;
@@ -421,7 +421,7 @@ li {
 }
 
 .hero-logo {
-  width: min(100%, 360px);
+  width: min(100%, 616px);
   height: auto;
   filter: drop-shadow(0 24px 42px rgba(0, 0, 0, 0.42));
   animation: logoFloat 6s ease-in-out infinite;

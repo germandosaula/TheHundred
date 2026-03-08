@@ -7,7 +7,6 @@ import {
   OverwriteType,
   Partials,
   PermissionFlagsBits,
-  PermissionsBitField,
   StringSelectMenuBuilder,
   SlashCommandBuilder
 } from "discord.js";
@@ -19,7 +18,7 @@ import type {
   StringSelectMenuInteraction
 } from "discord.js";
 import { createRepository, type CompRecord, type CtaSignupRecord } from "@thehundred/db";
-import { assertOfficerOrAdmin, transitionCtaStatus, type MemberStatus } from "@thehundred/domain";
+import { transitionCtaStatus, type MemberStatus } from "@thehundred/domain";
 import { loadEnvFile } from "./load-env.ts";
 
 loadEnvFile();
@@ -34,6 +33,10 @@ const guildId = process.env.DISCORD_GUILD_ID;
 const syncIntervalMs = Number(process.env.DISCORD_SYNC_INTERVAL_MS ?? "30000");
 const recruitmentCategoryId = process.env.DISCORD_RECRUITMENT_CATEGORY_ID;
 const councilRoleIds = (process.env.DISCORD_COUNCIL_ROLE_IDS ?? "")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+const callerRoleIds = (process.env.DISCORD_CALLER_ROLE_IDS ?? "1479173827782250596")
   .split(",")
   .map((entry) => entry.trim())
   .filter(Boolean);
@@ -314,12 +317,79 @@ function isDiscordInteractionAlreadyAcknowledged(error: unknown): boolean {
   return "code" in error && Number((error as { code?: unknown }).code) === 40060;
 }
 
-async function handleRecruitCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+function getInteractionRoleIds(interaction: ChatInputCommandInteraction): string[] {
+  const member = interaction.member as
+    | { roles?: { cache?: Map<string, unknown> } | string[] }
+    | null
+    | undefined;
+  if (!member?.roles) {
+    return [];
+  }
+
+  if (Array.isArray(member.roles)) {
+    return member.roles;
+  }
+
+  if ("cache" in member.roles && member.roles.cache) {
+    return [...member.roles.cache.keys()];
+  }
+
+  return [];
+}
+
+async function getRoleIdsForInteraction(interaction: ChatInputCommandInteraction): Promise<string[]> {
+  const immediate = getInteractionRoleIds(interaction);
+  if (immediate.length > 0) {
+    return immediate;
+  }
+
+  if (!guildId) {
+    return [];
+  }
+
+  try {
+    const guild = interaction.guild ?? (await client.guilds.fetch(guildId));
+    const guildMember = await guild.members.fetch(interaction.user.id);
+    return [...guildMember.roles.cache.keys()];
+  } catch {
+    return [];
+  }
+}
+
+async function requireDiscordRoles(
+  interaction: ChatInputCommandInteraction,
+  roleIds: string[],
+  deniedMessage: string
+): Promise<boolean> {
+  if (roleIds.length === 0) {
     await interaction.reply({
-      content: "Manage Guild permission required.",
+      content: "No hay roles configurados para este comando.",
       ephemeral: true
     });
+    return false;
+  }
+
+  const currentRoleIds = await getRoleIdsForInteraction(interaction);
+  const allowed = roleIds.some((roleId) => currentRoleIds.includes(roleId));
+  if (!allowed) {
+    await interaction.reply({
+      content: deniedMessage,
+      ephemeral: true
+    });
+    return false;
+  }
+
+  return true;
+}
+
+async function handleRecruitCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      councilRoleIds,
+      "Solo Council puede usar /recruit."
+    ))
+  ) {
     return;
   }
 
@@ -386,11 +456,13 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
 }
 
 async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-    await interaction.reply({
-      content: "Manage Guild permission required.",
-      ephemeral: true
-    });
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      councilRoleIds,
+      "Solo Council puede usar /syncmember."
+    ))
+  ) {
     return;
   }
 
@@ -489,11 +561,13 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
 }
 
 async function handleRolesAuditCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-    await interaction.reply({
-      content: "Manage Guild permission required.",
-      ephemeral: true
-    });
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      councilRoleIds,
+      "Solo Council puede usar /roles-audit."
+    ))
+  ) {
     return;
   }
 
@@ -635,11 +709,13 @@ async function handleFinalizeCtaAutocomplete(interaction: AutocompleteInteractio
 }
 
 async function handleCreateCtaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-    await interaction.reply({
-      content: "Manage Guild permission required.",
-      ephemeral: true
-    });
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      [...councilRoleIds, ...callerRoleIds],
+      "Solo Council o Caller pueden usar /crearcta."
+    ))
+  ) {
     return;
   }
 
@@ -647,16 +723,6 @@ async function handleCreateCtaCommand(interaction: ChatInputCommandInteraction):
   if (!actor) {
     await interaction.reply({
       content: "Tu usuario Discord no esta enlazado en la web.",
-      ephemeral: true
-    });
-    return;
-  }
-
-  try {
-    assertOfficerOrAdmin(actor.role);
-  } catch {
-    await interaction.reply({
-      content: "Solo OFFICER o ADMIN pueden crear CTAs.",
       ephemeral: true
     });
     return;
@@ -752,11 +818,13 @@ async function handleCreateCtaCommand(interaction: ChatInputCommandInteraction):
 }
 
 async function handleFinalizeCtaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-    await interaction.reply({
-      content: "Manage Guild permission required.",
-      ephemeral: true
-    });
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      [...councilRoleIds, ...callerRoleIds],
+      "Solo Council o Caller pueden usar /finalizarcta."
+    ))
+  ) {
     return;
   }
 
@@ -764,16 +832,6 @@ async function handleFinalizeCtaCommand(interaction: ChatInputCommandInteraction
   if (!actor) {
     await interaction.reply({
       content: "Tu usuario Discord no esta enlazado en la web.",
-      ephemeral: true
-    });
-    return;
-  }
-
-  try {
-    assertOfficerOrAdmin(actor.role);
-  } catch {
-    await interaction.reply({
-      content: "Solo OFFICER o ADMIN pueden finalizar CTAs.",
       ephemeral: true
     });
     return;
