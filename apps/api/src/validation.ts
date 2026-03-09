@@ -15,6 +15,7 @@ export interface RegisterPayload {
 export interface CreateCtaPayload {
   title: string;
   datetimeUtc: string;
+  compId?: string;
 }
 
 export interface UpdateMemberStatusPayload {
@@ -78,6 +79,10 @@ export interface AssignCtaSlotPayload {
   slotKey: string;
 }
 
+export interface CtaFillSignupPayload {
+  roles: string[];
+}
+
 export interface CreateCouncilTaskPayload {
   title: string;
   description: string;
@@ -97,6 +102,17 @@ export interface UpdateCouncilTaskPayload {
 
 export interface UpdateCouncilTaskStatusPayload {
   status: "TODO" | "IN_PROGRESS" | "DONE";
+}
+
+export interface ReplaceOverviewAnnouncementsPayload {
+  announcements: Array<{
+    title: string;
+    body: string;
+  }>;
+}
+
+export interface BottledEnergyImportPayload {
+  raw: string;
 }
 
 const allowedMemberStatuses = new Set<MemberStatus>(["TRIAL", "CORE", "BENCHED", "COUNCIL", "REJECTED"]);
@@ -139,7 +155,8 @@ export function requireCreateCtaPayload(payload: CreateCtaPayload | null): Creat
 
   return {
     title: payload.title.trim(),
-    datetimeUtc: payload.datetimeUtc
+    datetimeUtc: payload.datetimeUtc,
+    compId: payload.compId?.trim() || undefined
   };
 }
 
@@ -248,6 +265,31 @@ export function requireAssignCtaSlotPayload(payload: AssignCtaSlotPayload | null
     slotKey: payload.slotKey.trim(),
     playerUserId: payload.playerUserId?.trim() || undefined
   };
+}
+
+export function requireBottledEnergyImportPayload(
+  payload: BottledEnergyImportPayload | null
+): BottledEnergyImportPayload {
+  if (!payload?.raw || !payload.raw.trim()) {
+    throw new DomainError("raw is required");
+  }
+  return {
+    raw: payload.raw
+  };
+}
+
+export function requireCtaFillSignupPayload(payload: CtaFillSignupPayload | null): CtaFillSignupPayload {
+  if (!payload || !Array.isArray(payload.roles)) {
+    throw new DomainError("roles are required");
+  }
+  const roles = payload.roles.map((entry) => entry?.trim()).filter(Boolean) as string[];
+  if (roles.length < 2 || roles.length > 4) {
+    throw new DomainError("roles must have between 2 and 4 values");
+  }
+  if (roles.some((entry) => entry.length > 60)) {
+    throw new DomainError("roles entries must be 60 characters or fewer");
+  }
+  return { roles };
 }
 
 const allowedBuildSlots = new Set([
@@ -389,4 +431,36 @@ export function requireCouncilTaskStatusPayload(
   }
 
   return payload;
+}
+
+export function requireReplaceOverviewAnnouncementsPayload(
+  payload: ReplaceOverviewAnnouncementsPayload | null
+): ReplaceOverviewAnnouncementsPayload {
+  if (!payload || !Array.isArray(payload.announcements)) {
+    throw new DomainError("announcements array is required");
+  }
+
+  if (payload.announcements.length > 10) {
+    throw new DomainError("maximum 10 announcements");
+  }
+
+  const announcements = payload.announcements.map((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      throw new DomainError(`announcement ${index + 1} is invalid`);
+    }
+    const title = typeof entry.title === "string" ? entry.title.trim() : "";
+    const body = typeof entry.body === "string" ? entry.body.trim() : "";
+    if (!title || !body) {
+      throw new DomainError(`announcement ${index + 1} requires title and body`);
+    }
+    if (title.length > 80) {
+      throw new DomainError(`announcement ${index + 1} title exceeds 80 chars`);
+    }
+    if (body.length > 280) {
+      throw new DomainError(`announcement ${index + 1} body exceeds 280 chars`);
+    }
+    return { title, body };
+  });
+
+  return { announcements };
 }

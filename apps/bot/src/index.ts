@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   ActionRowBuilder,
   ChannelType,
@@ -11,14 +12,14 @@ import {
   SlashCommandBuilder
 } from "discord.js";
 import type {
-  AutocompleteInteraction,
   ChatInputCommandInteraction,
   Guild,
   GuildMember,
   StringSelectMenuInteraction
 } from "discord.js";
 import { createRepository, type CompRecord, type CtaSignupRecord } from "@thehundred/db";
-import { transitionCtaStatus, type MemberStatus } from "@thehundred/domain";
+import { type CTA, type MemberStatus } from "@thehundred/domain";
+import { createKillboardClient } from "@thehundred/killboard";
 import { loadEnvFile } from "./load-env.ts";
 
 loadEnvFile();
@@ -32,11 +33,11 @@ const token = process.env.DISCORD_BOT_TOKEN;
 const guildId = process.env.DISCORD_GUILD_ID;
 const syncIntervalMs = Number(process.env.DISCORD_SYNC_INTERVAL_MS ?? "30000");
 const recruitmentCategoryId = process.env.DISCORD_RECRUITMENT_CATEGORY_ID;
-const councilRoleIds = (process.env.DISCORD_COUNCIL_ROLE_IDS ?? "")
-  .split(",")
-  .map((entry) => entry.trim())
-  .filter(Boolean);
-const callerRoleIds = (process.env.DISCORD_CALLER_ROLE_IDS ?? "1479173827782250596")
+const managementRoleIds = (
+  process.env.DISCORD_STAFF_ROLE_IDS ??
+  process.env.DISCORD_COUNCIL_ROLE_IDS ??
+  ""
+)
   .split(",")
   .map((entry) => entry.trim())
   .filter(Boolean);
@@ -46,6 +47,15 @@ const activeRoleIds = {
   BENCHED: process.env.DISCORD_ROLE_BENCHED_ID
 } as const;
 const supabaseHost = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL).host : "n/a";
+const staffRoleIds = ["1477718673757180026"];
+const recruiterRoleIds = ["1480276764524806145"];
+const phase2AllowedRoleIds = [...new Set([...managementRoleIds, ...recruiterRoleIds])];
+const lootSplitRoleChoices = ["TODOS", "TRIAL", "CORE", "BENCHED", "STAFF"] as const;
+const albionBbBaseUrl = process.env.ALBION_BB_API_BASE_URL ?? "https://api.albionbb.com/eu";
+const killboardClient = createKillboardClient({
+  source: "albionbb",
+  baseUrl: albionBbBaseUrl
+});
 
 const slotsCommand = new SlashCommandBuilder()
   .setName("slots")
@@ -69,36 +79,97 @@ const rolesAuditCommand = new SlashCommandBuilder()
   .setName("roles-audit")
   .setDescription("Audita desincronizaciones entre Discord y Web");
 
-const createCtaCommand = new SlashCommandBuilder()
-  .setName("crearcta")
-  .setDescription("Crea una CTA vinculada a una composicion y publica el signup en este canal")
+const payoutLootCommand = new SlashCommandBuilder()
+  .setName("pagar-loot")
+  .setDescription("Procesa un reparto de lootsplit y acredita el monedero.")
   .addStringOption((option) =>
     option
-      .setName("hora_utc")
-      .setDescription("Fecha y hora UTC. Ej: 2026-03-01 18:00")
+      .setName("battle_link")
+      .setDescription("Link multi de AlbionBB con ids")
       .setRequired(true)
   )
   .addStringOption((option) =>
-    option.setName("titulo").setDescription("Titulo de la CTA").setRequired(true)
-  )
-  .addStringOption((option) =>
     option
-      .setName("composicion")
-      .setDescription("Comp creada en la web")
+      .setName("guild_name")
+      .setDescription("Nombre exacto de la guild a filtrar")
       .setRequired(true)
-      .setAutocomplete(true)
+  )
+  .addIntegerOption((option) =>
+    option.setName("est_value").setDescription("Loot estimado").setRequired(true).setMinValue(0)
+  )
+  .addIntegerOption((option) =>
+    option.setName("bolsas").setDescription("Bolsas/cash extra").setRequired(true).setMinValue(0)
+  )
+  .addIntegerOption((option) =>
+    option
+      .setName("repair_cost")
+      .setDescription("Coste total de reparacion")
+      .setRequired(true)
+      .setMinValue(0)
+  )
+  .addIntegerOption((option) =>
+    option.setName("tax").setDescription("Tax %").setRequired(true).setMinValue(0).setMaxValue(100)
   );
 
-const finalizeCtaCommand = new SlashCommandBuilder()
-  .setName("finalizarcta")
-  .setDescription("Finaliza una CTA y congela el signup actual")
-  .addStringOption((option) =>
+const balanceCommand = new SlashCommandBuilder()
+  .setName("bal")
+  .setDescription("Muestra el balance de tu monedero");
+
+const withdrawCommand = new SlashCommandBuilder()
+  .setName("retirar")
+  .setDescription("Retira saldo de un usuario")
+  .addUserOption((option) =>
     option
-      .setName("cta")
-      .setDescription("CTA abierta")
+      .setName("usuario")
+      .setDescription("Usuario de Discord")
       .setRequired(true)
-      .setAutocomplete(true)
+  )
+  .addIntegerOption((option) =>
+    option.setName("cantidad").setDescription("Cantidad a retirar").setRequired(true).setMinValue(1)
   );
+
+const payCommand = new SlashCommandBuilder()
+  .setName("pagar")
+  .setDescription("Añade saldo a un usuario")
+  .addUserOption((option) =>
+    option
+      .setName("usuario")
+      .setDescription("Usuario de Discord")
+      .setRequired(true)
+  )
+  .addIntegerOption((option) =>
+    option.setName("cantidad").setDescription("Cantidad a pagar").setRequired(true).setMinValue(1)
+  );
+
+const withdrawRoleCommand = new SlashCommandBuilder()
+  .setName("retirar_dinero_rol")
+  .setDescription("Retira dinero a todos los miembros de un rol")
+  .addStringOption((option) => {
+    let next = option.setName("rol").setDescription("Rol objetivo").setRequired(true);
+    for (const role of lootSplitRoleChoices.filter((entry) => entry !== "TODOS")) {
+      next = next.addChoices({ name: role, value: role });
+    }
+    return next;
+  })
+  .addIntegerOption((option) =>
+    option
+      .setName("cantidad")
+      .setDescription("Cantidad a retirar por miembro")
+      .setRequired(true)
+      .setMinValue(1)
+  );
+
+const economyCommand = new SlashCommandBuilder()
+  .setName("economia")
+  .setDescription("Muestra el total economico agregado del roster");
+
+const resetEconomyCommand = new SlashCommandBuilder()
+  .setName("reset_economia")
+  .setDescription("Pone a 0 el balance de todos los usuarios");
+
+const phase2Command = new SlashCommandBuilder()
+  .setName("fase2")
+  .setDescription("Publica el mensaje de paso a fase 2 en este canal");
 
 const ctaRoleEmojiMap = {
   Tank: "🛡️",
@@ -136,12 +207,14 @@ const ctaSlotEmojiPool = [
 const ctaReminderThresholds = [
   { label: "2h", ms: 2 * 60 * 60 * 1000 },
   { label: "1h", ms: 60 * 60 * 1000 },
-  { label: "30m", ms: 30 * 60 * 1000 },
-  { label: "10m", ms: 10 * 60 * 1000 }
+  { label: "30m", ms: 30 * 60 * 1000 }
 ] as const;
 const ctaReminderToleranceMs = 60 * 1000;
 const ctaReminderChannelId = "1479151829832171731";
 const sentCtaReminders = new Set<string>();
+const allowMockLootSplit =
+  process.env.LOOTSPLIT_ALLOW_MOCK === "1" ||
+  process.env.NODE_ENV !== "production";
 
 type CtaCompRole = keyof typeof ctaRoleEmojiMap;
 type CtaSignupSlot = {
@@ -183,7 +256,9 @@ async function sendCtaReminderMessage(title: string, label: string): Promise<voi
     return;
   }
 
-  await channel.send(`@everyone queda ${label} para la CTA ${title}.`);
+  await channel.send(
+    `@everyone Quedan ${label} para la CTA ${title} : https://www.thehundredalbion.com/app/ctas`
+  );
 }
 
 if (!token) {
@@ -207,20 +282,25 @@ const client = new Client({
 });
 
 client.once("clientReady", async () => {
+  const commandPayload = [
+    slotsCommand.toJSON(),
+    recruitCommand.toJSON(),
+    syncMemberCommand.toJSON(),
+    rolesAuditCommand.toJSON(),
+    payoutLootCommand.toJSON(),
+    balanceCommand.toJSON(),
+    payCommand.toJSON(),
+    withdrawCommand.toJSON(),
+    withdrawRoleCommand.toJSON(),
+    economyCommand.toJSON(),
+    resetEconomyCommand.toJSON(),
+    phase2Command.toJSON()
+  ];
+
   if (guildId) {
-    await client.application?.commands.create(slotsCommand, guildId);
-    await client.application?.commands.create(recruitCommand, guildId);
-    await client.application?.commands.create(syncMemberCommand, guildId);
-    await client.application?.commands.create(rolesAuditCommand, guildId);
-    await client.application?.commands.create(createCtaCommand, guildId);
-    await client.application?.commands.create(finalizeCtaCommand, guildId);
+    await client.application?.commands.set(commandPayload, guildId);
   } else {
-    await client.application?.commands.create(slotsCommand);
-    await client.application?.commands.create(recruitCommand);
-    await client.application?.commands.create(syncMemberCommand);
-    await client.application?.commands.create(rolesAuditCommand);
-    await client.application?.commands.create(createCtaCommand);
-    await client.application?.commands.create(finalizeCtaCommand);
+    await client.application?.commands.set(commandPayload);
   }
   console.log(`Discord bot ready as ${client.user?.tag ?? "unknown-user"}`);
 
@@ -238,14 +318,6 @@ client.once("clientReady", async () => {
 
 client.on("interactionCreate", async (interaction) => {
   try {
-    if (interaction.isAutocomplete()) {
-      if (interaction.commandName === "crearcta") {
-        await handleCreateCtaAutocomplete(interaction);
-      } else if (interaction.commandName === "finalizarcta") {
-        await handleFinalizeCtaAutocomplete(interaction);
-      }
-      return;
-    }
 
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId.startsWith("cta-signup:")) {
@@ -279,13 +351,44 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
 
-    if (interaction.commandName === "crearcta") {
-      await handleCreateCtaCommand(interaction);
+    if (interaction.commandName === "pagar-loot") {
+      await handlePagarLootCommand(interaction);
       return;
     }
 
-    if (interaction.commandName === "finalizarcta") {
-      await handleFinalizeCtaCommand(interaction);
+    if (interaction.commandName === "bal") {
+      await handleBalanceCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "retirar") {
+      await handleRetirarCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "pagar") {
+      await handlePagarCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "retirar_dinero_rol") {
+      await handleRetirarDineroRolCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "economia") {
+      await handleEconomiaCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "reset_economia") {
+      await handleResetEconomiaCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "fase2") {
+      await handleFase2Command(interaction);
+      return;
     }
   } catch (error) {
     if (isDiscordInteractionAlreadyAcknowledged(error)) {
@@ -386,8 +489,8 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
   if (
     !(await requireDiscordRoles(
       interaction,
-      councilRoleIds,
-      "Solo Council puede usar /recruit."
+      managementRoleIds,
+      "Solo Staff puede usar /recruit."
     ))
   ) {
     return;
@@ -459,8 +562,8 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
   if (
     !(await requireDiscordRoles(
       interaction,
-      councilRoleIds,
-      "Solo Council puede usar /syncmember."
+      managementRoleIds,
+      "Solo Staff puede usar /syncmember."
     ))
   ) {
     return;
@@ -494,7 +597,7 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
 
       if (!detectedStatus) {
         await interaction.reply({
-          content: "The user is linked on web but has no Trial/Core/Benched/Council role in Discord yet.",
+          content: "The user is linked on web but has no Trial/Core/Benched/Staff role in Discord yet.",
           ephemeral: true
         });
         return;
@@ -537,7 +640,7 @@ async function handleSyncMemberCommand(interaction: ChatInputCommandInteraction)
     if (!detectedStatus) {
       await repository.setMemberDiscordRoleStatus(member.id, undefined);
       await interaction.reply(
-        `No se detecto rol Trial/Core/Benched/Council en Discord para ${user.displayName}.`
+        `No se detecto rol Trial/Core/Benched/Staff en Discord para ${user.displayName}.`
       );
       return;
     }
@@ -564,8 +667,8 @@ async function handleRolesAuditCommand(interaction: ChatInputCommandInteraction)
   if (
     !(await requireDiscordRoles(
       interaction,
-      councilRoleIds,
-      "Solo Council puede usar /roles-audit."
+      managementRoleIds,
+      "Solo Staff puede usar /roles-audit."
     ))
   ) {
     return;
@@ -667,215 +770,732 @@ async function handleRolesAuditCommand(interaction: ChatInputCommandInteraction)
   }
 }
 
-async function handleCreateCtaAutocomplete(interaction: AutocompleteInteraction) {
-  const focused = interaction.options.getFocused(true);
-  if (focused.name !== "composicion") {
-    await interaction.respond([]);
-    return;
-  }
-
-  const query = focused.value.toLowerCase();
-  const comps = await repository.getComps();
-  const choices = comps
-    .filter((comp) => comp.name.toLowerCase().includes(query))
-    .slice(0, 25)
-    .map((comp) => ({
-      name: comp.name,
-      value: comp.id
-    }));
-
-  await interaction.respond(choices);
-}
-
-async function handleFinalizeCtaAutocomplete(interaction: AutocompleteInteraction) {
-  const focused = interaction.options.getFocused(true);
-  if (focused.name !== "cta") {
-    await interaction.respond([]);
-    return;
-  }
-
-  const query = focused.value.toLowerCase();
-  const ctas = await repository.getCtas();
-  const choices = ctas
-    .filter((cta) => cta.status !== "FINALIZED")
-    .filter((cta) => cta.title.toLowerCase().includes(query))
-    .slice(0, 25)
-    .map((cta) => ({
-      name: `${cta.title} | ${formatUtcDateTime(cta.datetimeUtc)}`,
-      value: cta.id
-    }));
-
-  await interaction.respond(choices);
-}
-
-async function handleCreateCtaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+async function handlePagarLootCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   if (
     !(await requireDiscordRoles(
       interaction,
-      [...councilRoleIds, ...callerRoleIds],
-      "Solo Council o Caller pueden usar /crearcta."
+      staffRoleIds,
+      "Solo Staff puede usar /pagar-loot."
     ))
   ) {
     return;
   }
 
-  const actor = await repository.getUserByDiscordId(interaction.user.id);
-  if (!actor) {
+  await interaction.deferReply();
+
+  const battleLink = interaction.options.getString("battle_link", true).trim();
+  const guildName = interaction.options.getString("guild_name", true).trim();
+  const splitRole = "AUTO";
+  const estValue = interaction.options.getInteger("est_value", true);
+  const bags = interaction.options.getInteger("bolsas", true);
+  const repairCost = interaction.options.getInteger("repair_cost", true);
+  const taxPercent = interaction.options.getInteger("tax", true);
+
+  if (!guildName) {
+    await interaction.editReply("`guild_name` es obligatorio.");
+    return;
+  }
+
+  const mockNames = extractMockNamesFromLink(battleLink);
+  const battleIds = extractBattleIdsFromLink(battleLink);
+  if (mockNames.length > 0 && !allowMockLootSplit) {
+    await interaction.editReply("`mock:` está desactivado en este entorno.");
+    return;
+  }
+  if (mockNames.length === 0 && battleIds.length === 0) {
+    await interaction.editReply(
+      "No se pudieron extraer battle ids del `battle_link` (usa ids=... o `mock:Nombre1,Nombre2`)."
+    );
+    return;
+  }
+
+  const memberNames =
+    mockNames.length > 0
+      ? new Set(mockNames)
+      : await collectUniqueGuildPlayersFromBattles(battleIds, guildName);
+  if (memberNames.size === 0) {
+    await interaction.editReply("No se encontraron jugadores de esa guild en las batallas indicadas.");
+    return;
+  }
+
+  const [users, members] = await Promise.all([repository.getUsers(), repository.getMembers()]);
+  const usersByAlbionLower = new Map<string, Array<(typeof users)[number]>>();
+  for (const user of users) {
+    const albion = normalizeAlbionNameForMatch(user.albionName);
+    if (albion) {
+      const list = usersByAlbionLower.get(albion) ?? [];
+      list.push(user);
+      usersByAlbionLower.set(albion, list);
+    }
+  }
+  const memberByUserId = new Map(members.map((member) => [member.userId, member]));
+
+  const eligiblePayouts: Array<{
+    memberId: string;
+    userId: string;
+    playerName: string;
+  }> = [];
+  const unresolvedByReason: Array<{ playerName: string; reason: string }> = [];
+
+  for (const playerName of [...memberNames]) {
+    const candidates = usersByAlbionLower.get(normalizeAlbionNameForMatch(playerName)) ?? [];
+    if (candidates.length === 0) {
+      unresolvedByReason.push({ playerName, reason: "sin usuario enlazado en web" });
+      continue;
+    }
+    const user =
+      candidates.find((entry) => {
+        const member = memberByUserId.get(entry.id);
+        return Boolean(member && member.status !== "REJECTED");
+      }) ?? candidates[0];
+
+    const member = memberByUserId.get(user.id);
+    if (!member) {
+      unresolvedByReason.push({ playerName, reason: "sin miembro de guild" });
+      continue;
+    }
+    if (member.status === "REJECTED") {
+      unresolvedByReason.push({ playerName, reason: "miembro rechazado" });
+      continue;
+    }
+    eligiblePayouts.push({
+      memberId: member.id,
+      userId: user.id,
+      playerName
+    });
+  }
+
+  const grossTotal = estValue + bags;
+  const netAfterRep = grossTotal - repairCost;
+  const taxAmount = Math.floor((netAfterRep * taxPercent) / 100);
+  const finalPool = netAfterRep - taxAmount;
+
+  if (eligiblePayouts.length === 0) {
+    await interaction.editReply(
+      `No hay participantes elegibles. Detectados en link: ${memberNames.size}.`
+    );
+    return;
+  }
+  if (finalPool <= 0) {
+    await interaction.editReply("El pool final es <= 0. Revisa est_value, bolsas, repair_cost y tax.");
+    return;
+  }
+
+  const perPerson = Math.floor(finalPool / eligiblePayouts.length);
+  if (perPerson <= 0) {
+    await interaction.editReply("El reparto por persona da 0. Ajusta valores.");
+    return;
+  }
+
+  const actorUserId = await resolveActorUserId(interaction);
+  if (!actorUserId) {
+    await interaction.editReply("Tu usuario Discord no esta enlazado en web.");
+    return;
+  }
+
+  const idempotencyKey = buildLootSplitIdempotencyKey({
+    battleIds: battleIds.length > 0 ? battleIds : ["mock"],
+    guildName,
+    splitRole,
+    estValue,
+    bags,
+    repairCost,
+    taxPercent,
+    participantUserIds: eligiblePayouts.map((entry) => entry.userId)
+  });
+
+  const payoutResult = await repository.createLootSplitPayout({
+    createdBy: actorUserId,
+    battleLink,
+    battleIds: battleIds.length > 0 ? battleIds : ["mock"],
+    guildName,
+    splitRole,
+    estValue,
+    bags,
+    repairCost,
+    taxPercent,
+    grossTotal,
+    netAfterRep,
+    taxAmount,
+    finalPool,
+    participantCount: eligiblePayouts.length,
+    perPerson,
+    payouts: eligiblePayouts.map((entry) => ({
+      ...entry,
+      amount: perPerson
+    })),
+    idempotencyKey
+  });
+  const payoutRecord = payoutResult.payout;
+
+  const channelRole = await ensureLootSplitChannelRole(interaction);
+
+  const paidUsers = payoutResult.alreadyProcessed ? [] : await resolvePaidUsers(eligiblePayouts);
+  const paidMentions = paidUsers.map((entry) => `<@${entry.discordId}>`);
+  let roleAssigned = 0;
+  let roleAssignFailed = 0;
+  if (channelRole && !payoutResult.alreadyProcessed) {
+    const roleAssignment = await assignRoleToPaidUsers(interaction, channelRole.id, paidUsers);
+    roleAssigned = roleAssignment.assigned;
+    roleAssignFailed = roleAssignment.failed;
+  }
+  const unresolvedCount = unresolvedByReason.length;
+  const unresolvedPreviewLimit = 12;
+  const unresolvedPreview =
+    unresolvedByReason.length > 0
+      ? unresolvedByReason
+          .slice(0, unresolvedPreviewLimit)
+          .map((entry) => `- ${entry.playerName}: ${entry.reason}`)
+          .join("\n")
+      : "";
+
+  await interaction.editReply(
+    [
+      "📄 **RECIBO DE LOOTSPLIT**",
+      `Batallas: ${battleIds.join(", ") || "mock"}`,
+      `Guild: ${guildName}`,
+      "",
+      "```",
+      formatReceiptRow("Loot Estimado", formatMoney(estValue)),
+      formatReceiptRow("Bolsas", formatMoney(bags)),
+      formatReceiptDivider(),
+      formatReceiptRow("TOTAL BRUTO", formatMoney(grossTotal)),
+      formatReceiptRow("Coste Repair", `-${formatMoney(repairCost)}`),
+      formatReceiptDivider(),
+      formatReceiptRow("Neto (post repair)", formatMoney(netAfterRep)),
+      formatReceiptRow(`Impuesto (${taxPercent}%)`, `-${formatMoney(taxAmount)}`),
+      formatReceiptDivider(),
+      formatReceiptRow("POOL FINAL", formatMoney(finalPool)),
+      formatReceiptRow("Particip. (eleg.)", String(eligiblePayouts.length)),
+      formatReceiptRow("POR PERSONA", formatMoney(perPerson)),
+      "```",
+      payoutResult.alreadyProcessed
+        ? `ℹ️ Reintento detectado: payout ya procesado (sin pagos duplicados).`
+        : `✅ Pagados: ${eligiblePayouts.length}`,
+      `⚠️ No encontrados/inelegibles: ${unresolvedCount}`,
+      `Payout ID: ${payoutRecord.id}`,
+      channelRole ? `Rol CTA: <@&${channelRole.id}>` : "",
+      channelRole && !payoutResult.alreadyProcessed
+        ? `Rol asignado: ${roleAssigned} | Fallidos: ${roleAssignFailed}`
+        : "",
+      paidMentions.length > 0 ? "" : payoutResult.alreadyProcessed ? "" : "Sin menciones disponibles.",
+      paidMentions.length > 0 ? `Pagado a: ${paidMentions.join(", ")}` : "",
+      unresolvedPreview ? "" : "",
+      unresolvedPreview
+        ? `No encontrados (muestra ${Math.min(unresolvedPreviewLimit, unresolvedByReason.length)}/${unresolvedByReason.length}):`
+        : "",
+      unresolvedPreview ? unresolvedPreview : ""
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+}
+
+async function ensureLootSplitChannelRole(
+  interaction: ChatInputCommandInteraction
+): Promise<{ id: string; name: string } | null> {
+  const guild = interaction.guild;
+  const channelName =
+    interaction.channel && "name" in interaction.channel ? String(interaction.channel.name ?? "") : "";
+  if (!guild || !channelName) {
+    return null;
+  }
+
+  const roleName = buildLootSplitRoleName(channelName);
+  if (!roleName) {
+    return null;
+  }
+
+  const existing =
+    guild.roles.cache.find((role) => role.name.toLowerCase() === roleName.toLowerCase()) ?? null;
+  if (existing) {
+    return {
+      id: existing.id,
+      name: existing.name
+    };
+  }
+
+  try {
+    const created = await guild.roles.create({
+      name: roleName,
+      reason: `Loot split generado desde #${channelName}`
+    });
+    return {
+      id: created.id,
+      name: created.name
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildLootSplitRoleName(channelName: string): string {
+  const normalized = channelName
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9/]/g, "")
+    .slice(0, 100);
+
+  return normalized;
+}
+
+async function handleBalanceCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const actorUserId = await resolveActorUserId(interaction);
+  if (!actorUserId) {
     await interaction.reply({
-      content: "Tu usuario Discord no esta enlazado en la web.",
+      content: "Tu usuario Discord no esta enlazado en web.",
       ephemeral: true
+    });
+    return;
+  }
+
+  const [account, users] = await Promise.all([
+    repository.getWalletAccount(actorUserId),
+    repository.getUsers()
+  ]);
+  const me = users.find((entry) => entry.id === actorUserId);
+
+  const avatar = interaction.user.displayAvatarURL({ size: 256 });
+  const embed = new EmbedBuilder()
+    .setColor(0x00b3ff)
+    .setAuthor({
+      name: me?.displayName ?? interaction.user.username,
+      iconURL: avatar
+    })
+    .setTitle("Wallet")
+    .addFields({ name: "Cash", value: `🪙 ${formatMoney(account.cashBalance)}`, inline: true });
+
+  await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleRetirarCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      staffRoleIds,
+      "Solo Staff puede usar /retirar."
+    ))
+  ) {
+    return;
+  }
+
+  const targetDiscordUser = interaction.options.getUser("usuario", true);
+  const amount = interaction.options.getInteger("cantidad", true);
+
+  const target = await repository.getUserByDiscordId(targetDiscordUser.id);
+
+  if (!target) {
+    await interaction.reply({
+      content: "No se encontro usuario web enlazado para ese usuario de Discord."
     });
     return;
   }
 
   try {
-    await interaction.deferReply({ ephemeral: true });
-
-    const datetimeUtc = parseUtcDateTimeInput(interaction.options.getString("hora_utc", true));
-    const title = interaction.options.getString("titulo", true).trim();
-    const compId = interaction.options.getString("composicion", true);
-    const comp = await repository.getCompById(compId);
-
-    if (!comp) {
-      await interaction.editReply({
-        content: "No he encontrado esa composicion.",
-      });
-      return;
-    }
-
-    const cta = await repository.createCta({
-      title,
-      datetimeUtc,
-      createdBy: actor.id,
-      initialStatus: "OPEN",
-      compId: comp.id
+    const actorUserId = await resolveActorUserId(interaction);
+    const tx = await repository.addWalletTransaction({
+      userId: target.id,
+      cashDelta: -amount,
+      reason: "manual_withdraw",
+      createdBy: actorUserId ?? undefined,
+      metadata: {
+        byDiscordId: interaction.user.id,
+        byTag: interaction.user.tag
+      }
     });
 
-    const signupMessage =
-      interaction.channel && interaction.channel.isSendable()
-        ? await interaction.channel.send(
-            buildCtaSignupMessagePayload(cta, comp, [], interaction.guild ?? null)
-          )
-        : null;
-
-    if (!signupMessage) {
-      await interaction.editReply({
-        content: "CTA creada, pero no pude publicar el mensaje de signup en este canal.",
-      });
-      return;
-    }
-
-    await repository.attachCtaSignupMessage(cta.id, {
-      signupChannelId: signupMessage.channelId,
-      signupMessageId: signupMessage.id
-    });
-
-    // Send immediate reminder on CTA creation in the fixed reminders channel.
-    await sendCtaReminderMessage(cta.title, formatCtaCountdownLabel(cta.datetimeUtc));
-
-    const totalSlots = comp.parties.reduce((total, party) => total + party.slots.length, 0);
-    const roleSummary = getCompRoleSummary(comp);
-    const roleSummaryText = [...roleSummary.entries()]
-      .map(([role, count]) => `${ctaRoleEmojiMap[role]} ${role}: ${count}`)
-      .join(" | ");
-
-    const summaryEmbed = new EmbedBuilder()
-      .setColor(0xd8a628)
-      .setTitle("CTA creada")
-      .addFields(
-        { name: "Titulo", value: title, inline: false },
-        { name: "Fecha UTC", value: formatShortUtcDate(datetimeUtc), inline: true },
-        { name: "Hora UTC", value: formatShortUtcTime(datetimeUtc), inline: true },
-        { name: "Comp", value: comp.name, inline: true },
-        { name: "Slots", value: String(totalSlots), inline: true },
-        { name: "Canal signup", value: `<#${signupMessage.channelId}>`, inline: true },
-        { name: "Roles", value: roleSummaryText || "Sin roles", inline: false }
-      )
-      .setTimestamp(new Date(datetimeUtc));
-
-    await interaction.editReply({
-      content: `Mensaje publicado: https://discord.com/channels/${signupMessage.guildId}/${signupMessage.channelId}/${signupMessage.id}`,
-      embeds: [summaryEmbed]
+    await interaction.reply({
+      content: `Retiro aplicado a ${target.displayName}: -${formatMoney(amount)}. Nuevo cash: ${formatMoney(tx.cashBalanceAfter)}.`
     });
   } catch (error) {
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({
-        content:
-          error instanceof Error
-            ? error.message
-            : "No se pudo crear la CTA."
-      });
-    } else {
-      await interaction.reply({
-        content:
-          error instanceof Error
-            ? error.message
-            : "No se pudo crear la CTA.",
-        ephemeral: true
-      });
-    }
+    await interaction.reply({
+      content:
+        error instanceof Error
+          ? `No se pudo retirar: ${error.message}`
+          : "No se pudo retirar por saldo insuficiente."
+    });
   }
 }
 
-async function handleFinalizeCtaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+async function handlePagarCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   if (
     !(await requireDiscordRoles(
       interaction,
-      [...councilRoleIds, ...callerRoleIds],
-      "Solo Council o Caller pueden usar /finalizarcta."
+      staffRoleIds,
+      "Solo Staff puede usar /pagar."
     ))
   ) {
     return;
   }
 
-  const actor = await repository.getUserByDiscordId(interaction.user.id);
-  if (!actor) {
+  const targetDiscordUser = interaction.options.getUser("usuario", true);
+  const amount = interaction.options.getInteger("cantidad", true);
+  const target = await repository.getUserByDiscordId(targetDiscordUser.id);
+
+  if (!target) {
     await interaction.reply({
-      content: "Tu usuario Discord no esta enlazado en la web.",
+      content: "No se encontro usuario web enlazado para ese usuario de Discord.",
       ephemeral: true
     });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
-
-  const ctaId = interaction.options.getString("cta", true);
-  const cta = await repository.getCtaById(ctaId);
-  if (!cta) {
-    await interaction.editReply({
-      content: "No he encontrado esa CTA.",
-    });
-    return;
-  }
-
-  if (cta.status === "FINALIZED") {
-    await interaction.editReply({
-      content: "Esa CTA ya esta finalizada.",
-    });
-    return;
-  }
-
-  const signups = await repository.getCtaSignups(cta.id);
-  for (const signup of signups) {
-    await repository.upsertAttendance({
-      ctaId: cta.id,
-      memberId: signup.memberId,
-      decision: "YES",
-      state: "PRESENT"
-    });
-  }
-
-  const nextStatus = transitionCtaStatus(cta.status, "FINALIZED");
-  await repository.updateCtaStatus(cta.id, nextStatus);
-  const generatedPoints = await repository.regenerateAttendancePointsForCta(cta.id);
-
-  if (cta.signupMessageId && cta.signupChannelId) {
-    await refreshCtaSignupMessage(cta.signupMessageId, cta.signupChannelId);
-  }
-
-  await interaction.editReply({
-    content: `CTA finalizada: ${cta.title}. Se han marcado ${signups.length} signups como PRESENT y generado ${generatedPoints.length} entradas de puntos.`,
+  const actorUserId = await resolveActorUserId(interaction);
+  const tx = await repository.addWalletTransaction({
+    userId: target.id,
+    cashDelta: amount,
+    reason: "manual_pay",
+    createdBy: actorUserId ?? undefined,
+    metadata: {
+      byDiscordId: interaction.user.id,
+      byTag: interaction.user.tag
+    }
   });
+
+  await interaction.reply({
+    content: `Pago aplicado a ${target.displayName}: +${formatMoney(amount)}. Nuevo cash: ${formatMoney(tx.cashBalanceAfter)}.`,
+    ephemeral: true
+  });
+}
+
+async function handleRetirarDineroRolCommand(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      staffRoleIds,
+      "Solo Staff puede usar /retirar_dinero_rol."
+    ))
+  ) {
+    return;
+  }
+
+  const role = interaction.options.getString("rol", true) as Exclude<
+    (typeof lootSplitRoleChoices)[number],
+    "TODOS"
+  >;
+  const targetStatus: MemberStatus = role === "STAFF" ? "COUNCIL" : role;
+  const amount = interaction.options.getInteger("cantidad", true);
+  const actorUserId = await resolveActorUserId(interaction);
+
+  const [members, accounts, users] = await Promise.all([
+    repository.getMembers(),
+    repository.listWalletAccounts(),
+    repository.getUsers()
+  ]);
+  const accountByUserId = new Map(accounts.map((entry) => [entry.userId, entry]));
+  const userById = new Map(users.map((entry) => [entry.id, entry]));
+
+  const targetMembers = members.filter((entry) => entry.status === targetStatus);
+  if (targetMembers.length === 0) {
+    await interaction.reply({
+      content: `No hay miembros con rol ${role}.`,
+      ephemeral: true
+    });
+    return;
+  }
+
+  const withdrawn: string[] = [];
+  const skippedInsufficient: string[] = [];
+
+  for (const member of targetMembers) {
+    const account = accountByUserId.get(member.userId);
+    const user = userById.get(member.userId);
+    const displayName = user?.displayName ?? member.userId;
+    const balance = account?.cashBalance ?? 0;
+
+    if (balance < amount) {
+      skippedInsufficient.push(displayName);
+      continue;
+    }
+
+    await repository.addWalletTransaction({
+      userId: member.userId,
+      cashDelta: -amount,
+      reason: "bulk_role_withdraw",
+      createdBy: actorUserId ?? undefined,
+      metadata: {
+        role: targetStatus,
+        byDiscordId: interaction.user.id,
+        byTag: interaction.user.tag
+      }
+    });
+    withdrawn.push(displayName);
+  }
+
+  await interaction.reply({
+    content: [
+      `Retiro por rol ${role}: -${formatMoney(amount)} por miembro.`,
+      `✅ Aplicados: ${withdrawn.length}`,
+      `⚠️ Sin saldo suficiente: ${skippedInsufficient.length}`,
+      withdrawn.length > 0 ? `Pagadores: ${withdrawn.join(", ")}` : "",
+      skippedInsufficient.length > 0 ? `Omitidos: ${skippedInsufficient.join(", ")}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    ephemeral: true
+  });
+}
+
+async function handleEconomiaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      staffRoleIds,
+      "Solo Staff puede usar /economia."
+    ))
+  ) {
+    return;
+  }
+
+  const accounts = await repository.listWalletAccounts();
+  const totalCash = accounts.reduce((sum, entry) => sum + entry.cashBalance, 0);
+
+  await interaction.reply({
+    content: [
+      "📊 **Economia global**",
+      `Usuarios con cuenta: ${accounts.length}`,
+      `Cash total: ${formatMoney(totalCash)}`
+    ].join("\n"),
+    ephemeral: true
+  });
+}
+
+async function handleResetEconomiaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      staffRoleIds,
+      "Solo Staff puede usar /reset_economia."
+    ))
+  ) {
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+  const actorUserId = await resolveActorUserId(interaction);
+  const accounts = await repository.listWalletAccounts();
+  let touched = 0;
+
+  for (const account of accounts) {
+    if (account.cashBalance !== 0 || account.bankBalance !== 0) {
+      await repository.addWalletTransaction({
+        userId: account.userId,
+        cashDelta: -account.cashBalance,
+        bankDelta: -account.bankBalance,
+        reason: "economy_reset",
+        createdBy: actorUserId ?? undefined,
+        metadata: {
+          byDiscordId: interaction.user.id,
+          byTag: interaction.user.tag
+        }
+      });
+      touched += 1;
+    }
+  }
+
+  await interaction.editReply(
+    `Reset completado. Cuentas actualizadas a 0: ${touched}/${accounts.length}.`
+  );
+}
+
+async function handleFase2Command(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      phase2AllowedRoleIds,
+      "Solo Staff o Reclutador puede usar /fase2."
+    ))
+  ) {
+    return;
+  }
+
+  const channel = interaction.channel;
+  if (!channel?.isTextBased() || !("send" in channel)) {
+    await interaction.reply({
+      content: "Este comando solo se puede usar en un canal de texto.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  await channel.send(
+    `Enhorabuena has pasado a la Fase 2: ahora el <@&${staffRoleIds[0]}> valorará tu apply.`
+  );
+  await interaction.reply({
+    content: "Mensaje de Fase 2 enviado.",
+    ephemeral: true
+  });
+}
+
+function extractBattleIdsFromLink(link: string): string[] {
+  const normalized = link.trim();
+  const fromIdsQuery = normalized.match(/ids=([0-9,]+)/i)?.[1] ?? "";
+  if (fromIdsQuery) {
+    return [...new Set(fromIdsQuery.split(",").map((entry) => entry.trim()).filter(Boolean))];
+  }
+
+  const fromPath = normalized.match(/multi:ids:([0-9,]+)/i)?.[1] ?? "";
+  if (fromPath) {
+    return [...new Set(fromPath.split(",").map((entry) => entry.trim()).filter(Boolean))];
+  }
+
+  return [];
+}
+
+function extractMockNamesFromLink(link: string): string[] {
+  const normalized = link.trim();
+  const explicitMockPayload = normalized.match(/^mock\s*:\s*(.+)$/i)?.[1]?.trim() ?? "";
+  const directNamesPayload =
+    !normalized.includes("http") &&
+    !normalized.includes("ids=") &&
+    !normalized.includes("/battles/")
+      ? normalized
+      : "";
+
+  const payload = explicitMockPayload || directNamesPayload;
+  if (!payload) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      payload
+        .split(/[,\n;]/g)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    )
+  ];
+}
+
+async function collectUniqueGuildPlayersFromBattles(
+  battleIds: string[],
+  guildName: string
+): Promise<Set<string>> {
+  const target = guildName.trim().toLowerCase();
+  const matchAllGuilds = target === "all" || target === "*";
+  const uniqueNames = new Set<string>();
+
+  for (const battleId of battleIds) {
+    const detail = await killboardClient.fetchGuildBattleDetail({
+      battleId,
+      guildName
+    });
+    if (!detail) {
+      continue;
+    }
+
+    for (const player of detail.players) {
+      const playerGuild = player.guildName?.trim().toLowerCase();
+      const playerName = player.name?.trim();
+      if (!playerName) {
+        continue;
+      }
+      if (!matchAllGuilds && (!playerGuild || playerGuild !== target)) {
+        continue;
+      }
+      uniqueNames.add(playerName);
+    }
+  }
+
+  return uniqueNames;
+}
+
+async function resolveActorUserId(
+  interaction: ChatInputCommandInteraction
+): Promise<string | null> {
+  const user = await repository.getUserByDiscordId(interaction.user.id);
+  return user?.id ?? null;
+}
+
+async function resolvePaidUsers(
+  entries: Array<{ userId: string }>
+): Promise<Array<{ userId: string; discordId: string }>> {
+  const users = await repository.getUsers();
+  const byId = new Map(users.map((entry) => [entry.id, entry]));
+  const resolved: Array<{ userId: string; discordId: string }> = [];
+  for (const entry of entries) {
+    const user = byId.get(entry.userId);
+    if (!user) {
+      continue;
+    }
+    resolved.push({
+      userId: entry.userId,
+      discordId: user.discordId
+    });
+  }
+  return resolved;
+}
+
+async function assignRoleToPaidUsers(
+  interaction: ChatInputCommandInteraction,
+  roleId: string,
+  users: Array<{ userId: string; discordId: string }>
+): Promise<{ assigned: number; failed: number }> {
+  const guild = interaction.guild;
+  if (!guild) {
+    return { assigned: 0, failed: users.length };
+  }
+
+  let assigned = 0;
+  let failed = 0;
+  for (const user of users) {
+    try {
+      const member = await guild.members.fetch(user.discordId);
+      if (!member.roles.cache.has(roleId)) {
+        await member.roles.add(roleId, "Loot split payout auto-role");
+      }
+      assigned += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { assigned, failed };
+}
+
+function formatMoney(value: number): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.max(0, value));
+}
+
+function buildLootSplitIdempotencyKey(input: {
+  battleIds: string[];
+  guildName: string;
+  splitRole: string;
+  estValue: number;
+  bags: number;
+  repairCost: number;
+  taxPercent: number;
+  participantUserIds: string[];
+}): string {
+  const payload = JSON.stringify({
+    battleIds: [...new Set(input.battleIds)].sort(),
+    guildName: input.guildName.trim().toLowerCase(),
+    splitRole: input.splitRole.trim().toUpperCase(),
+    estValue: input.estValue,
+    bags: input.bags,
+    repairCost: input.repairCost,
+    taxPercent: input.taxPercent,
+    participantUserIds: [...new Set(input.participantUserIds)].sort()
+  });
+
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+function normalizeAlbionNameForMatch(value?: string): string {
+  return (value ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function formatReceiptRow(label: string, value: string): string {
+  const left = label.padEnd(16, " ");
+  return `${left} : ${value}`;
+}
+
+function formatReceiptDivider(): string {
+  return "------------------------------";
 }
 
 async function syncDiscordGuildRole(discordId: string, member: { id: string; status: MemberStatus }) {
@@ -906,7 +1526,7 @@ async function syncDiscordGuildRole(discordId: string, member: { id: string; sta
 async function replaceManagedRoles(guildMember: GuildMember, nextRoleId?: string) {
   const roleIdsToRemove = [
     ...Object.values(activeRoleIds).filter((roleId): roleId is string => Boolean(roleId)),
-    ...councilRoleIds
+    ...managementRoleIds
   ];
   const nextRoles = guildMember.roles.cache
     .filter((role) => !roleIdsToRemove.includes(role.id))
@@ -921,7 +1541,7 @@ async function replaceManagedRoles(guildMember: GuildMember, nextRoleId?: string
 
 function getDiscordRoleIdForStatus(status: MemberStatus): string | undefined {
   if (status === "COUNCIL") {
-    return councilRoleIds[0];
+    return managementRoleIds[0];
   }
 
   if (status === "TRIAL") {
@@ -940,7 +1560,7 @@ function getDiscordRoleIdForStatus(status: MemberStatus): string | undefined {
 }
 
 function getStatusFromDiscordRoles(guildMember: GuildMember): MemberStatus | undefined {
-  if (councilRoleIds.some((roleId) => guildMember.roles.cache.has(roleId))) {
+  if (managementRoleIds.some((roleId) => guildMember.roles.cache.has(roleId))) {
     return "COUNCIL";
   }
 
@@ -990,6 +1610,20 @@ async function ensureCtaReminders() {
       const ctaTime = new Date(cta.datetimeUtc).getTime();
       if (Number.isNaN(ctaTime)) {
         continue;
+      }
+
+      const createdAtRaw = (cta as CTA & { createdAt?: string }).createdAt;
+      const createdAtMs = createdAtRaw ? Date.parse(createdAtRaw) : Number.NaN;
+      const createdDiff = now - createdAtMs;
+      const createdKey = `${cta.id}:created`;
+      if (
+        Number.isFinite(createdAtMs) &&
+        createdDiff >= 0 &&
+        createdDiff <= 5 * 60 * 1000 &&
+        !sentCtaReminders.has(createdKey)
+      ) {
+        await sendCtaReminderMessage(cta.title, formatCtaCountdownLabel(cta.datetimeUtc));
+        sentCtaReminders.add(createdKey);
       }
 
       for (const threshold of ctaReminderThresholds) {
@@ -1140,41 +1774,66 @@ async function ensureRecruitmentTickets() {
         .setTitle("Nuevo ticket de reclutamiento")
         .setDescription(
           "Solicitud recibida desde la web. Revisad el perfil y decidid el estado en Discord para sincronizar acceso."
-        )
-        .addFields(
-          {
-            name: "Usuario",
-            value: `<@${user.discordId}>`,
-            inline: true
-          },
-          {
-            name: "Nombre (web)",
-            value: application.displayName,
-            inline: true
-          },
-          {
-            name: "Discord ID",
-            value: user.discordId,
-            inline: true
-          },
-          {
-            name: "Disponibilidad UTC",
-            value: application.timezone,
-            inline: true
-          },
-          {
-            name: "Rol principal",
-            value: application.mainRole,
-            inline: true
-          },
-          {
-            name: "Contexto de experiencia",
-            value: application.zvzExperience || "No especificado",
-            inline: false
-          }
-        )
+        );
+
+      const parsed = parseRecruitmentApplicationDetails(application);
+
+      recruitmentEmbed.addFields(
+        {
+          name: "Usuario",
+          value: `<@${user.discordId}>`,
+          inline: true
+        },
+        {
+          name: "Nombre (web)",
+          value: application.displayName || "No especificado",
+          inline: true
+        },
+        {
+          name: "Discord ID",
+          value: user.discordId,
+          inline: true
+        },
+        {
+          name: "Disponibilidad UTC",
+          value: application.timezone || "No especificado",
+          inline: false
+        },
+        {
+          name: "Rol principal",
+          value: application.mainRole || "No especificado",
+          inline: false
+        },
+        {
+          name: "Rol secundario",
+          value: parsed.secondaryRole,
+          inline: false
+        },
+        {
+          name: "Gremios anteriores",
+          value: parsed.previousGuilds,
+          inline: false
+        },
+        {
+          name: "Experiencia ZvZ",
+          value: parsed.experience,
+          inline: false
+        },
+        {
+          name: "Notas",
+          value: parsed.notes,
+          inline: false
+        },
+        {
+          name: "⚠️ IMPORTANTE",
+          value: "**Postea en este ticket una screenshot de tus stats y vods.**",
+          inline: false
+        }
+      );
+
+      recruitmentEmbed
         .setFooter({
-          text: "Accion requerida: asignar Trial/Core/Benched/Council en Discord para sincronizar web"
+          text: "Accion requerida: asignar Trial/Core/Benched/Staff en Discord para sincronizar web"
         })
         .setTimestamp(new Date(application.createdAt));
 
@@ -1188,6 +1847,77 @@ async function ensureRecruitmentTickets() {
       console.error(`Recruitment ticket failed for application ${application.id}`, error);
     }
   }
+}
+
+function parseRecruitmentApplicationDetails(application: {
+  zvzExperience?: string;
+  notes?: string;
+}) {
+  const base = {
+    secondaryRole: "No especificado",
+    previousGuilds: "No especificado",
+    experience: "No especificado",
+    notes: "No especificado"
+  };
+
+  const normalize = (value: string) =>
+    value
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+
+  const rawExperience = application.zvzExperience?.trim() ?? "";
+  const rawNotes = application.notes?.trim() ?? "";
+  const lines = `${rawExperience}\n${rawNotes}`
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const experienceRemainder: string[] = [];
+  const notesRemainder: string[] = [];
+
+  for (const line of lines) {
+    const parts = line.split(":");
+    if (parts.length < 2) {
+      experienceRemainder.push(line);
+      continue;
+    }
+
+    const key = normalize(parts[0] ?? "");
+    const value = parts.slice(1).join(":").trim();
+    if (!value) {
+      continue;
+    }
+
+    if (key.includes("rol secundario")) {
+      base.secondaryRole = value;
+      continue;
+    }
+    if (key.includes("gremios anteriores") || key.includes("guilds anteriores")) {
+      base.previousGuilds = value;
+      continue;
+    }
+    if (key.includes("nota")) {
+      notesRemainder.push(value);
+      continue;
+    }
+
+    experienceRemainder.push(line);
+  }
+
+  if (experienceRemainder.length > 0) {
+    base.experience = experienceRemainder.join("\n").slice(0, 1000);
+  } else if (rawExperience) {
+    base.experience = rawExperience.slice(0, 1000);
+  }
+
+  if (notesRemainder.length > 0) {
+    base.notes = notesRemainder.join("\n").slice(0, 1000);
+  } else if (rawNotes) {
+    base.notes = rawNotes.slice(0, 1000);
+  }
+
+  return base;
 }
 
 async function handleCtaSignupSelect(interaction: StringSelectMenuInteraction) {
@@ -1297,7 +2027,7 @@ function buildRecruitmentOverwrites(guild: Guild, guildMember: GuildMember) {
     }
   ];
 
-  for (const roleId of councilRoleIds) {
+  for (const roleId of managementRoleIds) {
     if (!guild.roles.cache.has(roleId)) {
       continue;
     }
@@ -1315,79 +2045,6 @@ function buildRecruitmentOverwrites(guild: Guild, guildMember: GuildMember) {
   }
 
   return overwrites;
-}
-
-function parseUtcDateTimeInput(value: string): string {
-  const normalized = value.trim();
-
-  const shortHourMatch = normalized.match(/^(\d{1,2})$/);
-  if (shortHourMatch) {
-    const hour = Number(shortHourMatch[1]);
-    if (hour < 0 || hour > 23) {
-      throw new Error("Hora UTC invalida. Usa 20, 20:00 o 2026-03-01 18:00");
-    }
-
-    const now = new Date();
-    const utcDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, 0, 0));
-    return utcDate.toISOString();
-  }
-
-  const shortTimeMatch = normalized.match(/^(\d{1,2}):(\d{2})$/);
-  if (shortTimeMatch) {
-    const hour = Number(shortTimeMatch[1]);
-    const minute = Number(shortTimeMatch[2]);
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      throw new Error("Hora UTC invalida. Usa 20, 20:00 o 2026-03-01 18:00");
-    }
-
-    const now = new Date();
-    const utcDate = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute, 0)
-    );
-    return utcDate.toISOString();
-  }
-
-  const isoCandidate = normalized.includes("T") ? normalized : normalized.replace(" ", "T");
-  const withZone = isoCandidate.endsWith("Z") ? isoCandidate : `${isoCandidate}Z`;
-  const withSeconds =
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/.test(withZone)
-      ? withZone.replace("Z", ":00Z")
-      : withZone;
-
-  const parsed = Date.parse(withSeconds);
-  if (Number.isNaN(parsed)) {
-    throw new Error("Hora UTC invalida. Usa 20, 20:00 o 2026-03-01 18:00");
-  }
-
-  return new Date(parsed).toISOString();
-}
-
-function formatUtcDateTime(datetimeUtc: string): string {
-  return new Date(datetimeUtc).toLocaleString("es-ES", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }) + " UTC";
-}
-
-function getCompRoleSummary(comp: CompRecord) {
-  const summary = new Map<CtaCompRole, number>();
-
-  for (const role of ctaRoleOrder) {
-    const count = comp.parties.reduce(
-      (total, party) => total + party.slots.filter((slot) => slot.role === role).length,
-      0
-    );
-
-    if (count > 0) {
-      summary.set(role, count);
-    }
-  }
-
-  return summary;
 }
 
 function buildCtaSignupSlots(comp: CompRecord): CtaSignupSlot[] {

@@ -10,6 +10,8 @@ export interface User {
   discordId: string;
   displayName: string;
   albionName?: string;
+  ctaPrimaryRole?: string;
+  ctaSecondaryRole?: string;
   role: UserRole;
   avatarUrl?: string;
 }

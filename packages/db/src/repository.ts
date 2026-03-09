@@ -14,6 +14,8 @@ export interface RegisterMemberInput {
   displayName: string;
   discordId: string;
   albionName: string;
+  ctaPrimaryRole?: string;
+  ctaSecondaryRole?: string;
   avatarUrl?: string;
 }
 
@@ -54,6 +56,15 @@ export interface InviteRecord {
   createdAt: string;
   consumedBy?: string;
   consumedAt?: string;
+}
+
+export interface OverviewAnnouncementRecord {
+  id: string;
+  position: number;
+  title: string;
+  body: string;
+  updatedAt: string;
+  updatedBy?: string;
 }
 
 export interface SaveRecruitmentApplicationInput {
@@ -176,6 +187,8 @@ export interface CtaSignupRecord {
   weaponName: string;
   reactionEmoji?: string;
   playerName: string;
+  preferredRoles: string[];
+  isFill: boolean;
   reactedAt: string;
 }
 
@@ -188,6 +201,8 @@ export interface SaveCtaSignupInput {
   weaponName: string;
   reactionEmoji?: string;
   playerName: string;
+  preferredRoles?: string[];
+  isFill?: boolean;
 }
 
 export interface SaveCompInput {
@@ -238,6 +253,84 @@ export interface BattleMemberAttendanceRecord {
   memberId: string;
 }
 
+export interface WalletAccountRecord {
+  userId: string;
+  cashBalance: number;
+  bankBalance: number;
+  updatedAt: string;
+}
+
+export interface WalletTransactionRecord {
+  id: string;
+  userId: string;
+  cashDelta: number;
+  bankDelta: number;
+  cashBalanceAfter: number;
+  bankBalanceAfter: number;
+  reason: string;
+  createdBy?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface LootSplitPayoutRecord {
+  id: string;
+  createdBy: string;
+  battleLink: string;
+  battleIds: string[];
+  guildName: string;
+  splitRole: string;
+  estValue: number;
+  bags: number;
+  repairCost: number;
+  taxPercent: number;
+  grossTotal: number;
+  netAfterRep: number;
+  taxAmount: number;
+  finalPool: number;
+  participantCount: number;
+  perPerson: number;
+  createdAt: string;
+  idempotencyKey?: string;
+}
+
+export interface LootSplitPayoutCreateResult {
+  payout: LootSplitPayoutRecord;
+  alreadyProcessed: boolean;
+}
+
+export interface BottledEnergyLedgerImportRow {
+  happenedAt: string;
+  albionPlayer: string;
+  albionPlayerNormalized: string;
+  reason: string;
+  amount: number;
+  rowHash: string;
+  userId?: string;
+}
+
+export interface BottledEnergyImportResult {
+  importId: string;
+  insertedRows: number;
+  duplicateRows: number;
+  totalRows: number;
+}
+
+export interface BottledEnergyBalanceRecord {
+  memberId: string;
+  userId: string;
+  discordId: string;
+  displayName: string;
+  albionName?: string;
+  balance: number;
+}
+
+export interface BottledEnergyUnmatchedBalanceRecord {
+  albionName: string;
+  balance: number;
+  lastSeenAt: string;
+}
+
 export interface DatabaseRepository {
   getConfig(): Promise<GuildConfig>;
   getUsers(): Promise<User[]>;
@@ -246,6 +339,10 @@ export interface DatabaseRepository {
   createUser(input: RegisterMemberInput & { role?: UserRole }): Promise<User>;
   updateUserAvatar(userId: string, avatarUrl?: string): Promise<User | null>;
   updateUserAlbionName(userId: string, albionName: string): Promise<User | null>;
+  updateUserCtaRoles(
+    userId: string,
+    input: { ctaPrimaryRole: string; ctaSecondaryRole: string }
+  ): Promise<User | null>;
   getMembers(): Promise<GuildMember[]>;
   getMemberById(memberId: string): Promise<GuildMember | null>;
   getMemberByUserId(userId: string): Promise<GuildMember | null>;
@@ -318,6 +415,11 @@ export interface DatabaseRepository {
   updateCouncilTask(taskId: string, input: UpdateCouncilTaskInput): Promise<CouncilTaskRecord | null>;
   updateCouncilTaskStatus(taskId: string, status: CouncilTaskStatus): Promise<CouncilTaskRecord | null>;
   deleteCouncilTask(taskId: string): Promise<boolean>;
+  getOverviewAnnouncements(): Promise<OverviewAnnouncementRecord[]>;
+  replaceOverviewAnnouncements(
+    input: Array<{ title: string; body: string }>,
+    updatedBy: string
+  ): Promise<OverviewAnnouncementRecord[]>;
   getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]>;
   upsertCtaSignup(input: SaveCtaSignupInput): Promise<CtaSignupRecord>;
   deleteCtaSignup(ctaId: string, memberId: string): Promise<boolean>;
@@ -337,4 +439,46 @@ export interface DatabaseRepository {
   createInvite(createdBy: string): Promise<InviteRecord>;
   getInviteByCode(code: string): Promise<InviteRecord | null>;
   consumeInvite(code: string, consumedBy: string): Promise<InviteRecord | null>;
+  getWalletAccount(userId: string): Promise<WalletAccountRecord>;
+  listWalletAccounts(): Promise<WalletAccountRecord[]>;
+  addWalletTransaction(input: {
+    userId: string;
+    cashDelta: number;
+    bankDelta?: number;
+    reason: string;
+    createdBy?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<WalletTransactionRecord>;
+  createLootSplitPayout(input: {
+    createdBy: string;
+    battleLink: string;
+    battleIds: string[];
+    guildName: string;
+    splitRole: string;
+    estValue: number;
+    bags: number;
+    repairCost: number;
+    taxPercent: number;
+    grossTotal: number;
+    netAfterRep: number;
+    taxAmount: number;
+    finalPool: number;
+    participantCount: number;
+    perPerson: number;
+    payouts: Array<{
+      memberId: string;
+      userId: string;
+      playerName: string;
+      amount: number;
+    }>;
+    idempotencyKey?: string;
+  }): Promise<LootSplitPayoutCreateResult>;
+  importBottledEnergyLedger(input: {
+    importedBy: string;
+    sourcePreview?: string;
+    rows: BottledEnergyLedgerImportRow[];
+  }): Promise<BottledEnergyImportResult>;
+  listBottledEnergyBalances(): Promise<BottledEnergyBalanceRecord[]>;
+  listBottledEnergyUnmatchedBalances(): Promise<BottledEnergyUnmatchedBalanceRecord[]>;
+  resetBottledEnergyLedger(): Promise<{ deletedLedgerRows: number; deletedImportRows: number }>;
 }

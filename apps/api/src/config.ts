@@ -11,6 +11,7 @@ export interface ApiConfig {
   discordRedirectUri: string;
   discordScopes: string[];
   albionApiBaseUrl: string;
+  albionBbApiBaseUrl: string;
   albionBattlesSource: "official" | "albionbb";
   albionBattlesGuildId: string;
   albionBattlesGuildName: string;
@@ -18,6 +19,10 @@ export interface ApiConfig {
   albionBattlesLimit: number;
   launchCountdownEnabled: boolean;
   launchAtIso: string;
+  discordGuildId: string;
+  discordBotToken: string;
+  discordCallerRoleIds: string[];
+  discordBottledEnergyChannelId: string;
 }
 
 export function loadApiConfig(): ApiConfig {
@@ -41,6 +46,8 @@ export function loadApiConfig(): ApiConfig {
       .filter(Boolean),
     albionApiBaseUrl:
       process.env.ALBION_API_BASE_URL ?? "https://gameinfo-ams.albiononline.com/api/gameinfo",
+    albionBbApiBaseUrl:
+      process.env.ALBION_BB_API_BASE_URL ?? "https://api.albionbb.com/eu",
     albionBattlesSource:
       process.env.ALBION_BATTLES_SOURCE === "albionbb" ? "albionbb" : "official",
     albionBattlesGuildId: process.env.ALBION_BATTLES_GUILD_ID ?? "",
@@ -48,7 +55,15 @@ export function loadApiConfig(): ApiConfig {
     albionBattlesMinGuildPlayers: Number(process.env.ALBION_BATTLES_MIN_GUILD_PLAYERS ?? 20),
     albionBattlesLimit: Number(process.env.ALBION_BATTLES_LIMIT ?? 12),
     launchCountdownEnabled: process.env.LAUNCH_COUNTDOWN_ENABLED !== "0",
-    launchAtIso: process.env.LAUNCH_AT_ISO ?? "2026-03-23T12:00:00+01:00"
+    launchAtIso: process.env.LAUNCH_AT_ISO ?? "2026-03-23T12:00:00+01:00",
+    discordGuildId: process.env.DISCORD_GUILD_ID ?? "",
+    discordBotToken: process.env.DISCORD_BOT_TOKEN ?? "",
+    discordCallerRoleIds: (process.env.DISCORD_CALLER_ROLE_IDS ?? "1479173827782250596")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    discordBottledEnergyChannelId:
+      process.env.DISCORD_BOTTLED_ENERGY_CHANNEL_ID ?? "1480132173305614437"
   };
 }
 

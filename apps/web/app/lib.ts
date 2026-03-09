@@ -44,6 +44,14 @@ export interface PublicPerformanceData {
   lastUpdatedAt?: string;
 }
 
+export interface OverviewAnnouncementEntry {
+  id: string;
+  title: string;
+  body: string;
+  position: number;
+  updatedAt: string;
+}
+
 export interface MeData {
   id: string;
   displayName: string;
@@ -169,6 +177,12 @@ export interface CtaEntry {
   compName?: string;
   signupChannelId?: string;
   signupMessageId?: string;
+  signupFillers: Array<{
+    memberId: string;
+    playerName: string;
+    playerUserId?: string;
+    preferredRoles: string[];
+  }>;
   signupParties: Array<{
     partyKey: string;
     partyName: string;
@@ -242,8 +256,46 @@ export interface CouncilTaskEntry {
   updatedAt: string;
 }
 
+export interface BottledEnergyBalanceEntry {
+  memberId: string;
+  userId: string;
+  discordId: string;
+  displayName: string;
+  albionName?: string;
+  balance: number;
+}
+
+export interface BottledEnergyUnmatchedEntry {
+  albionName: string;
+  balance: number;
+  lastSeenAt: string;
+}
+
+export interface BottledEnergyData {
+  balances: BottledEnergyBalanceEntry[];
+  unmatched: BottledEnergyUnmatchedEntry[];
+  updatedAt: string;
+}
+
 export interface AlbionPlayerLookupData {
   query: string;
+  filters?: {
+    start?: string;
+    end?: string;
+    minPlayers: number;
+  };
+  stats?: {
+    totalKills: number;
+    totalDeaths: number;
+    totalDamage: number;
+    totalHeal: number;
+    totalAttendance: number;
+    averageIp: number;
+    totalKillFame: number;
+    totalDeathFame: number;
+    kd: number;
+    entries: number;
+  };
   player?: {
     id: string;
     name: string;
@@ -458,18 +510,20 @@ export async function getPrivateOverviewData() {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
 
-  const [me, ctas, slots, managementProbe] = await Promise.all([
+  const [me, ctas, slots, managementProbe, announcements] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
     getJson<SlotsData>("/public/slots"),
-    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId),
+    getJson<OverviewAnnouncementEntry[]>("/overview/announcements", sessionToken, discordId)
   ]);
 
   return {
     me,
     ctas,
     slots,
-    canManageCouncil: Boolean(managementProbe)
+    canManageCouncil: Boolean(managementProbe),
+    announcements: announcements ?? []
   };
 }
 
@@ -493,20 +547,21 @@ export async function getPrivateCtasData() {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
 
-  const [me, ctas, assignablePlayers, builds, councilProbe] = await Promise.all([
+  const [me, ctas, builds, comps, manageProbe] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
-    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId),
     getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId),
-    getJson<CouncilMemberEntry[]>("/council/members", sessionToken, discordId)
+    getJson<CompEntry[]>("/comps", sessionToken, discordId),
+    getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId)
   ]);
 
   return {
     me,
     ctas,
-    assignablePlayers: assignablePlayers ?? [],
-    canEditCompsAndCtas: Boolean(assignablePlayers),
-    canCancelCta: Boolean(councilProbe),
+    comps: comps ?? [],
+    assignablePlayers: [],
+    canEditCompsAndCtas: Boolean(manageProbe),
+    canCancelCta: Boolean(manageProbe),
     builds: builds ?? []
   };
 }
@@ -556,6 +611,22 @@ export async function getPrivateCouncilTasksData() {
     councilMembers: councilMembers ?? [],
     councilTasks: councilTasks ?? [],
     canAccessCouncilTasks: Boolean(councilMembers && councilTasks)
+  };
+}
+
+export async function getPrivateBottledEnergyData() {
+  const sessionToken = await getSessionToken();
+  const discordId = await getDiscordId();
+
+  const [me, data] = await Promise.all([
+    getJson<MeData>("/me", sessionToken, discordId),
+    getJson<BottledEnergyData>("/council/bottled-energy", sessionToken, discordId)
+  ]);
+
+  return {
+    me,
+    data,
+    canAccess: Boolean(data)
   };
 }
 

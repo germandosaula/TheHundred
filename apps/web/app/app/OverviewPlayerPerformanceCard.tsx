@@ -51,7 +51,7 @@ export function OverviewPlayerPerformanceCard({
     };
   }, [albionName]);
 
-  const kdRatio = lookup?.player?.kdFame;
+  const kdRatio = lookup?.stats?.kd ?? 0;
 
   return (
     <article className="dashboard-card metric-card">
@@ -61,7 +61,7 @@ export function OverviewPlayerPerformanceCard({
         <p>Cargando K/D...</p>
       ) : (
         <p>
-          Fame K/D ratio:{" "}
+          K/D ratio:{" "}
           <strong className={(kdRatio ?? 0) < 1 ? "kd-fame-negative" : "kd-fame-positive"}>
             {(kdRatio ?? 0).toFixed(2).replace(".", ",")}
           </strong>

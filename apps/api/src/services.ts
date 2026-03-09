@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { BuildTemplateItemSlot, DatabaseRepository } from "@thehundred/db";
 import type { GuildBattleDetail, GuildBattleSummary, KillboardClient } from "@thehundred/killboard";
 import {
@@ -31,6 +32,7 @@ export interface ApiServices {
   validateInvite(code: string): Promise<{ valid: boolean }>;
   createInvite(actor: User): Promise<{ code: string; inviteUrl: string }>;
   requirePrivateAccess(actor: User): Promise<void>;
+  requireCtaManageAccess(actor: User): Promise<void>;
   getPublicPerformance(input?: { month?: string }): Promise<{
     trackedBattles: number;
     selectedMonth: string;
@@ -66,6 +68,27 @@ export interface ApiServices {
     };
     lastUpdatedAt?: string;
   }>;
+  getOverviewAnnouncements(actor: User): Promise<
+    Array<{
+      id: string;
+      title: string;
+      body: string;
+      position: number;
+      updatedAt: string;
+    }>
+  >;
+  replaceOverviewAnnouncements(
+    actor: User,
+    input: Array<{ title: string; body: string }>
+  ): Promise<
+    Array<{
+      id: string;
+      title: string;
+      body: string;
+      position: number;
+      updatedAt: string;
+    }>
+  >;
   listMembers(actor: User): Promise<
     Array<
       GuildMember & {
@@ -164,6 +187,55 @@ export interface ApiServices {
     updatedAt: string;
   }>;
   deleteCouncilTask(actor: User, taskId: string): Promise<{ deleted: true; taskId: string }>;
+  getBottledEnergyBalances(actor: User): Promise<{
+    balances: Array<{
+      memberId: string;
+      userId: string;
+      discordId: string;
+      displayName: string;
+      albionName?: string;
+      balance: number;
+    }>;
+    unmatched: Array<{
+      albionName: string;
+      balance: number;
+      lastSeenAt: string;
+    }>;
+    updatedAt: string;
+  }>;
+  previewBottledEnergyImport(
+    actor: User,
+    raw: string
+  ): Promise<{
+    rows: number;
+    matchedRows: number;
+    unmatchedRows: number;
+    membersMatched: number;
+    membersUnmatched: number;
+    sampleUnmatched: string[];
+  }>;
+  importBottledEnergy(
+    actor: User,
+    raw: string
+  ): Promise<{
+    importId: string;
+    rows: number;
+    insertedRows: number;
+    duplicateRows: number;
+    matchedRows: number;
+    unmatchedRows: number;
+  }>;
+  publishBottledEnergyToDiscord(actor: User): Promise<{
+    sent: true;
+    channelId: string;
+    mentioned: number;
+    messages: number;
+  }>;
+  resetBottledEnergy(actor: User): Promise<{
+    reset: true;
+    deletedLedgerRows: number;
+    deletedImportRows: number;
+  }>;
   listAssignableCompPlayers(actor: User): Promise<
     Array<GuildMember & { displayName: string; discordId: string; avatarUrl?: string }>
   >;
@@ -171,6 +243,12 @@ export interface ApiServices {
     Array<
       CTA & {
         compName?: string;
+        signupFillers: Array<{
+          memberId: string;
+          playerName: string;
+          playerUserId?: string;
+          preferredRoles: string[];
+        }>;
         signupParties: Array<{
           partyKey: string;
           partyName: string;
@@ -197,6 +275,18 @@ export interface ApiServices {
       }
     >
   >;
+  signupForFill(
+    actor: User,
+    input: { ctaId: string; roles: string[] }
+  ): Promise<{
+    ok: true;
+    filler: {
+      memberId: string;
+      playerName: string;
+      playerUserId: string;
+      preferredRoles: string[];
+    };
+  }>;
   getRanking(input?: { month?: string }): Promise<{
     selectedMonth: string;
     selectedMonthLabel: string;
@@ -212,8 +302,29 @@ export interface ApiServices {
       attendancePercent: number;
     }>;
   }>;
-  getAlbionPlayerByName(actor: User, name: string): Promise<{
+  getAlbionPlayerByName(
+    actor: User,
+    name: string,
+    filters?: { start?: string; end?: string; minPlayers?: number }
+  ): Promise<{
     query: string;
+    filters?: {
+      start?: string;
+      end?: string;
+      minPlayers: number;
+    };
+    stats?: {
+      totalKills: number;
+      totalDeaths: number;
+      totalDamage: number;
+      totalHeal: number;
+      totalAttendance: number;
+      averageIp: number;
+      totalKillFame: number;
+      totalDeathFame: number;
+      kd: number;
+      entries: number;
+    };
     player?: {
       id: string;
       name: string;
@@ -243,7 +354,7 @@ export interface ApiServices {
       iconUrl: string;
     }>;
   }>;
-  createCta(actor: User, title: string, datetimeUtc: string): Promise<CTA>;
+  createCta(actor: User, title: string, datetimeUtc: string, compId?: string): Promise<CTA>;
   finalizeCta(
     actor: User,
     ctaId: string
@@ -316,31 +427,64 @@ export function createApiServices(
     albionBattlesMinGuildPlayers: number;
     albionBattlesLimit: number;
     albionApiBaseUrl: string;
+    albionBbApiBaseUrl: string;
     launchCountdownEnabled: boolean;
     launchAtIso: string;
     appBaseUrl: string;
+    discordGuildId: string;
+    discordBotToken: string;
+    discordCallerRoleIds: string[];
+    discordBottledEnergyChannelId: string;
   }
 ): ApiServices {
   const compRoleOrder = ["Tank", "Healer", "Support", "Melee", "Ranged", "Battlemount"];
-  const requireCouncilOrOfficer = async (actor: User) => {
-    if (actor.role === "OFFICER" || actor.role === "ADMIN") {
-      return;
-    }
-
-    const actorMember = await repository.getMemberByUserId(actor.id);
-    if (actorMember?.discordRoleStatus === "COUNCIL") {
-      return;
-    }
-
-    throw new DomainError("Council, officer or admin role required");
-  };
-  const requireCouncilOnly = async (actor: User) => {
+  const requireStaffAccess = async (actor: User) => {
     const actorMember = await repository.getMemberByUserId(actor.id);
     if (actorMember?.discordRoleStatus === "COUNCIL" && !actorMember.kickedAt) {
       return;
     }
 
-    throw new DomainError("Council role required");
+    throw new DomainError("Staff role required");
+  };
+  const actorHasCallerRole = async (actor: User): Promise<boolean> => {
+    const guildId = options.discordGuildId?.trim();
+    const botToken = options.discordBotToken?.trim();
+    const callerRoleIds = options.discordCallerRoleIds ?? [];
+    if (!guildId || !botToken || callerRoleIds.length === 0) {
+      return false;
+    }
+
+    try {
+      const response = await fetch(
+        `https://discord.com/api/v10/guilds/${guildId}/members/${actor.discordId}`,
+        {
+          headers: {
+            authorization: `Bot ${botToken}`
+          }
+        }
+      );
+      if (!response.ok) {
+        return false;
+      }
+
+      const payload = (await response.json()) as { roles?: string[] };
+      const roleIds = payload.roles ?? [];
+      return callerRoleIds.some((roleId) => roleIds.includes(roleId));
+    } catch {
+      return false;
+    }
+  };
+  const requireCtaManager = async (actor: User) => {
+    const actorMember = await repository.getMemberByUserId(actor.id);
+    if (actorMember?.discordRoleStatus === "COUNCIL" && !actorMember.kickedAt) {
+      return;
+    }
+
+    if (await actorHasCallerRole(actor)) {
+      return;
+    }
+
+    throw new DomainError("Staff o Caller role required");
   };
 
   return {
@@ -352,11 +496,99 @@ export function createApiServices(
       };
     },
 
-    async getAlbionPlayerByName(actor, name) {
-      await requireCouncilOrOfficer(actor);
+    async getAlbionPlayerByName(actor, name, filters) {
+      await requireStaffAccess(actor);
       const query = name.trim();
       if (!query) {
         throw new DomainError("name is required");
+      }
+
+      const minPlayers = clampMinPlayers(filters?.minPlayers);
+      const bbBaseUrl = options.albionBbApiBaseUrl.replace(/\/$/, "");
+      const statsPayload = await fetchJsonSafe(
+        `${bbBaseUrl}/stats/players/${encodeURIComponent(query)}?${new URLSearchParams({
+          minPlayers: String(minPlayers)
+        }).toString()}`
+      );
+      const statsEntries = extractAlbionBbStatsEntries(statsPayload);
+      const filteredStatsEntries = filterAlbionBbEntriesByDate(
+        statsEntries,
+        filters?.start,
+        filters?.end
+      );
+      const scope = filteredStatsEntries.length > 0 ? filteredStatsEntries : statsEntries;
+
+      if (scope.length > 0) {
+        const totals = scope.reduce(
+          (acc, entry) => {
+            acc.totalKills += entry.kills;
+            acc.totalDeaths += entry.deaths;
+            acc.totalDamage += entry.damage;
+            acc.totalHeal += entry.heal;
+            acc.totalAttendance += 1;
+            acc.totalKillFame += entry.killFame;
+            acc.totalDeathFame += entry.deathFame;
+            if (entry.ip > 0) {
+              acc.ipSum += entry.ip;
+              acc.ipCount += 1;
+            }
+            return acc;
+          },
+          {
+            totalKills: 0,
+            totalDeaths: 0,
+            totalDamage: 0,
+            totalHeal: 0,
+            totalAttendance: 0,
+            totalKillFame: 0,
+            totalDeathFame: 0,
+            ipSum: 0,
+            ipCount: 0
+          }
+        );
+        const latest = [...scope].sort((left, right) => {
+          const leftTime = Date.parse(left.startedAt);
+          const rightTime = Date.parse(right.startedAt);
+          return Number.isFinite(rightTime) ? rightTime - (Number.isFinite(leftTime) ? leftTime : 0) : 0;
+        })[0];
+        const kdFame =
+          totals.totalDeathFame > 0
+            ? totals.totalKillFame / totals.totalDeathFame
+            : totals.totalKillFame > 0
+              ? totals.totalKillFame
+              : 0;
+
+        return {
+          query,
+          filters: {
+            start: filters?.start,
+            end: filters?.end,
+            minPlayers
+          },
+          stats: {
+            totalKills: totals.totalKills,
+            totalDeaths: totals.totalDeaths,
+            totalDamage: totals.totalDamage,
+            totalHeal: totals.totalHeal,
+            totalAttendance: totals.totalAttendance,
+            averageIp: totals.ipCount > 0 ? totals.ipSum / totals.ipCount : 0,
+            totalKillFame: totals.totalKillFame,
+            totalDeathFame: totals.totalDeathFame,
+            kd: totals.totalDeaths > 0 ? totals.totalKills / totals.totalDeaths : totals.totalKills,
+            entries: scope.length
+          },
+          player: {
+            id: String(latest.albionId),
+            name: query,
+            guildName: latest.guildName || undefined,
+            killFame: totals.totalKillFame,
+            deathFame: totals.totalDeathFame,
+            kdFame,
+            previousGuilds: [],
+            guildHistory: [],
+            guildHistorySource: "unavailable"
+          }
+        };
       }
 
       const officialAmsBase = "https://gameinfo-ams.albiononline.com/api/gameinfo";
@@ -424,11 +656,18 @@ export function createApiServices(
         };
       }
 
-      return { query };
+      return {
+        query,
+        filters: {
+          start: filters?.start,
+          end: filters?.end,
+          minPlayers
+        }
+      };
     },
 
     async searchAlbionItems(actor, query, slot) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const normalizedQuery = query.trim();
       if (!normalizedQuery) {
         throw new DomainError("query is required");
@@ -510,7 +749,7 @@ export function createApiServices(
     },
 
     async createInvite(actor) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const invite = await repository.createInvite(actor.id);
       const inviteUrl = new URL("/", options.appBaseUrl);
       inviteUrl.searchParams.set("invite", invite.code);
@@ -527,6 +766,10 @@ export function createApiServices(
           "Private dashboard access requires guild recruitment approval via Discord"
         );
       }
+    },
+
+    async requireCtaManageAccess(actor) {
+      await requireCtaManager(actor);
     },
 
     async getPublicPerformance(input) {
@@ -650,8 +893,38 @@ export function createApiServices(
       };
     },
 
+    async getOverviewAnnouncements(actor) {
+      await this.requirePrivateAccess(actor);
+      const existing = await repository.getOverviewAnnouncements();
+      return existing.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        body: entry.body,
+        position: entry.position,
+        updatedAt: entry.updatedAt
+      }));
+    },
+
+    async replaceOverviewAnnouncements(actor, input) {
+      await requireStaffAccess(actor);
+      const normalized = input
+        .map((entry) => ({
+          title: entry.title.trim(),
+          body: entry.body.trim()
+        }))
+        .filter((entry) => entry.title.length > 0 && entry.body.length > 0);
+      const saved = await repository.replaceOverviewAnnouncements(normalized, actor.id);
+      return saved.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        body: entry.body,
+        position: entry.position,
+        updatedAt: entry.updatedAt
+      }));
+    },
+
     async listMembers(actor) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       await syncLatestBattlePerformanceSnapshots({
         repository,
         killboard,
@@ -693,7 +966,7 @@ export function createApiServices(
     },
 
     async listCouncilMembers(actor) {
-      await requireCouncilOnly(actor);
+      await requireStaffAccess(actor);
       const [members, users] = await Promise.all([repository.getMembers(), repository.getUsers()]);
       const usersById = new Map(users.map((user) => [user.id, user]));
 
@@ -718,7 +991,7 @@ export function createApiServices(
     },
 
     async listCouncilTasks(actor) {
-      await requireCouncilOnly(actor);
+      await requireStaffAccess(actor);
       const [tasks, members, users] = await Promise.all([
         repository.getCouncilTasks(),
         repository.getMembers(),
@@ -738,7 +1011,7 @@ export function createApiServices(
     },
 
     async createCouncilTask(actor, input) {
-      await requireCouncilOnly(actor);
+      await requireStaffAccess(actor);
       assertCouncilTaskInput(input);
       await validateCouncilAssignment(repository, input.assignedMemberId);
       const created = await repository.createCouncilTask({
@@ -753,7 +1026,7 @@ export function createApiServices(
     },
 
     async updateCouncilTask(actor, taskId, input) {
-      await requireCouncilOnly(actor);
+      await requireStaffAccess(actor);
       assertCouncilTaskPatch(input);
       await validateCouncilAssignment(repository, input.assignedMemberId);
       const updated = await repository.updateCouncilTask(taskId, {
@@ -771,7 +1044,7 @@ export function createApiServices(
     },
 
     async updateCouncilTaskStatus(actor, taskId, status) {
-      await requireCouncilOnly(actor);
+      await requireStaffAccess(actor);
       if (status !== "TODO" && status !== "IN_PROGRESS" && status !== "DONE") {
         throw new DomainError("Invalid council task status");
       }
@@ -783,7 +1056,7 @@ export function createApiServices(
     },
 
     async deleteCouncilTask(actor, taskId) {
-      await requireCouncilOnly(actor);
+      await requireStaffAccess(actor);
       const deleted = await repository.deleteCouncilTask(taskId);
       if (!deleted) {
         throw new DomainError("Council task not found");
@@ -791,8 +1064,157 @@ export function createApiServices(
       return { deleted: true, taskId };
     },
 
+    async getBottledEnergyBalances(actor) {
+      await requireStaffAccess(actor);
+      const [balances, unmatched] = await Promise.all([
+        repository.listBottledEnergyBalances(),
+        repository.listBottledEnergyUnmatchedBalances()
+      ]);
+      return {
+        balances,
+        unmatched,
+        updatedAt: new Date().toISOString()
+      };
+    },
+
+    async previewBottledEnergyImport(actor, raw) {
+      await requireStaffAccess(actor);
+      const rows = parseBottledEnergyClipboard(raw);
+      if (rows.length === 0) {
+        throw new DomainError("No se encontraron filas validas para importar.");
+      }
+
+      const users = await repository.getUsers();
+      const userByAlbion = buildUserMapByNormalizedAlbionName(users);
+
+      let matchedRows = 0;
+      let unmatchedRows = 0;
+      const matchedMembers = new Set<string>();
+      const unmatchedMembers = new Set<string>();
+
+      for (const row of rows) {
+        const user = userByAlbion.get(row.albionPlayerNormalized);
+        if (user) {
+          matchedRows += 1;
+          matchedMembers.add(user.id);
+        } else {
+          unmatchedRows += 1;
+          unmatchedMembers.add(row.albionPlayer);
+        }
+      }
+
+      return {
+        rows: rows.length,
+        matchedRows,
+        unmatchedRows,
+        membersMatched: matchedMembers.size,
+        membersUnmatched: unmatchedMembers.size,
+        sampleUnmatched: [...unmatchedMembers].slice(0, 12)
+      };
+    },
+
+    async importBottledEnergy(actor, raw) {
+      await requireStaffAccess(actor);
+      const rows = parseBottledEnergyClipboard(raw);
+      if (rows.length === 0) {
+        throw new DomainError("No se encontraron filas validas para importar.");
+      }
+
+      const users = await repository.getUsers();
+      const userByAlbion = buildUserMapByNormalizedAlbionName(users);
+      let matchedRows = 0;
+      let unmatchedRows = 0;
+
+      const preparedRows = rows.map((row) => {
+        const user = userByAlbion.get(row.albionPlayerNormalized);
+        if (user) {
+          matchedRows += 1;
+        } else {
+          unmatchedRows += 1;
+        }
+        return {
+          ...row,
+          userId: user?.id
+        };
+      });
+
+      const result = await repository.importBottledEnergyLedger({
+        importedBy: actor.id,
+        sourcePreview: raw.slice(0, 500),
+        rows: preparedRows
+      });
+
+      return {
+        importId: result.importId,
+        rows: result.totalRows,
+        insertedRows: result.insertedRows,
+        duplicateRows: result.duplicateRows,
+        matchedRows,
+        unmatchedRows
+      };
+    },
+
+    async publishBottledEnergyToDiscord(actor) {
+      await requireStaffAccess(actor);
+      const channelId = options.discordBottledEnergyChannelId?.trim();
+      const botToken = options.discordBotToken?.trim();
+      if (!channelId || !botToken) {
+        throw new DomainError("Discord no configurado para publicar embotelladas.");
+      }
+
+      const balances = await repository.listBottledEnergyBalances();
+      const eligible = balances.filter((entry) => entry.discordId?.trim().length > 0);
+      if (eligible.length === 0) {
+        throw new DomainError("No hay miembros con Discord ID para mencionar.");
+      }
+
+      const header = "📦 **Balance embotelladas actualizado**";
+      const timestamp = `Actualizado: <t:${Math.floor(Date.now() / 1000)}:f>`;
+      const lines = eligible.map(
+        (entry) => `• <@${entry.discordId}> · ${entry.balance > 0 ? `+${entry.balance}` : entry.balance}`
+      );
+      const messages = buildDiscordMessageChunks([header, timestamp, ...lines], 1800);
+
+      for (const message of messages) {
+        const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+          method: "POST",
+          headers: {
+            authorization: `Bot ${botToken}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            content: message,
+            allowed_mentions: {
+              parse: ["users"]
+            }
+          })
+        });
+        if (!response.ok) {
+          const body = await response.text().catch(() => "");
+          throw new DomainError(`Discord error al publicar embotelladas (${response.status}): ${body}`);
+        }
+      }
+
+      return {
+        sent: true,
+        channelId,
+        mentioned: eligible.length,
+        messages: messages.length
+      };
+    },
+
+    async resetBottledEnergy(actor) {
+      await requireStaffAccess(actor);
+      const result = await repository.resetBottledEnergyLedger();
+      return {
+        reset: true,
+        deletedLedgerRows: result.deletedLedgerRows,
+        deletedImportRows: result.deletedImportRows
+      };
+    },
+
     async listAssignableCompPlayers(actor) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
 
       const [members, users] = await Promise.all([repository.getMembers(), repository.getUsers()]);
       const usersById = new Map(users.map((user) => [user.id, user]));
@@ -836,6 +1258,7 @@ export function createApiServices(
       return ctas.map((cta) => {
         const comp = cta.compId ? compsById.get(cta.compId) : undefined;
         const ctaSignups = signupsByCtaId.get(cta.id) ?? [];
+        const ctaFillers = ctaSignups.filter((entry) => entry.isFill || entry.slotKey === "__FILL__");
         const signupParties = comp
           ? comp.parties.map((party) => ({
               partyKey: party.key,
@@ -892,10 +1315,68 @@ export function createApiServices(
         return {
           ...cta,
           compName: comp?.name,
+          signupFillers: ctaFillers.map((entry) => ({
+            memberId: entry.memberId,
+            playerName: entry.playerName,
+            playerUserId: membersById.get(entry.memberId)?.userId,
+            preferredRoles: entry.preferredRoles ?? []
+          })),
           signupParties,
           signupCategories
         };
       });
+    },
+
+    async signupForFill(actor, input) {
+      await this.requirePrivateAccess(actor);
+      const member = await repository.getMemberByUserId(actor.id);
+      if (!member) {
+        throw new DomainError("Member not found");
+      }
+
+      const cta = await repository.getCtaById(input.ctaId);
+      if (!cta || (cta.status !== "OPEN" && cta.status !== "CREATED")) {
+        throw new DomainError("CTA not found or not available for signup");
+      }
+
+      const normalizedRoles = input.roles.map((role) => role.trim()).filter(Boolean);
+      if (normalizedRoles.length < 2 || normalizedRoles.length > 4) {
+        throw new DomainError("roles must contain between 2 and 4 entries");
+      }
+
+      const existingSignups = await repository.getCtaSignups(cta.id);
+      const alreadySigned = existingSignups.some((entry) => entry.memberId === member.id);
+      if (alreadySigned) {
+        throw new DomainError("Ya estas apuntado en esta CTA");
+      }
+
+      await repository.upsertCtaSignup({
+        ctaId: cta.id,
+        memberId: member.id,
+        role: normalizedRoles[0],
+        slotKey: "__FILL__",
+        slotLabel: "Para fillear",
+        weaponName: "",
+        playerName: actor.displayName,
+        preferredRoles: normalizedRoles,
+        isFill: true
+      });
+      await repository.upsertAttendance({
+        ctaId: cta.id,
+        memberId: member.id,
+        decision: "YES",
+        state: "ABSENT"
+      });
+
+      return {
+        ok: true,
+        filler: {
+          memberId: member.id,
+          playerName: actor.displayName,
+          playerUserId: actor.id,
+          preferredRoles: normalizedRoles
+        }
+      };
     },
 
     async getRanking(input) {
@@ -1076,13 +1557,22 @@ export function createApiServices(
       };
     },
 
-    async createCta(actor, title, datetimeUtc) {
-      await requireCouncilOrOfficer(actor);
+    async createCta(actor, title, datetimeUtc, compId) {
+      await requireCtaManager(actor);
+      let resolvedCompId: string | undefined;
+      if (compId) {
+        const comp = await repository.getCompById(compId);
+        if (!comp) {
+          throw new DomainError("Comp not found");
+        }
+        resolvedCompId = comp.id;
+      }
       const cta = await repository.createCta({
         title,
         datetimeUtc,
         createdBy: actor.id,
-        initialStatus: "CREATED"
+        initialStatus: "CREATED",
+        compId: resolvedCompId
       });
 
       const nextStatus = transitionCtaStatus(cta.status, "OPEN");
@@ -1095,7 +1585,7 @@ export function createApiServices(
     },
 
     async finalizeCta(actor, ctaId) {
-      await requireCouncilOrOfficer(actor);
+      await requireCtaManager(actor);
       const cta = await repository.getCtaById(ctaId);
       if (!cta) {
         throw new Error("CTA not found");
@@ -1127,7 +1617,7 @@ export function createApiServices(
     },
 
     async cancelCta(actor, ctaId) {
-      await requireCouncilOrOfficer(actor);
+      await requireCtaManager(actor);
       const cta = await repository.getCtaById(ctaId);
       if (!cta) {
         throw new Error("CTA not found");
@@ -1157,7 +1647,7 @@ export function createApiServices(
     },
 
     async updateMemberStatus(actor, memberId, nextStatus) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const member = await repository.getMemberById(memberId);
       if (!member) {
         throw new Error("Member not found");
@@ -1173,7 +1663,7 @@ export function createApiServices(
     },
 
     async kickMember(actor, memberId, reason) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const member = await repository.getMemberById(memberId);
       if (!member) {
         throw new DomainError("Member not found");
@@ -1192,7 +1682,7 @@ export function createApiServices(
     },
 
     async updateMemberBombGroup(actor, memberId, bombGroupName) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const member = await repository.getMemberById(memberId);
       if (!member) {
         throw new Error("Member not found");
@@ -1207,7 +1697,7 @@ export function createApiServices(
     },
 
     async approveRegear(actor, regearId) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       return { approved: true, regearId };
     },
 
@@ -1216,7 +1706,7 @@ export function createApiServices(
     },
 
     async saveComp(actor, input) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       return repository.saveComp({
         ...input,
         createdBy: input.createdBy || actor.id
@@ -1235,7 +1725,7 @@ export function createApiServices(
     },
 
     async saveBuildTemplate(actor, input) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const normalizedItems = input.items.map((item) => ({
         ...item,
         itemId: canonicalizeToT8PlainItemId(item.itemId)
@@ -1248,7 +1738,7 @@ export function createApiServices(
     },
 
     async deleteBuildTemplate(actor, buildId) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const deleted = await repository.deleteBuildTemplate(buildId);
       if (!deleted) {
         throw new Error("Build not found");
@@ -1257,7 +1747,7 @@ export function createApiServices(
     },
 
     async assignCtaSlot(actor, input) {
-      await requireCouncilOrOfficer(actor);
+      await requireCtaManager(actor);
 
       const cta = await repository.getCtaById(input.ctaId);
       if (!cta) {
@@ -1291,8 +1781,36 @@ export function createApiServices(
       const signups = await repository.getCtaSignups(cta.id);
       const existingSlotSignup = signups.find((signup) => signup.slotKey === input.slotKey);
       if (existingSlotSignup) {
-        await repository.deleteCtaSignup(cta.id, existingSlotSignup.memberId);
-        await repository.deleteAttendance(cta.id, existingSlotSignup.memberId);
+        if (!input.playerUserId) {
+          const preferredRoles = Array.from(
+            new Set(
+              [existingSlotSignup.weaponName, existingSlotSignup.role, targetSlot.weaponName, targetSlot.role]
+                .map((entry) => entry?.trim())
+                .filter((entry): entry is string => Boolean(entry))
+            )
+          ).slice(0, 4);
+
+          await repository.upsertCtaSignup({
+            ctaId: cta.id,
+            memberId: existingSlotSignup.memberId,
+            role: preferredRoles[0] || existingSlotSignup.role || targetSlot.role,
+            slotKey: "__FILL__",
+            slotLabel: "Para fillear",
+            weaponName: "",
+            playerName: existingSlotSignup.playerName,
+            preferredRoles,
+            isFill: true
+          });
+          await repository.upsertAttendance({
+            ctaId: cta.id,
+            memberId: existingSlotSignup.memberId,
+            decision: "YES",
+            state: "ABSENT"
+          });
+        } else {
+          await repository.deleteCtaSignup(cta.id, existingSlotSignup.memberId);
+          await repository.deleteAttendance(cta.id, existingSlotSignup.memberId);
+        }
       }
 
       if (!input.playerUserId) {
@@ -1322,7 +1840,9 @@ export function createApiServices(
         slotKey: targetSlot.slotKey,
         slotLabel: targetSlot.label,
         weaponName: targetSlot.weaponName,
-        playerName: user.displayName
+        playerName: user.displayName,
+        preferredRoles: [],
+        isFill: false
       });
       await repository.upsertAttendance({
         ctaId: cta.id,
@@ -1335,7 +1855,7 @@ export function createApiServices(
     },
 
     async deleteComp(actor, compId) {
-      await requireCouncilOrOfficer(actor);
+      await requireStaffAccess(actor);
       const deleted = await repository.deleteComp(compId);
 
       if (!deleted) {
@@ -1394,6 +1914,104 @@ function formatSelectedMonthLabel(month: string): string {
     year: "numeric",
     timeZone: "UTC"
   }).format(new Date(Date.UTC(year, rawMonth - 1, 1, 0, 0, 0, 0)));
+}
+
+type AlbionBbPlayerStatsEntry = {
+  albionId: number;
+  startedAt: string;
+  guildName: string;
+  kills: number;
+  deaths: number;
+  killFame: number;
+  deathFame: number;
+  ip: number;
+  heal: number;
+  damage: number;
+};
+
+function clampMinPlayers(value?: number): number {
+  if (!Number.isFinite(value)) {
+    return 10;
+  }
+  return Math.min(100, Math.max(1, Math.floor(value as number)));
+}
+
+function extractAlbionBbStatsEntries(payload: unknown): AlbionBbPlayerStatsEntry[] {
+  const list = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { entries?: unknown[] }).entries)
+      ? (payload as { entries: unknown[] }).entries
+      : [];
+
+  const entries: AlbionBbPlayerStatsEntry[] = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const albionId = readNumber(entry, "albionId");
+    const startedAt = readString(entry, "startedAt");
+    if (!startedAt) {
+      continue;
+    }
+    entries.push({
+      albionId,
+      startedAt,
+      guildName: readString(entry, "guildName"),
+      kills: readNumber(entry, "kills"),
+      deaths: readNumber(entry, "deaths"),
+      killFame: readNumber(entry, "killFame"),
+      deathFame: readNumber(entry, "deathFame"),
+      ip: readNumber(entry, "ip"),
+      heal: readNumber(entry, "heal"),
+      damage: readNumber(entry, "damage")
+    });
+  }
+
+  return entries;
+}
+
+function normalizeDateOnly(value?: string): string | null {
+  const raw = value?.trim();
+  if (!raw) {
+    return null;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  const year = parsed.getUTCFullYear();
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function filterAlbionBbEntriesByDate(
+  entries: AlbionBbPlayerStatsEntry[],
+  start?: string,
+  end?: string
+): AlbionBbPlayerStatsEntry[] {
+  const startDate = normalizeDateOnly(start);
+  const endDate = normalizeDateOnly(end);
+  if (!startDate && !endDate) {
+    return entries;
+  }
+
+  return entries.filter((entry) => {
+    const entryDate = normalizeDateOnly(entry.startedAt);
+    if (!entryDate) {
+      return false;
+    }
+    if (startDate && entryDate < startDate) {
+      return false;
+    }
+    if (endDate && entryDate > endDate) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function pickAlbionSearchPlayer(payload: unknown, query: string): { id: string; name: string } | null {
@@ -1885,6 +2503,141 @@ function isMountItemId(itemId: string): boolean {
 
 function isTierPreservedItemId(itemId: string): boolean {
   return /_MEAL_|_POTION_|_MOUNT/i.test(itemId);
+}
+
+function normalizeAlbionNameForMatch(value?: string): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function buildUserMapByNormalizedAlbionName(
+  users: Array<{ id: string; albionName?: string }>
+): Map<string, { id: string }> {
+  const mapping = new Map<string, { id: string }>();
+  for (const user of users) {
+    const normalized = normalizeAlbionNameForMatch(user.albionName);
+    if (!normalized) {
+      continue;
+    }
+    if (!mapping.has(normalized)) {
+      mapping.set(normalized, { id: user.id });
+    }
+  }
+  return mapping;
+}
+
+function parseBottledEnergyClipboard(raw: string) {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const rows: Array<{
+    happenedAt: string;
+    albionPlayer: string;
+    albionPlayerNormalized: string;
+    reason: string;
+    amount: number;
+    rowHash: string;
+  }> = [];
+
+  for (const line of lines) {
+    if (/^"?date"?\s*\t/i.test(line)) {
+      continue;
+    }
+    const cols = splitTsvLine(line);
+    if (cols.length < 4) {
+      continue;
+    }
+
+    const dateText = cleanTsvCell(cols[0]);
+    const player = cleanTsvCell(cols[1]);
+    const reason = cleanTsvCell(cols[2]);
+    const amountText = cleanTsvCell(cols[3]);
+    const amount = Number.parseInt(amountText, 10);
+    const happenedAt = parseAlbionClipboardDateToIso(dateText);
+    const normalizedPlayer = normalizeAlbionNameForMatch(player);
+
+    if (!happenedAt || !normalizedPlayer || Number.isNaN(amount)) {
+      continue;
+    }
+
+    const normalizedReason = reason || "Unknown";
+    const rowHash = createHash("sha256")
+      .update(`${happenedAt}|${normalizedPlayer}|${normalizedReason}|${amount}`)
+      .digest("hex");
+
+    rows.push({
+      happenedAt,
+      albionPlayer: player,
+      albionPlayerNormalized: normalizedPlayer,
+      reason: normalizedReason,
+      amount,
+      rowHash
+    });
+  }
+
+  return rows;
+}
+
+function splitTsvLine(line: string): string[] {
+  return line.split("\t");
+}
+
+function cleanTsvCell(value: string): string {
+  return value.replace(/^"+|"+$/g, "").trim();
+}
+
+function parseAlbionClipboardDateToIso(value: string): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const withZone = /z$/i.test(normalized) ? normalized : `${normalized}Z`;
+  const date = new Date(withZone);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+function buildDiscordMessageChunks(lines: string[], maxLength: number): string[] {
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const line of lines) {
+    if (!line) {
+      continue;
+    }
+    const next = current.length === 0 ? line : `${current}\n${line}`;
+    if (next.length <= maxLength) {
+      current = next;
+      continue;
+    }
+
+    if (current.length > 0) {
+      chunks.push(current);
+    }
+
+    if (line.length <= maxLength) {
+      current = line;
+    } else {
+      chunks.push(line.slice(0, maxLength));
+      current = "";
+    }
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
+  return chunks.length > 0 ? chunks : ["Sin datos"];
 }
 
 function assertCouncilTaskInput(input: {

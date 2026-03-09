@@ -8,7 +8,7 @@ import type {
   BuildTemplateEntry,
   CompEntry,
   CompPartyEntry,
-  CompSlotEntry
+  CompSlotEntry,
 } from "../../lib";
 import {
   albionWeaponCatalog,
@@ -17,7 +17,7 @@ import {
   getItemIconUrl,
   getResolvedWeaponIconName,
   resolveAlbionWeapon,
-  type AlbionCompRole
+  type AlbionCompRole,
 } from "./catalog";
 import { CustomSelect } from "./CustomSelect";
 
@@ -71,7 +71,7 @@ const buildItemSlotOrder: BuildItemSlotKey[] = [
   "BAG",
   "MOUNT",
   "FOOD",
-  "POTION"
+  "POTION",
 ];
 
 const defaultBuildVisualGridSlots: BuildItemSlotKey[] = [
@@ -83,7 +83,7 @@ const defaultBuildVisualGridSlots: BuildItemSlotKey[] = [
   "OFF_HAND",
   "POTION",
   "SHOES",
-  "FOOD"
+  "FOOD",
 ];
 
 const battlemountVisualGridSlots: BuildItemSlotKey[] = [
@@ -96,7 +96,7 @@ const battlemountVisualGridSlots: BuildItemSlotKey[] = [
   "POTION",
   "SHOES",
   "FOOD",
-  "MOUNT"
+  "MOUNT",
 ];
 
 const buildItemSlotLabel: Record<BuildItemSlotKey, string> = {
@@ -109,7 +109,7 @@ const buildItemSlotLabel: Record<BuildItemSlotKey, string> = {
   BAG: "Bag",
   MOUNT: "Mount",
   FOOD: "Food",
-  POTION: "Potion"
+  POTION: "Potion",
 };
 
 function getPrimaryBuildSlot(role: AlbionCompRole): BuildItemSlotKey {
@@ -117,7 +117,9 @@ function getPrimaryBuildSlot(role: AlbionCompRole): BuildItemSlotKey {
 }
 
 function getBuildVisualGridSlots(role: AlbionCompRole): BuildItemSlotKey[] {
-  return role === "Battlemount" ? battlemountVisualGridSlots : defaultBuildVisualGridSlots;
+  return role === "Battlemount"
+    ? battlemountVisualGridSlots
+    : defaultBuildVisualGridSlots;
 }
 
 function createParty(index: number): PartyState {
@@ -125,13 +127,16 @@ function createParty(index: number): PartyState {
     key: `party-${index}`,
     name: `Party ${index}`,
     position: index,
-    slots: []
+    slots: [],
   };
 }
 
 function createSlotFromTemplate(slotCount: number): CompPartySlot {
-  const template = defaultPartySlots[Math.min(slotCount, defaultPartySlots.length - 1)];
-  const weapon = albionWeaponCatalog.find((entry) => entry.id === template.weaponId) ?? albionWeaponCatalog[0];
+  const template =
+    defaultPartySlots[Math.min(slotCount, defaultPartySlots.length - 1)];
+  const weapon =
+    albionWeaponCatalog.find((entry) => entry.id === template.weaponId) ??
+    albionWeaponCatalog[0];
 
   return {
     id: `local-slot-${template.id}-${slotCount + 1}`,
@@ -143,7 +148,7 @@ function createSlotFromTemplate(slotCount: number): CompPartySlot {
     weaponId: weapon.id,
     weaponName: weapon.name,
     buildId: undefined,
-    notes: ""
+    notes: "",
   };
 }
 
@@ -165,18 +170,25 @@ function normalizeComp(comp: CompEntry): CompState {
                 .sort((left, right) => left.position - right.position)
                 .map((slot) => ({
                   ...slot,
-                  role: slot.role as AlbionCompRole
-                }))
+                  role: slot.role as AlbionCompRole,
+                })),
             }))
-        : [createParty(1)]
+        : [createParty(1)],
   };
 }
 
 function getWeaponById(weaponId: string) {
-  return albionWeaponCatalog.find((weapon) => weapon.id === weaponId) ?? albionWeaponCatalog[0];
+  return (
+    albionWeaponCatalog.find((weapon) => weapon.id === weaponId) ??
+    albionWeaponCatalog[0]
+  );
 }
 
-function reorderSlots(slots: CompPartySlot[], draggedId: string, targetId: string) {
+function reorderSlots(
+  slots: CompPartySlot[],
+  draggedId: string,
+  targetId: string,
+) {
   const next = [...slots];
   const fromIndex = next.findIndex((slot) => slot.id === draggedId);
   const toIndex = next.findIndex((slot) => slot.id === targetId);
@@ -190,7 +202,7 @@ function reorderSlots(slots: CompPartySlot[], draggedId: string, targetId: strin
 
   return next.map((slot, index) => ({
     ...slot,
-    position: index + 1
+    position: index + 1,
   }));
 }
 
@@ -209,7 +221,7 @@ function createEmptyBuildItems(): BuildEditorState["items"] {
     BAG: { itemId: "", itemName: "" },
     MOUNT: { itemId: "", itemName: "" },
     FOOD: { itemId: "", itemName: "" },
-    POTION: { itemId: "", itemName: "" }
+    POTION: { itemId: "", itemName: "" },
   };
 }
 
@@ -218,28 +230,36 @@ function createBuildEditorFromSlot(slot: CompPartySlot): BuildEditorState {
   const items = createEmptyBuildItems();
   const primarySlot = getPrimaryBuildSlot(slot.role);
   items[primarySlot] = {
-    itemId: getResolvedWeaponIconName(weapon.iconName ?? slot.weaponName) ?? slot.weaponName,
-    itemName: slot.weaponName
+    itemId:
+      getResolvedWeaponIconName(weapon.iconName ?? slot.weaponName) ??
+      slot.weaponName,
+    itemName: slot.weaponName,
   };
 
   return {
     name: `${slot.label} Build`,
     role: slot.role,
     weaponId: slot.weaponId,
-    items
+    items,
   };
 }
 
-function createBuildEditorFromBuild(build: BuildTemplateEntry): BuildEditorState {
+function createBuildEditorFromBuild(
+  build: BuildTemplateEntry,
+): BuildEditorState {
   const items = createEmptyBuildItems();
   for (const item of build.items) {
     items[item.slot] = {
       itemId: item.itemId,
-      itemName: item.itemName
+      itemName: item.itemName,
     };
   }
   const primarySlot = getPrimaryBuildSlot(build.role as AlbionCompRole);
-  if (!items[primarySlot].itemId && items.MAIN_HAND.itemId && primarySlot === "MOUNT") {
+  if (
+    !items[primarySlot].itemId &&
+    items.MAIN_HAND.itemId &&
+    primarySlot === "MOUNT"
+  ) {
     items.MOUNT = { ...items.MAIN_HAND };
   }
 
@@ -248,55 +268,79 @@ function createBuildEditorFromBuild(build: BuildTemplateEntry): BuildEditorState
     name: build.name,
     role: build.role as AlbionCompRole,
     weaponId: build.weaponId,
-    items
+    items,
   };
 }
 
-function resolveWeaponFromMainHand(input: { itemId?: string; itemName?: string }) {
-  return resolveAlbionWeapon(input.itemId) ?? resolveAlbionWeapon(input.itemName);
+function resolveWeaponFromMainHand(input: {
+  itemId?: string;
+  itemName?: string;
+}) {
+  return (
+    resolveAlbionWeapon(input.itemId) ?? resolveAlbionWeapon(input.itemName)
+  );
 }
 
 export function CompsBuilder({
   canEdit,
   initialActiveCompId,
   initialComps,
-  initialBuilds
+  initialBuilds,
 }: CompsBuilderProps) {
   const router = useRouter();
-  const initialComp =
-    initialComps.find((comp) => comp.id === initialActiveCompId) ??
-    initialComps[0] ??
-    {
+  const initialComp = initialComps.find(
+    (comp) => comp.id === initialActiveCompId,
+  ) ??
+    initialComps[0] ?? {
       name: "Nueva comp",
-      parties: [createParty(1)]
+      parties: [createParty(1)],
     };
 
-  const [comp, setComp] = useState<CompState>(normalizeComp(initialComp as CompEntry));
-  const [activePartyKey, setActivePartyKey] = useState(comp.parties[0]?.key ?? "party-1");
+  const [comp, setComp] = useState<CompState>(
+    normalizeComp(initialComp as CompEntry),
+  );
+  const [activePartyKey, setActivePartyKey] = useState(
+    comp.parties[0]?.key ?? "party-1",
+  );
   const [builds, setBuilds] = useState<BuildTemplateEntry[]>(initialBuilds);
   const [pendingSave, setPendingSave] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [draggedSlotId, setDraggedSlotId] = useState<string | null>(null);
   const [editorBuild, setEditorBuild] = useState<BuildEditorState | null>(null);
-  const [editorContext, setEditorContext] = useState<BuildEditorContext | null>(null);
+  const [editorContext, setEditorContext] = useState<BuildEditorContext | null>(
+    null,
+  );
   const [pendingBuildSave, setPendingBuildSave] = useState(false);
-  const [activeEditorSlot, setActiveEditorSlot] = useState<BuildItemSlotKey>("MAIN_HAND");
+  const [activeEditorSlot, setActiveEditorSlot] =
+    useState<BuildItemSlotKey>("MAIN_HAND");
   const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [itemSearchLoading, setItemSearchLoading] = useState(false);
-  const [itemSearchResults, setItemSearchResults] = useState<AlbionItemSearchResult[]>([]);
+  const [itemSearchResults, setItemSearchResults] = useState<
+    AlbionItemSearchResult[]
+  >([]);
 
-  const activeParty = comp.parties.find((party) => party.key === activePartyKey) ?? comp.parties[0];
+  const activeParty =
+    comp.parties.find((party) => party.key === activePartyKey) ??
+    comp.parties[0];
   const leftPartySlots = activeParty?.slots.slice(0, 10) ?? [];
   const rightPartySlots = activeParty?.slots.slice(10, 20) ?? [];
   const allSlots = comp.parties.flatMap((party) => party.slots);
-  const activeEditorItem = editorBuild ? editorBuild.items[activeEditorSlot] : null;
-  const activeEditorPrimarySlot = editorBuild ? getPrimaryBuildSlot(editorBuild.role) : "MAIN_HAND";
-  const activeEditorVisualSlots = editorBuild ? getBuildVisualGridSlots(editorBuild.role) : defaultBuildVisualGridSlots;
+  const activeEditorItem = editorBuild
+    ? editorBuild.items[activeEditorSlot]
+    : null;
+  const activeEditorPrimarySlot = editorBuild
+    ? getPrimaryBuildSlot(editorBuild.role)
+    : "MAIN_HAND";
+  const activeEditorVisualSlots = editorBuild
+    ? getBuildVisualGridSlots(editorBuild.role)
+    : defaultBuildVisualGridSlots;
   const buildPrimaryIconById = useMemo(() => {
     const map = new Map<string, string>();
     for (const build of builds) {
       const primarySlot = getPrimaryBuildSlot(build.role as AlbionCompRole);
-      const primaryItem = build.items.find((entry) => entry.slot === primarySlot);
+      const primaryItem = build.items.find(
+        (entry) => entry.slot === primarySlot,
+      );
       if (primaryItem?.itemId) {
         map.set(build.id, primaryItem.itemId);
       }
@@ -317,17 +361,21 @@ export function CompsBuilder({
           Support: 0,
           Melee: 0,
           Ranged: 0,
-          Battlemount: 0
-        }
+          Battlemount: 0,
+        },
       ),
-    [allSlots]
+    [allSlots],
   );
 
-  function getPreferredBuildForWeapon(weaponId: string): BuildTemplateEntry | null {
+  function getPreferredBuildForWeapon(
+    weaponId: string,
+  ): BuildTemplateEntry | null {
     const candidates = builds
       .filter((entry) => entry.weaponId === weaponId)
       .sort(
-        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+        (left, right) =>
+          new Date(right.updatedAt).getTime() -
+          new Date(left.updatedAt).getTime(),
       );
     return candidates[0] ?? null;
   }
@@ -360,12 +408,13 @@ export function CompsBuilder({
         const response = await fetch(
           `/albion/items/search?q=${encodeURIComponent(query)}&slot=${encodeURIComponent(activeEditorSlot)}`,
           {
-            signal: controller.signal
-          }
+            signal: controller.signal,
+          },
         );
-        const payload = (await response.json()) as
-          | { items?: AlbionItemSearchResult[]; error?: string }
-          | null;
+        const payload = (await response.json()) as {
+          items?: AlbionItemSearchResult[];
+          error?: string;
+        } | null;
 
         if (!response.ok) {
           throw new Error(payload?.error ?? "No se pudo buscar items");
@@ -390,7 +439,7 @@ export function CompsBuilder({
   function updateSlotInParty(
     partyKey: string,
     slotId: string,
-    mutator: (slot: CompPartySlot) => CompPartySlot
+    mutator: (slot: CompPartySlot) => CompPartySlot,
   ) {
     setComp((current) => ({
       ...current,
@@ -398,17 +447,21 @@ export function CompsBuilder({
         party.key === partyKey
           ? {
               ...party,
-              slots: party.slots.map((slot) => (slot.id === slotId ? mutator(slot) : slot))
+              slots: party.slots.map((slot) =>
+                slot.id === slotId ? mutator(slot) : slot,
+              ),
             }
-          : party
-      )
+          : party,
+      ),
     }));
   }
 
   function updateActiveParty(mutator: (party: PartyState) => PartyState) {
     setComp((current) => ({
       ...current,
-      parties: current.parties.map((party) => (party.key === activePartyKey ? mutator(party) : party))
+      parties: current.parties.map((party) =>
+        party.key === activePartyKey ? mutator(party) : party,
+      ),
     }));
   }
 
@@ -417,7 +470,7 @@ export function CompsBuilder({
     const nextParty = createParty(nextIndex);
     setComp((current) => ({
       ...current,
-      parties: [...current.parties, nextParty]
+      parties: [...current.parties, nextParty],
     }));
     setActivePartyKey(nextParty.key);
     setFeedback(null);
@@ -437,9 +490,9 @@ export function CompsBuilder({
         ...party.slots,
         {
           ...baseSlot,
-          buildId: preferredBuild?.id
-        }
-      ]
+          buildId: preferredBuild?.id,
+        },
+      ],
     }));
   }
 
@@ -451,7 +504,11 @@ export function CompsBuilder({
     updateActiveParty((party) => ({ ...party, name }));
   }
 
-  function updateSlot(slotId: string, field: keyof CompPartySlot, value: string) {
+  function updateSlot(
+    slotId: string,
+    field: keyof CompPartySlot,
+    value: string,
+  ) {
     updateActiveParty((party) => ({
       ...party,
       slots: party.slots.map((slot) => {
@@ -461,14 +518,16 @@ export function CompsBuilder({
 
         if (field === "role") {
           const role = value as AlbionCompRole;
-          const nextWeapon = albionWeaponCatalog.find((weapon) => weapon.role === role) ?? albionWeaponCatalog[0];
+          const nextWeapon =
+            albionWeaponCatalog.find((weapon) => weapon.role === role) ??
+            albionWeaponCatalog[0];
 
           return {
             ...slot,
             role,
             weaponId: nextWeapon.id,
             weaponName: nextWeapon.name,
-            buildId: undefined
+            buildId: undefined,
           };
         }
 
@@ -480,15 +539,15 @@ export function CompsBuilder({
             ...slot,
             weaponId: nextWeapon.id,
             weaponName: nextWeapon.name,
-            buildId: preferredBuild?.id
+            buildId: preferredBuild?.id,
           };
         }
 
         return {
           ...slot,
-          [field]: value
+          [field]: value,
         };
-      })
+      }),
     }));
   }
 
@@ -499,7 +558,7 @@ export function CompsBuilder({
 
     updateActiveParty((party) => ({
       ...party,
-      slots: reorderSlots(party.slots, draggedSlotId, targetId)
+      slots: reorderSlots(party.slots, draggedSlotId, targetId),
     }));
 
     setDraggedSlotId(null);
@@ -508,19 +567,27 @@ export function CompsBuilder({
   function openBuildEditor(
     context: BuildEditorContext,
     slot: CompPartySlot,
-    buildId?: string
+    buildId?: string,
   ) {
     const selectedBuild = buildId
       ? builds.find((entry) => entry.id === buildId)
       : getPreferredBuildForWeapon(slot.weaponId);
     setEditorContext(context);
-    setEditorBuild(selectedBuild ? createBuildEditorFromBuild(selectedBuild) : createBuildEditorFromSlot(slot));
+    setEditorBuild(
+      selectedBuild
+        ? createBuildEditorFromBuild(selectedBuild)
+        : createBuildEditorFromSlot(slot),
+    );
     setActiveEditorSlot(getPrimaryBuildSlot(slot.role));
     setItemSearchQuery("");
     setItemSearchResults([]);
   }
 
-  function updateEditorItem(slot: BuildItemSlotKey, field: "itemId" | "itemName", value: string) {
+  function updateEditorItem(
+    slot: BuildItemSlotKey,
+    field: "itemId" | "itemName",
+    value: string,
+  ) {
     setEditorBuild((current) => {
       if (!current) {
         return current;
@@ -528,14 +595,14 @@ export function CompsBuilder({
 
       const nextItem = {
         ...current.items[slot],
-        [field]: value
+        [field]: value,
       };
       return {
         ...current,
         items: {
           ...current.items,
-          [slot]: nextItem
-        }
+          [slot]: nextItem,
+        },
       };
     });
   }
@@ -552,7 +619,7 @@ export function CompsBuilder({
       const response = await fetch("/builds", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
         },
         body: JSON.stringify({
           id: undefined,
@@ -563,20 +630,29 @@ export function CompsBuilder({
             .map((slot) => ({
               slot,
               itemId: editorBuild.items[slot].itemId.trim(),
-              itemName: editorBuild.items[slot].itemName.trim()
+              itemName: editorBuild.items[slot].itemName.trim(),
             }))
-            .filter((item) => item.itemId.length > 0 && item.itemName.length > 0)
-        })
+            .filter(
+              (item) => item.itemId.length > 0 && item.itemName.length > 0,
+            ),
+        }),
       });
 
-      const payload = (await response.json()) as BuildTemplateEntry | { error?: string };
+      const payload = (await response.json()) as
+        | BuildTemplateEntry
+        | { error?: string };
       if (!response.ok || "error" in payload) {
-        throw new Error(("error" in payload ? payload.error : undefined) ?? "No se pudo guardar la build");
+        throw new Error(
+          ("error" in payload ? payload.error : undefined) ??
+            "No se pudo guardar la build",
+        );
       }
 
       const saved = payload as BuildTemplateEntry;
       setBuilds((current) => {
-        const existingIndex = current.findIndex((entry) => entry.id === saved.id);
+        const existingIndex = current.findIndex(
+          (entry) => entry.id === saved.id,
+        );
         if (existingIndex >= 0) {
           const next = [...current];
           next[existingIndex] = saved;
@@ -589,23 +665,31 @@ export function CompsBuilder({
         const primaryItem = editorBuild.items[activeEditorPrimarySlot];
         const resolvedWeapon = resolveWeaponFromMainHand(primaryItem);
         const nextWeaponName =
-          primaryItem.itemName.trim() || resolvedWeapon?.name || getWeaponById(editorBuild.weaponId).name;
+          primaryItem.itemName.trim() ||
+          resolvedWeapon?.name ||
+          getWeaponById(editorBuild.weaponId).name;
         const nextWeaponId = resolvedWeapon?.id ?? editorBuild.weaponId;
 
-        updateSlotInParty(editorContext.partyKey, editorContext.slotId, (slot) => ({
-          ...slot,
-          role: editorBuild.role,
-          weaponId: nextWeaponId,
-          weaponName: nextWeaponName,
-          buildId: saved.id
-        }));
+        updateSlotInParty(
+          editorContext.partyKey,
+          editorContext.slotId,
+          (slot) => ({
+            ...slot,
+            role: editorBuild.role,
+            weaponId: nextWeaponId,
+            weaponName: nextWeaponName,
+            buildId: saved.id,
+          }),
+        );
       }
 
       setEditorBuild(null);
       setEditorContext(null);
       setFeedback("Build guardada y asignada al slot.");
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "No se pudo guardar la build.");
+      setFeedback(
+        error instanceof Error ? error.message : "No se pudo guardar la build.",
+      );
     } finally {
       setPendingBuildSave(false);
     }
@@ -623,7 +707,7 @@ export function CompsBuilder({
       const response = await fetch("/comps", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
         },
         body: JSON.stringify({
           id: comp.id,
@@ -642,15 +726,18 @@ export function CompsBuilder({
               weaponId: slot.weaponId,
               weaponName: slot.weaponName,
               buildId: slot.buildId,
-              notes: slot.notes
-            }))
-          }))
-        })
+              notes: slot.notes,
+            })),
+          })),
+        }),
       });
 
       const payload = (await response.json()) as CompEntry | { error?: string };
       if (!response.ok || "error" in payload) {
-        throw new Error(("error" in payload ? payload.error : undefined) ?? "No se pudo guardar la comp");
+        throw new Error(
+          ("error" in payload ? payload.error : undefined) ??
+            "No se pudo guardar la comp",
+        );
       }
 
       const normalized = normalizeComp(payload as CompEntry);
@@ -658,7 +745,9 @@ export function CompsBuilder({
       setActivePartyKey(normalized.parties[0]?.key ?? activePartyKey);
       setFeedback("Comp guardada para toda la guild.");
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "No se pudo guardar la comp.");
+      setFeedback(
+        error instanceof Error ? error.message : "No se pudo guardar la comp.",
+      );
     } finally {
       setPendingSave(false);
     }
@@ -673,9 +762,12 @@ export function CompsBuilder({
     setFeedback(null);
 
     try {
-      const response = await fetch(`/comps?compId=${encodeURIComponent(comp.id)}`, {
-        method: "DELETE"
-      });
+      const response = await fetch(
+        `/comps?compId=${encodeURIComponent(comp.id)}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -685,7 +777,9 @@ export function CompsBuilder({
       router.push("/app/comps");
       router.refresh();
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "No se pudo borrar la comp.");
+      setFeedback(
+        error instanceof Error ? error.message : "No se pudo borrar la comp.",
+      );
     } finally {
       setPendingSave(false);
     }
@@ -706,11 +800,19 @@ export function CompsBuilder({
             {canEdit ? (
               <>
                 {comp.id ? (
-                  <button className="button ghost danger" onClick={deleteComp} type="button">
+                  <button
+                    className="button ghost danger"
+                    onClick={deleteComp}
+                    type="button"
+                  >
                     Borrar comp
                   </button>
                 ) : null}
-                <button className="button primary" onClick={saveComp} type="button">
+                <button
+                  className="button primary"
+                  onClick={saveComp}
+                  type="button"
+                >
                   {pendingSave ? "Guardando..." : "Guardar comp"}
                 </button>
               </>
@@ -731,7 +833,10 @@ export function CompsBuilder({
           </label>
           <div className="comp-summary">
             {Object.entries(summary).map(([role, count]) => (
-              <div className={`comp-summary-chip ${roleClassName(role as AlbionCompRole)}`} key={role}>
+              <div
+                className={`comp-summary-chip ${roleClassName(role as AlbionCompRole)}`}
+                key={role}
+              >
                 <strong>{count}</strong>
                 <span>{compRoleLabels[role as AlbionCompRole]}</span>
               </div>
@@ -748,7 +853,9 @@ export function CompsBuilder({
             <h2>{activeParty.name}</h2>
           </div>
           <div className="actions">
-            <span className="status-badge">{activeParty.slots.length} slots</span>
+            <span className="status-badge">
+              {activeParty.slots.length} slots
+            </span>
             {canEdit ? (
               <button className="button ghost" onClick={addParty} type="button">
                 + Nueva party
@@ -757,7 +864,11 @@ export function CompsBuilder({
           </div>
         </div>
         <div className="comp-parties-toolbar">
-          <div className="comp-tabs" role="tablist" aria-label="Parties de la comp">
+          <div
+            className="comp-tabs"
+            role="tablist"
+            aria-label="Parties de la comp"
+          >
             {comp.parties.map((party) => (
               <button
                 className={`comp-tab ${party.key === activePartyKey ? "active" : ""}`}
@@ -787,111 +898,139 @@ export function CompsBuilder({
             <span className="card-label">Editor de party</span>
             <h2>{activeParty.name}</h2>
           </div>
-          <span className="status-badge">{activeParty.slots.length}/20 slots</span>
+          <span className="status-badge">
+            {activeParty.slots.length}/20 slots
+          </span>
         </div>
         {activeParty.slots.length > 0 ? (
           <>
-            <div className="comp-list-head" aria-hidden="true">
-              <span>Slot</span>
-              <span>Arma + Build</span>
-              <span>Funcion</span>
-            </div>
             <div className="comp-list-grid">
-              {[leftPartySlots, rightPartySlots].map((columnSlots, columnIndex) => (
-                <div className="comp-list comp-list-column" key={`col-${columnIndex}`}>
-                  {columnSlots.map((slot, index) => {
-                    const weaponOptions = albionWeaponCatalog.filter((weapon) => weapon.role === slot.role);
-                    const selectedWeapon = getWeaponById(slot.weaponId);
-                    const slotWeaponIconSource = slot.weaponName || selectedWeapon.name;
-                    const slotBuildIconSource = slot.buildId ? buildPrimaryIconById.get(slot.buildId) : undefined;
-                    const slotPosition = columnIndex * 10 + index + 1;
+              {[leftPartySlots, rightPartySlots].map(
+                (columnSlots, columnIndex) => (
+                  <div
+                    className="comp-list comp-list-column"
+                    key={`col-${columnIndex}`}
+                  >
+                    {columnSlots.map((slot, index) => {
+                      const weaponOptions = albionWeaponCatalog.filter(
+                        (weapon) => weapon.role === slot.role,
+                      );
+                      const selectedWeapon = getWeaponById(slot.weaponId);
+                      const slotWeaponIconSource =
+                        slot.weaponName || selectedWeapon.name;
+                      const slotBuildIconSource = slot.buildId
+                        ? buildPrimaryIconById.get(slot.buildId)
+                        : undefined;
+                      const slotPosition = columnIndex * 10 + index + 1;
 
-                    return (
-                      <article
-                        className={`comp-list-row ${roleClassName(slot.role)} ${draggedSlotId === slot.id ? "dragging" : ""}`}
-                        draggable={canEdit}
-                        key={slot.id}
-                        onDragOver={(event) => {
-                          if (canEdit) {
-                            event.preventDefault();
-                          }
-                        }}
-                        onDragStart={() => setDraggedSlotId(slot.id)}
-                        onDrop={() => onDrop(slot.id)}
-                        onDragEnd={() => setDraggedSlotId(null)}
-                      >
-                        <div className="comp-list-slot">
-                          <span className="card-label">Slot {String(slotPosition).padStart(2, "0")}</span>
-                          {canEdit ? (
-                            <div className="comp-slot-role-select">
+                      return (
+                        <article
+                          className={`comp-list-row ${roleClassName(slot.role)} ${draggedSlotId === slot.id ? "dragging" : ""}`}
+                          draggable={canEdit}
+                          key={slot.id}
+                          onDragOver={(event) => {
+                            if (canEdit) {
+                              event.preventDefault();
+                            }
+                          }}
+                          onDragStart={() => setDraggedSlotId(slot.id)}
+                          onDrop={() => onDrop(slot.id)}
+                          onDragEnd={() => setDraggedSlotId(null)}
+                        >
+                          <div className="comp-list-slot">
+                            <span className="card-label">
+                              Slot {String(slotPosition).padStart(2, "0")}
+                            </span>
+                            {canEdit ? (
+                              <div className="comp-slot-role-select">
+                                <CustomSelect
+                                  disabled={!canEdit}
+                                  onChange={(nextRole) =>
+                                    updateSlot(slot.id, "role", nextRole)
+                                  }
+                                  options={Object.entries(compRoleLabels).map(
+                                    ([role, label]) => ({
+                                      value: role,
+                                      label,
+                                    }),
+                                  )}
+                                  value={slot.role}
+                                />
+                              </div>
+                            ) : (
+                              <span className="comp-slot-role">
+                                {compRoleLabels[slot.role]}
+                              </span>
+                            )}
+                          </div>
+                          <div className="comp-weapon-cell">
+                            <button
+                              aria-label={`Ver build de ${slot.label}`}
+                              className="comp-weapon-icon-button"
+                              onClick={() => {
+                                if (canEdit) {
+                                  openBuildEditor(
+                                    {
+                                      partyKey: activeParty.key,
+                                      slotId: slot.id,
+                                    },
+                                    slot,
+                                    slot.buildId,
+                                  );
+                                }
+                              }}
+                              type="button"
+                            >
+                              <img
+                                alt={slot.weaponName || selectedWeapon.name}
+                                className="comp-weapon-icon"
+                                decoding="async"
+                                height={56}
+                                loading="lazy"
+                                src={getItemIconUrl(
+                                  slotBuildIconSource ?? slotWeaponIconSource,
+                                )}
+                                width={56}
+                              />
+                            </button>
+                            <label className="field comp-field">
+                              <span className="comp-mobile-label">Arma</span>
                               <CustomSelect
                                 disabled={!canEdit}
-                                onChange={(nextRole) => updateSlot(slot.id, "role", nextRole)}
-                                options={Object.entries(compRoleLabels).map(([role, label]) => ({
-                                  value: role,
-                                  label
+                                onChange={(nextWeaponId) =>
+                                  updateSlot(slot.id, "weaponId", nextWeaponId)
+                                }
+                                options={weaponOptions.map((weapon) => ({
+                                  value: weapon.id,
+                                  label: weapon.name,
                                 }))}
-                                value={slot.role}
+                                value={slot.weaponId}
                               />
-                            </div>
-                          ) : (
-                            <span className="comp-slot-role">{compRoleLabels[slot.role]}</span>
-                          )}
-                        </div>
-                        <div className="comp-weapon-cell">
-                          <button
-                            aria-label={`Ver build de ${slot.label}`}
-                            className="comp-weapon-icon-button"
-                            onClick={() => {
-                              if (canEdit) {
-                                openBuildEditor(
-                                  { partyKey: activeParty.key, slotId: slot.id },
-                                  slot,
-                                  slot.buildId
-                                );
-                              }
-                            }}
-                            type="button"
-                          >
-                            <img
-                              alt={slot.weaponName || selectedWeapon.name}
-                              className="comp-weapon-icon"
-                              decoding="async"
-                              height={56}
-                              loading="lazy"
-                              src={getItemIconUrl(slotBuildIconSource ?? slotWeaponIconSource)}
-                              width={56}
-                            />
-                          </button>
+                            </label>
+                          </div>
                           <label className="field comp-field">
-                            <span className="comp-mobile-label">Arma</span>
-                            <CustomSelect
+                            <span className="comp-mobile-label">Funcion</span>
+                            <input
                               disabled={!canEdit}
-                              onChange={(nextWeaponId) => updateSlot(slot.id, "weaponId", nextWeaponId)}
-                              options={weaponOptions.map((weapon) => ({
-                                value: weapon.id,
-                                label: weapon.name
-                              }))}
-                              value={slot.weaponId}
+                              onChange={(event) =>
+                                updateSlot(slot.id, "label", event.target.value)
+                              }
+                              value={slot.label}
                             />
                           </label>
-                        </div>
-                        <label className="field comp-field">
-                          <span className="comp-mobile-label">Funcion</span>
-                          <input
-                            disabled={!canEdit}
-                            onChange={(event) => updateSlot(slot.id, "label", event.target.value)}
-                            value={slot.label}
-                          />
-                        </label>
-                      </article>
-                    );
-                  })}
-                </div>
-              ))}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ),
+              )}
             </div>
             {canEdit && activeParty.slots.length < 20 ? (
-              <button className="comp-add-row comp-add-row-wide" onClick={addSlot} type="button">
+              <button
+                className="comp-add-row comp-add-row-wide"
+                onClick={addSlot}
+                type="button"
+              >
                 + Slot
               </button>
             ) : null}
@@ -899,11 +1038,16 @@ export function CompsBuilder({
         ) : (
           <div className="panel">
             <p className="empty">
-              Esta party aun no tiene jugadores definidos. Usa <strong>+ Slot</strong> dentro de la lista para
-              construir una bomb squad reducida o escalarla hasta una party completa.
+              Esta party aun no tiene jugadores definidos. Usa{" "}
+              <strong>+ Slot</strong> dentro de la lista para construir una bomb
+              squad reducida o escalarla hasta una party completa.
             </p>
             {canEdit ? (
-              <button className="button primary" onClick={addSlot} type="button">
+              <button
+                className="button primary"
+                onClick={addSlot}
+                type="button"
+              >
                 + Slot
               </button>
             ) : null}
@@ -920,10 +1064,19 @@ export function CompsBuilder({
                 <h2>{editorBuild.id ? "Editar build" : "Nueva build"}</h2>
               </div>
               <div className="actions">
-                <button className="button primary compact" disabled={pendingBuildSave} onClick={() => void saveBuild()} type="button">
+                <button
+                  className="button primary compact"
+                  disabled={pendingBuildSave}
+                  onClick={() => void saveBuild()}
+                  type="button"
+                >
                   {pendingBuildSave ? "Guardando..." : "Guardar build"}
                 </button>
-                <button className="button ghost compact" onClick={() => setEditorBuild(null)} type="button">
+                <button
+                  className="button ghost compact"
+                  onClick={() => setEditorBuild(null)}
+                  type="button"
+                >
                   Cerrar
                 </button>
               </div>
@@ -933,7 +1086,11 @@ export function CompsBuilder({
                 <span>Nombre</span>
                 <input
                   onChange={(event) =>
-                    setEditorBuild((current) => (current ? { ...current, name: event.target.value } : current))
+                    setEditorBuild((current) =>
+                      current
+                        ? { ...current, name: event.target.value }
+                        : current,
+                    )
                   }
                   value={editorBuild.name}
                 />
@@ -950,29 +1107,43 @@ export function CompsBuilder({
                       const nextPrimarySlot = getPrimaryBuildSlot(nextRole);
                       const prevPrimarySlot = getPrimaryBuildSlot(current.role);
                       const nextItems = { ...current.items };
-                      if (!nextItems[nextPrimarySlot].itemId && nextItems[prevPrimarySlot].itemId) {
-                        nextItems[nextPrimarySlot] = { ...nextItems[prevPrimarySlot] };
+                      if (
+                        !nextItems[nextPrimarySlot].itemId &&
+                        nextItems[prevPrimarySlot].itemId
+                      ) {
+                        nextItems[nextPrimarySlot] = {
+                          ...nextItems[prevPrimarySlot],
+                        };
                       }
                       return {
                         ...current,
                         role: nextRole,
-                        items: nextItems
+                        items: nextItems,
                       };
                     });
                     setActiveEditorSlot(getPrimaryBuildSlot(nextRole));
                   }}
-                  options={Object.entries(compRoleLabels).map(([role, label]) => ({
-                    value: role,
-                    label
-                  }))}
+                  options={Object.entries(compRoleLabels).map(
+                    ([role, label]) => ({
+                      value: role,
+                      label,
+                    }),
+                  )}
                   value={editorBuild.role}
                 />
               </label>
               <label className="field">
-                <span>{activeEditorPrimarySlot === "MOUNT" ? "Mount principal" : "Arma principal"}</span>
+                <span>
+                  {activeEditorPrimarySlot === "MOUNT"
+                    ? "Mount principal"
+                    : "Arma principal"}
+                </span>
                 <input
                   disabled
-                  value={editorBuild.items[activeEditorPrimarySlot].itemName || getWeaponById(editorBuild.weaponId).name}
+                  value={
+                    editorBuild.items[activeEditorPrimarySlot].itemName ||
+                    getWeaponById(editorBuild.weaponId).name
+                  }
                 />
               </label>
             </div>
@@ -990,7 +1161,10 @@ export function CompsBuilder({
                     >
                       <span>{buildItemSlotLabel[slot]}</span>
                       {item.itemId ? (
-                        <img alt={item.itemName || item.itemId} src={getItemIconUrl(item.itemId)} />
+                        <img
+                          alt={item.itemName || item.itemId}
+                          src={getItemIconUrl(item.itemId)}
+                        />
                       ) : (
                         <div className="comp-build-slot-empty">+</div>
                       )}
@@ -1022,7 +1196,9 @@ export function CompsBuilder({
                   {itemSearchLoading ? (
                     <p className="hint">Buscando items...</p>
                   ) : itemSearchQuery.trim().length < 2 ? (
-                    <p className="hint">Escribe al menos 2 letras para buscar.</p>
+                    <p className="hint">
+                      Escribe al menos 2 letras para buscar.
+                    </p>
                   ) : itemSearchResults.length === 0 ? (
                     <p className="hint">Sin resultados.</p>
                   ) : (
@@ -1032,11 +1208,15 @@ export function CompsBuilder({
                         key={item.id}
                         onClick={() => {
                           updateEditorItem(activeEditorSlot, "itemId", item.id);
-                          updateEditorItem(activeEditorSlot, "itemName", item.name);
+                          updateEditorItem(
+                            activeEditorSlot,
+                            "itemName",
+                            item.name,
+                          );
                           if (activeEditorSlot === activeEditorPrimarySlot) {
                             const resolvedWeapon = resolveWeaponFromMainHand({
                               itemId: item.id,
-                              itemName: item.name
+                              itemName: item.name,
                             });
                             if (resolvedWeapon) {
                               setEditorBuild((current) =>
@@ -1044,11 +1224,13 @@ export function CompsBuilder({
                                   ? {
                                       ...current,
                                       weaponId: resolvedWeapon.id,
-                                      role: resolvedWeapon.role
+                                      role: resolvedWeapon.role,
                                     }
-                                  : current
+                                  : current,
                               );
-                              setActiveEditorSlot(getPrimaryBuildSlot(resolvedWeapon.role));
+                              setActiveEditorSlot(
+                                getPrimaryBuildSlot(resolvedWeapon.role),
+                              );
                             }
                           }
                         }}

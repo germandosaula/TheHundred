@@ -5,12 +5,15 @@ import type { AuthServices } from "./auth.ts";
 import { createRequestContext, requireAuthenticatedUser } from "./request-context.ts";
 import {
   requireCreateCtaPayload,
+  requireCtaFillSignupPayload,
   requireAssignCtaSlotPayload,
   requireMemberBombGroupPayload,
   requireKickMemberPayload,
   requireCreateCouncilTaskPayload,
   requireUpdateCouncilTaskPayload,
   requireCouncilTaskStatusPayload,
+  requireReplaceOverviewAnnouncementsPayload,
+  requireBottledEnergyImportPayload,
   requireMemberStatusPayload,
   requireRegisterPayload,
   requireSaveBuildPayload,
@@ -24,7 +27,10 @@ import {
   type UpdateMemberStatusPayload,
   type CreateCouncilTaskPayload,
   type UpdateCouncilTaskPayload,
-  type UpdateCouncilTaskStatusPayload
+  type UpdateCouncilTaskStatusPayload,
+  type ReplaceOverviewAnnouncementsPayload,
+  type CtaFillSignupPayload,
+  type BottledEnergyImportPayload
 } from "./validation.ts";
 
 const defaultDevDiscordId = "173816196720885760";
@@ -169,6 +175,21 @@ export async function routeRequest(
     return json({ ok: true });
   }
 
+  if (method === "GET" && url.pathname === "/overview/announcements") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.getOverviewAnnouncements(currentUser));
+  }
+
+  if (method === "POST" && url.pathname === "/overview/announcements") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const payload = requireReplaceOverviewAnnouncementsPayload(
+      await parseBody<ReplaceOverviewAnnouncementsPayload>(request)
+    );
+    return json(await services.replaceOverviewAnnouncements(currentUser, payload.announcements));
+  }
+
   if (method === "POST" && url.pathname === "/register") {
     const payload = requireRegisterPayload(await parseBody<RegisterPayload>(request));
     const result = await services.registerMember(payload);
@@ -185,6 +206,21 @@ export async function routeRequest(
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
     return json(await services.listCtas());
+  }
+
+  if (method === "GET" && url.pathname === "/ctas/manage-access") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    await services.requireCtaManageAccess(currentUser);
+    return json({ ok: true });
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/signup$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    const payload = requireCtaFillSignupPayload(await parseBody<CtaFillSignupPayload>(request));
+    return json(await services.signupForFill(currentUser, { ctaId, roles: payload.roles }));
   }
 
   if (method === "GET" && url.pathname === "/members") {
@@ -241,6 +277,42 @@ export async function routeRequest(
     return json(await services.deleteCouncilTask(currentUser, taskId));
   }
 
+  if (method === "GET" && url.pathname === "/council/bottled-energy") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.getBottledEnergyBalances(currentUser));
+  }
+
+  if (method === "POST" && url.pathname === "/council/bottled-energy/preview") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const payload = requireBottledEnergyImportPayload(
+      await parseBody<BottledEnergyImportPayload>(request)
+    );
+    return json(await services.previewBottledEnergyImport(currentUser, payload.raw));
+  }
+
+  if (method === "POST" && url.pathname === "/council/bottled-energy/import") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const payload = requireBottledEnergyImportPayload(
+      await parseBody<BottledEnergyImportPayload>(request)
+    );
+    return json(await services.importBottledEnergy(currentUser, payload.raw));
+  }
+
+  if (method === "POST" && url.pathname === "/council/bottled-energy/publish") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.publishBottledEnergyToDiscord(currentUser));
+  }
+
+  if (method === "POST" && url.pathname === "/council/bottled-energy/reset") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(await services.resetBottledEnergy(currentUser));
+  }
+
   if (method === "GET" && url.pathname === "/ranking") {
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
@@ -251,10 +323,15 @@ export async function routeRequest(
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
     const name = url.searchParams.get("name")?.trim();
+    const start = url.searchParams.get("start")?.trim() || undefined;
+    const end = url.searchParams.get("end")?.trim() || undefined;
+    const minPlayersRaw = url.searchParams.get("minPlayers")?.trim();
     if (!name) {
       return json({ error: "name is required" }, 400);
     }
-    return json(await services.getAlbionPlayerByName(currentUser, name));
+    const minPlayers =
+      minPlayersRaw && /^\d+$/.test(minPlayersRaw) ? Number(minPlayersRaw) : undefined;
+    return json(await services.getAlbionPlayerByName(currentUser, name, { start, end, minPlayers }));
   }
 
   if (method === "GET" && url.pathname === "/albion/items/search") {
@@ -339,7 +416,7 @@ export async function routeRequest(
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
     const payload = requireCreateCtaPayload(await parseBody<CreateCtaPayload>(request));
-    return json(await services.createCta(currentUser, payload.title, payload.datetimeUtc), 201);
+    return json(await services.createCta(currentUser, payload.title, payload.datetimeUtc, payload.compId), 201);
   }
 
   if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/finalize$/)) {

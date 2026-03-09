@@ -26,7 +26,7 @@ const currentStatusLabels: Record<MemberStatus, string> = {
   TRIAL: "Trial",
   CORE: "Core",
   BENCHED: "Benched",
-  COUNCIL: "Council",
+  COUNCIL: "Staff",
   REJECTED: "Rechazado"
 };
 

@@ -72,9 +72,13 @@ function LogoutIcon() {
   );
 }
 
-function getGuildRoleLabel(role: MeData["role"], canManageCouncil: boolean) {
+function getGuildRoleLabel(role: MeData["role"], canManageCouncil: boolean, isCouncil: boolean) {
+  if (isCouncil) {
+    return "Staff";
+  }
+
   if (canManageCouncil && role === "PLAYER") {
-    return "Council";
+    return "Staff";
   }
 
   switch (role) {
@@ -93,7 +97,7 @@ export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSid
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const navItems = [
+  const primaryItems = [
     {
       href: "/app",
       label: "Resumen",
@@ -125,22 +129,28 @@ export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSid
       icon: "M12 3 5 7v5c0 4.5 2.8 7.7 7 9 4.2-1.3 7-4.5 7-9V7l-7-4Z"
     }
   ];
+  const staffItems: Array<{ href: string; label: string; icon: string }> = [];
   if (canManageCouncil) {
-    navItems.push({
+    staffItems.push({
       href: "/app/scouting",
       label: "Scouting",
       icon: "M11 19a8 8 0 1 1 5.3-14l4.7 4.7m-2.1 7.4-3.7-3.7"
     });
   }
   if (isCouncil) {
-    navItems.push({
+    staffItems.push({
       href: "/app/council-tasks",
       label: "Tareas Council",
       icon: "M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"
     });
+    staffItems.push({
+      href: "/app/embotelladas",
+      label: "Embotelladas",
+      icon: "M10 3h4v3h3v15H7V6h3V3Zm0 6h4m-4 4h4m-4 4h4"
+    });
   }
   if (canManageCouncil) {
-    navItems.push({
+    staffItems.push({
       href: "/app/members",
       label: "Miembros",
       icon: "M16 19a4 4 0 0 0-8 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a3 3 0 0 0-3-3m0-5a3 3 0 1 0-2.2-5"
@@ -187,7 +197,7 @@ export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSid
             {!collapsed ? (
               <div className="sidebar-brand-copy">
                 <strong>{me.displayName}</strong>
-                <span>{getGuildRoleLabel(me.role, canManageCouncil)}</span>
+                <span>{getGuildRoleLabel(me.role, canManageCouncil, isCouncil)}</span>
               </div>
             ) : null}
           </div>
@@ -197,7 +207,7 @@ export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSid
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item) => (
+          {primaryItems.map((item) => (
             <Link
               className={pathname === item.href ? "active" : ""}
               href={item.href}
@@ -208,6 +218,21 @@ export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSid
               {!collapsed ? item.label : null}
             </Link>
           ))}
+          {staffItems.length > 0 ? (
+            <>
+              {staffItems.map((item) => (
+                <Link
+                  className={pathname === item.href ? "active" : ""}
+                  href={item.href}
+                  key={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <SidebarIcon path={item.icon} />
+                  {!collapsed ? item.label : null}
+                </Link>
+              ))}
+            </>
+          ) : null}
         </nav>
         <div className={`sidebar-actions ${collapsed ? "collapsed" : ""}`}>
           <button className="button ghost sidebar-logout" disabled={loggingOut} onClick={handleLogout} type="button">

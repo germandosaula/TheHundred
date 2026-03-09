@@ -14,6 +14,10 @@ import {
   type UserRole
 } from "@thehundred/domain";
 import type {
+  BottledEnergyBalanceRecord,
+  BottledEnergyImportResult,
+  BottledEnergyLedgerImportRow,
+  BottledEnergyUnmatchedBalanceRecord,
   BuildTemplateRecord,
   BattleMemberAttendanceRecord,
   BattlePerformanceBombRecord,
@@ -23,10 +27,14 @@ import type {
   CtaSignupRecord,
   CompRecord,
   CompSlotRecord,
+  LootSplitPayoutRecord,
+  OverviewAnnouncementRecord,
   CreateCouncilTaskInput,
   CreateCtaInput,
   DatabaseRepository,
   InviteRecord,
+  WalletAccountRecord,
+  WalletTransactionRecord,
   RecruitmentApplicationRecord,
   RecruitmentApplicationStatus,
   RegisterMemberInput,
@@ -49,8 +57,28 @@ export interface RepositoryState {
   comps: CompRecord[];
   buildTemplates: BuildTemplateRecord[];
   councilTasks: CouncilTaskRecord[];
+  overviewAnnouncements: OverviewAnnouncementRecord[];
   recruitmentApplications: RecruitmentApplicationRecord[];
   invites: InviteRecord[];
+  walletAccounts: WalletAccountRecord[];
+  walletTransactions: WalletTransactionRecord[];
+  lootSplitPayouts: LootSplitPayoutRecord[];
+  bottledEnergyImports: Array<{
+    id: string;
+    importedBy: string;
+    rowCount: number;
+    insertedRows: number;
+    duplicateRows: number;
+    sourcePreview?: string;
+    createdAt: string;
+  }>;
+  bottledEnergyLedger: Array<
+    BottledEnergyLedgerImportRow & {
+      id: string;
+      importId?: string;
+      createdAt: string;
+    }
+  >;
 }
 
 export class InMemoryDatabaseRepository implements DatabaseRepository {
@@ -82,6 +110,8 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       discordId: input.discordId,
       displayName: input.displayName,
       albionName: input.albionName,
+      ctaPrimaryRole: input.ctaPrimaryRole,
+      ctaSecondaryRole: input.ctaSecondaryRole,
       role: input.role ?? "PLAYER",
       avatarUrl: input.avatarUrl
     };
@@ -107,6 +137,20 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     }
 
     user.albionName = albionName;
+    return user;
+  }
+
+  async updateUserCtaRoles(
+    userId: string,
+    input: { ctaPrimaryRole: string; ctaSecondaryRole: string }
+  ): Promise<User | null> {
+    const user = this.state.users.find((entry) => entry.id === userId) ?? null;
+    if (!user) {
+      return null;
+    }
+
+    user.ctaPrimaryRole = input.ctaPrimaryRole;
+    user.ctaSecondaryRole = input.ctaSecondaryRole;
     return user;
   }
 
@@ -608,6 +652,28 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     return deleted;
   }
 
+  async getOverviewAnnouncements(): Promise<OverviewAnnouncementRecord[]> {
+    return [...this.state.overviewAnnouncements].sort(
+      (left, right) => left.position - right.position
+    );
+  }
+
+  async replaceOverviewAnnouncements(
+    input: Array<{ title: string; body: string }>,
+    updatedBy: string
+  ): Promise<OverviewAnnouncementRecord[]> {
+    const now = new Date().toISOString();
+    this.state.overviewAnnouncements = input.map((entry, index) => ({
+      id: randomUUID(),
+      position: index,
+      title: entry.title,
+      body: entry.body,
+      updatedAt: now,
+      updatedBy
+    }));
+    return this.getOverviewAnnouncements();
+  }
+
   async getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]> {
     return this.state.ctaSignups
       .filter((entry) => entry.ctaId === ctaId)
@@ -623,6 +689,8 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     weaponName: string;
     reactionEmoji?: string;
     playerName: string;
+    preferredRoles?: string[];
+    isFill?: boolean;
   }): Promise<CtaSignupRecord> {
     const existing =
       this.state.ctaSignups.find(
@@ -636,6 +704,8 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       existing.weaponName = input.weaponName;
       existing.reactionEmoji = input.reactionEmoji;
       existing.playerName = input.playerName;
+      existing.preferredRoles = input.preferredRoles ?? [];
+      existing.isFill = input.isFill ?? false;
       existing.reactedAt = new Date().toISOString();
       return existing;
     }
@@ -650,6 +720,8 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       weaponName: input.weaponName,
       reactionEmoji: input.reactionEmoji,
       playerName: input.playerName,
+      preferredRoles: input.preferredRoles ?? [],
+      isFill: input.isFill ?? false,
       reactedAt: new Date().toISOString()
     };
     this.state.ctaSignups.push(next);
@@ -766,6 +838,239 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     invite.consumedAt = new Date().toISOString();
     return invite;
   }
+
+  async getWalletAccount(userId: string): Promise<WalletAccountRecord> {
+    let account = this.state.walletAccounts.find((entry) => entry.userId === userId) ?? null;
+    if (!account) {
+      account = {
+        userId,
+        cashBalance: 0,
+        bankBalance: 0,
+        updatedAt: new Date().toISOString()
+      };
+      this.state.walletAccounts.push(account);
+    }
+    return account;
+  }
+
+  async listWalletAccounts(): Promise<WalletAccountRecord[]> {
+    return [...this.state.walletAccounts];
+  }
+
+  async addWalletTransaction(input: {
+    userId: string;
+    cashDelta: number;
+    bankDelta?: number;
+    reason: string;
+    createdBy?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<WalletTransactionRecord> {
+    const account = await this.getWalletAccount(input.userId);
+    const bankDelta = input.bankDelta ?? 0;
+    const nextCash = account.cashBalance + input.cashDelta;
+    const nextBank = account.bankBalance + bankDelta;
+
+    if (nextCash < 0 || nextBank < 0) {
+      throw new Error("Insufficient funds");
+    }
+
+    account.cashBalance = nextCash;
+    account.bankBalance = nextBank;
+    account.updatedAt = new Date().toISOString();
+
+    const tx: WalletTransactionRecord = {
+      id: randomUUID(),
+      userId: input.userId,
+      cashDelta: input.cashDelta,
+      bankDelta,
+      cashBalanceAfter: account.cashBalance,
+      bankBalanceAfter: account.bankBalance,
+      reason: input.reason,
+      createdBy: input.createdBy,
+      metadata: input.metadata,
+      createdAt: new Date().toISOString()
+    };
+    this.state.walletTransactions.push(tx);
+    return tx;
+  }
+
+  async createLootSplitPayout(input: {
+    createdBy: string;
+    battleLink: string;
+    battleIds: string[];
+    guildName: string;
+    splitRole: string;
+    estValue: number;
+    bags: number;
+    repairCost: number;
+    taxPercent: number;
+    grossTotal: number;
+    netAfterRep: number;
+    taxAmount: number;
+    finalPool: number;
+    participantCount: number;
+    perPerson: number;
+    payouts: Array<{
+      memberId: string;
+      userId: string;
+      playerName: string;
+      amount: number;
+    }>;
+    idempotencyKey?: string;
+  }): Promise<{ payout: LootSplitPayoutRecord; alreadyProcessed: boolean }> {
+    if (input.idempotencyKey) {
+      const existing = this.state.lootSplitPayouts.find(
+        (entry) => entry.idempotencyKey === input.idempotencyKey
+      );
+      if (existing) {
+        return {
+          payout: existing,
+          alreadyProcessed: true
+        };
+      }
+    }
+
+    const now = new Date().toISOString();
+    for (const payout of input.payouts) {
+      await this.addWalletTransaction({
+        userId: payout.userId,
+        cashDelta: payout.amount,
+        reason: "loot_split_payout",
+        createdBy: input.createdBy,
+        metadata: {
+          battleIds: input.battleIds,
+          guildName: input.guildName,
+          splitRole: input.splitRole,
+          playerName: payout.playerName
+        }
+      });
+    }
+
+    const record: LootSplitPayoutRecord = {
+      id: randomUUID(),
+      createdBy: input.createdBy,
+      battleLink: input.battleLink,
+      battleIds: [...input.battleIds],
+      guildName: input.guildName,
+      splitRole: input.splitRole,
+      estValue: input.estValue,
+      bags: input.bags,
+      repairCost: input.repairCost,
+      taxPercent: input.taxPercent,
+      grossTotal: input.grossTotal,
+      netAfterRep: input.netAfterRep,
+      taxAmount: input.taxAmount,
+      finalPool: input.finalPool,
+      participantCount: input.participantCount,
+      perPerson: input.perPerson,
+      createdAt: now,
+      idempotencyKey: input.idempotencyKey
+    };
+
+    this.state.lootSplitPayouts.push(record);
+    return {
+      payout: record,
+      alreadyProcessed: false
+    };
+  }
+
+  async importBottledEnergyLedger(input: {
+    importedBy: string;
+    sourcePreview?: string;
+    rows: BottledEnergyLedgerImportRow[];
+  }): Promise<BottledEnergyImportResult> {
+    const importId = randomUUID();
+    const existingHashes = new Set(this.state.bottledEnergyLedger.map((entry) => entry.rowHash));
+    let insertedRows = 0;
+
+    for (const row of input.rows) {
+      if (existingHashes.has(row.rowHash)) {
+        continue;
+      }
+      existingHashes.add(row.rowHash);
+      this.state.bottledEnergyLedger.push({
+        ...row,
+        id: randomUUID(),
+        importId,
+        createdAt: new Date().toISOString()
+      });
+      insertedRows += 1;
+    }
+
+    this.state.bottledEnergyImports.push({
+      id: importId,
+      importedBy: input.importedBy,
+      rowCount: input.rows.length,
+      insertedRows,
+      duplicateRows: input.rows.length - insertedRows,
+      sourcePreview: input.sourcePreview,
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      importId,
+      insertedRows,
+      duplicateRows: input.rows.length - insertedRows,
+      totalRows: input.rows.length
+    };
+  }
+
+  async listBottledEnergyBalances(): Promise<BottledEnergyBalanceRecord[]> {
+    const balanceByUserId = new Map<string, number>();
+    for (const entry of this.state.bottledEnergyLedger) {
+      if (!entry.userId) {
+        continue;
+      }
+      balanceByUserId.set(entry.userId, (balanceByUserId.get(entry.userId) ?? 0) + entry.amount);
+    }
+
+    const usersById = new Map(this.state.users.map((user) => [user.id, user]));
+    return this.state.members
+      .filter((member) => !member.kickedAt)
+      .map((member) => {
+        const user = usersById.get(member.userId);
+        return {
+          memberId: member.id,
+          userId: member.userId,
+          discordId: user?.discordId ?? "",
+          displayName: user?.displayName ?? member.userId,
+          albionName: user?.albionName,
+          balance: balanceByUserId.get(member.userId) ?? 0
+        };
+      })
+      .sort((left, right) => left.displayName.localeCompare(right.displayName, "es"));
+  }
+
+  async listBottledEnergyUnmatchedBalances(): Promise<BottledEnergyUnmatchedBalanceRecord[]> {
+    const byName = new Map<string, BottledEnergyUnmatchedBalanceRecord>();
+    for (const entry of this.state.bottledEnergyLedger) {
+      if (entry.userId) {
+        continue;
+      }
+      const current = byName.get(entry.albionPlayer) ?? {
+        albionName: entry.albionPlayer,
+        balance: 0,
+        lastSeenAt: entry.happenedAt
+      };
+      current.balance += entry.amount;
+      if (Date.parse(entry.happenedAt) > Date.parse(current.lastSeenAt)) {
+        current.lastSeenAt = entry.happenedAt;
+      }
+      byName.set(entry.albionPlayer, current);
+    }
+    return [...byName.values()].sort((left, right) => Math.abs(right.balance) - Math.abs(left.balance));
+  }
+
+  async resetBottledEnergyLedger(): Promise<{ deletedLedgerRows: number; deletedImportRows: number }> {
+    const deletedLedgerRows = this.state.bottledEnergyLedger.length;
+    const deletedImportRows = this.state.bottledEnergyImports.length;
+    this.state.bottledEnergyLedger = [];
+    this.state.bottledEnergyImports = [];
+    return {
+      deletedLedgerRows,
+      deletedImportRows
+    };
+  }
 }
 
 export function createSeedState(): RepositoryState {
@@ -848,8 +1153,31 @@ export function createSeedState(): RepositoryState {
     comps: [],
     buildTemplates: [],
     councilTasks: [],
+    overviewAnnouncements: [
+      {
+        id: "oa1",
+        position: 0,
+        title: "CTA principal",
+        body: "Revisa siempre el enlace directo desde esta vista para entrar al bloque correcto.",
+        updatedAt: "2026-03-01T00:00:00Z",
+        updatedBy: "u1"
+      },
+      {
+        id: "oa2",
+        position: 1,
+        title: "Estado de bot",
+        body: "Si no ves CTA en web, validar bot online y canal de signup en Discord.",
+        updatedAt: "2026-03-01T00:00:00Z",
+        updatedBy: "u1"
+      }
+    ],
     recruitmentApplications: [],
     invites: [],
+    walletAccounts: [],
+    walletTransactions: [],
+    lootSplitPayouts: [],
+    bottledEnergyImports: [],
+    bottledEnergyLedger: [],
     config: {
       attendancePoints: 10,
       absencePenalty: 5,

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import type { AssignableCompPlayerEntry, BuildTemplateEntry, CtaEntry } from "../../lib";
-import { PlayerSelect } from "../comps/PlayerSelect";
 import { canonicalWeaponVariantKey, getItemIconUrl, getResolvedWeaponIconName } from "../comps/catalog";
 
 interface CtaBoardProps {
@@ -10,6 +9,7 @@ interface CtaBoardProps {
   builds: BuildTemplateEntry[];
   canCancel: boolean;
   canEdit: boolean;
+  currentUserId?: string;
   cta: CtaEntry;
 }
 
@@ -64,12 +64,28 @@ function normalizeWeaponLookupKey(value: string | undefined, role?: string): str
   return compactWeaponKey(trimmed);
 }
 
-export function CtaBoard({ assignablePlayers, builds, canCancel, canEdit, cta }: CtaBoardProps) {
+function roleClassName(role: string): string {
+  return `role-${role.toLowerCase().replace(/\s+/g, "-")}`;
+}
+
+export function CtaBoard({
+  assignablePlayers: _assignablePlayers,
+  builds,
+  canCancel,
+  canEdit,
+  currentUserId,
+  cta
+}: CtaBoardProps) {
   const [ctaStatus, setCtaStatus] = useState(cta.status);
   const [parties, setParties] = useState(cta.signupParties);
+  const [fillers, setFillers] = useState(cta.signupFillers ?? []);
   const [activePartyKey, setActivePartyKey] = useState(parties[0]?.partyKey);
   const [savingSlotKey, setSavingSlotKey] = useState<string | null>(null);
   const [viewerBuildId, setViewerBuildId] = useState<string | null>(null);
+  const [signupNotes, setSignupNotes] = useState<string[]>(["", "", "", ""]);
+  const [signupBusy, setSignupBusy] = useState(false);
+  const [draggingFillPlayerUserId, setDraggingFillPlayerUserId] = useState<string | null>(null);
+  const [movingToFill, setMovingToFill] = useState(false);
 
   const activeParty = useMemo(
     () => parties.find((party) => party.partyKey === activePartyKey) ?? parties[0],
@@ -83,6 +99,18 @@ export function CtaBoard({ assignablePlayers, builds, canCancel, canEdit, cta }:
   const totalSlots = parties.reduce((total, party) => total + party.slots.length, 0);
   const leftColumnSlots = activeParty?.slots.filter((_, index) => index < 10) ?? [];
   const rightColumnSlots = activeParty?.slots.filter((_, index) => index >= 10) ?? [];
+  const alreadySignedByCurrentUser = useMemo(() => {
+    if (!currentUserId) {
+      return false;
+    }
+    const inSlot = parties.some((party) =>
+      party.slots.some((slot) => slot.playerUserId === currentUserId)
+    );
+    if (inSlot) {
+      return true;
+    }
+    return fillers.some((entry) => entry.playerUserId === currentUserId);
+  }, [currentUserId, fillers, parties]);
   const viewerBuild = viewerBuildId ? builds.find((entry) => entry.id === viewerBuildId) ?? null : null;
   const buildPrimaryIconById = useMemo(() => {
     const map = new Map<string, string>();
@@ -194,10 +222,51 @@ export function CtaBoard({ assignablePlayers, builds, canCancel, canEdit, cta }:
         )
       }))
     );
+    if (nextValue.playerUserId) {
+      setFillers((current) => current.filter((entry) => entry.playerUserId !== nextValue.playerUserId));
+    }
+  }
+
+  function moveAssignedToFillLocally(slotKey: string) {
+    const slotToMove = parties
+      .flatMap((party) => party.slots)
+      .find((slot) => slot.slotKey === slotKey && slot.playerName);
+
+    if (!slotToMove) {
+      return;
+    }
+
+    const moved = {
+      memberId: slotToMove.playerUserId ?? slotToMove.slotKey,
+      playerName: slotToMove.playerName!,
+      playerUserId: slotToMove.playerUserId,
+      preferredRoles: [slotToMove.weaponName, slotToMove.role].filter(Boolean)
+    };
+
+    setParties((current) =>
+      current.map((party) => ({
+        ...party,
+        slots: party.slots.map((slot) =>
+          slot.slotKey === slotKey
+            ? {
+                ...slot,
+                playerName: undefined,
+                playerUserId: undefined
+              }
+            : slot
+        )
+      }))
+    );
+
+    setFillers((current) => {
+      const filtered = current.filter((entry) => entry.playerUserId !== moved.playerUserId);
+      return [...filtered, moved];
+    });
   }
 
   async function assignSlot(slotKey: string, playerUserId?: string) {
     const previousParties = parties;
+    const previousFillers = fillers;
     setSavingSlotKey(slotKey);
 
     const response = await fetch(`/ctas?ctaId=${encodeURIComponent(cta.id)}`, {
@@ -210,9 +279,59 @@ export function CtaBoard({ assignablePlayers, builds, canCancel, canEdit, cta }:
 
     if (!response.ok) {
       setParties(previousParties);
+      setFillers(previousFillers);
     }
 
     setSavingSlotKey(null);
+  }
+
+  async function signupForFill() {
+    if (signupBusy || alreadySignedByCurrentUser) {
+      return;
+    }
+    const notes = signupNotes.map((entry) => entry.trim()).filter(Boolean);
+    const uniqueNotes = Array.from(new Set(notes));
+    if (uniqueNotes.length < 2 || uniqueNotes.length > 4) {
+      window.alert("Debes completar al menos 2 campos (máximo 4).");
+      return;
+    }
+
+    setSignupBusy(true);
+    const response = await fetch(`/ctas/signup?ctaId=${encodeURIComponent(cta.id)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ roles: uniqueNotes })
+    });
+
+    if (!response.ok) {
+      let reason = "No se pudo guardar el signup para fillear.";
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload?.error) {
+          reason = payload.error;
+        }
+      } catch {}
+      window.alert(reason);
+      setSignupBusy(false);
+      return;
+    }
+    const payload = (await response.json()) as {
+      ok: true;
+      filler: {
+        memberId: string;
+        playerName: string;
+        playerUserId: string;
+        preferredRoles: string[];
+      };
+    };
+    setFillers((current) => {
+      const withoutCurrent = current.filter((entry) => entry.memberId !== payload.filler.memberId);
+      return [...withoutCurrent, payload.filler];
+    });
+    setSignupNotes(["", "", "", ""]);
+    setSignupBusy(false);
   }
 
   async function cancelCta() {
@@ -243,6 +362,31 @@ export function CtaBoard({ assignablePlayers, builds, canCancel, canEdit, cta }:
     }
 
     setSavingSlotKey(null);
+  }
+
+  async function moveAssignedToFill(slotKey: string) {
+    if (movingToFill) {
+      return;
+    }
+
+    const previousParties = parties;
+    const previousFillers = fillers;
+    setMovingToFill(true);
+    moveAssignedToFillLocally(slotKey);
+
+    const response = await fetch(`/ctas?ctaId=${encodeURIComponent(cta.id)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ slotKey })
+    });
+
+    if (!response.ok) {
+      setParties(previousParties);
+      setFillers(previousFillers);
+    }
+    setMovingToFill(false);
   }
 
   if (ctaStatus === "CANCELED") {
@@ -300,70 +444,195 @@ export function CtaBoard({ assignablePlayers, builds, canCancel, canEdit, cta }:
       ) : null}
 
       {activeParty ? (
-        <div className="cta-party-grid">
-          {[leftColumnSlots, rightColumnSlots].map((columnSlots, columnIndex) => (
-            <div className="cta-list cta-list-column" key={columnIndex}>
-              {columnSlots.map((slot, index) => {
-                const slotBuildIconSource = slot.buildId ? buildPrimaryIconById.get(slot.buildId) : undefined;
-                const slotIconSource =
-                  slotBuildIconSource ??
-                  getResolvedWeaponIconName(slot.weaponId) ??
-                  getResolvedWeaponIconName(slot.weaponName) ??
-                  slot.weaponId;
-                return (
-                <div className="cta-list-row cta-list-row-editable" key={slot.slotKey}>
-                  <div className="cta-slot-copy">
-                    <div className="cta-slot-weapon">
-                      <button
-                        className="cta-slot-weapon-button"
-                        onClick={() => {
-                          const nextBuild = resolveBuildForSlot(slot);
-                          if (!nextBuild) {
-                            return;
-                          }
-                          setViewerBuildId(nextBuild.id);
-                        }}
-                        type="button"
-                      >
-                        <img
-                          alt={formatCompactLabel(slot.label)}
-                          className="cta-slot-weapon-icon"
-                          decoding="async"
-                          height={44}
-                          loading="lazy"
-                          src={getItemIconUrl(slotIconSource)}
-                          width={44}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="cta-slot-meta">
-                    <span className="status-badge cta-slot-index">
-                      #{String(columnIndex * 10 + index + 1).padStart(2, "0")}
-                    </span>
-                    <span className={`status-badge role-${slot.role.toLowerCase()}`}>{slot.role}</span>
-                  </div>
-                  {canEdit ? (
-                    <PlayerSelect
-                      disabled={savingSlotKey === slot.slotKey}
-                      onChange={({ playerName, playerUserId }) => {
+        <div className="cta-board-layout">
+          <div className="cta-party-grid">
+            {[leftColumnSlots, rightColumnSlots].map((columnSlots, columnIndex) => (
+              <div className="cta-list cta-list-column" key={columnIndex}>
+                {columnSlots.map((slot, index) => {
+                  const slotBuildIconSource = slot.buildId ? buildPrimaryIconById.get(slot.buildId) : undefined;
+                  const slotIconSource =
+                    slotBuildIconSource ??
+                    getResolvedWeaponIconName(slot.weaponId) ??
+                    getResolvedWeaponIconName(slot.weaponName) ??
+                    slot.weaponId;
+                  return (
+                    <div
+                      className={`cta-list-row cta-list-row-editable ${roleClassName(slot.role)}`}
+                      key={slot.slotKey}
+                      onDragOver={(event) => {
+                        if (!canEdit || !draggingFillPlayerUserId) {
+                          return;
+                        }
+                        event.preventDefault();
+                      }}
+                      onDrop={(event) => {
+                        if (!canEdit) {
+                          return;
+                        }
+                        const playerUserId = event.dataTransfer.getData("text/playerUserId").trim();
+                        const playerName = event.dataTransfer.getData("text/playerName").trim();
+                        if (!playerUserId || !playerName) {
+                          return;
+                        }
                         updateSlotLocally(slot.slotKey, { playerName, playerUserId });
                         void assignSlot(slot.slotKey, playerUserId);
+                        setDraggingFillPlayerUserId(null);
                       }}
-                      playerName={slot.playerName ?? ""}
-                      playerUserId={slot.playerUserId}
-                      players={assignablePlayers}
-                    />
-                  ) : (
-                    <span className={`cta-slot-player ${slot.playerName ? "filled" : "empty"}`}>
-                      {slot.playerName ?? "Sin asignar"}
-                    </span>
-                  )}
-                </div>
-              );
-              })}
+                    >
+                      <div className="cta-slot-copy">
+                        <div className="cta-slot-weapon">
+                          <button
+                            className="cta-slot-weapon-button"
+                            onClick={() => {
+                              const nextBuild = resolveBuildForSlot(slot);
+                              if (!nextBuild) {
+                                return;
+                              }
+                              setViewerBuildId(nextBuild.id);
+                            }}
+                            type="button"
+                          >
+                            <img
+                              alt={formatCompactLabel(slot.label)}
+                              className="cta-slot-weapon-icon"
+                              decoding="async"
+                              height={44}
+                              loading="lazy"
+                              src={getItemIconUrl(slotIconSource)}
+                              width={44}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="cta-slot-meta">
+                        <span className="status-badge cta-slot-index">
+                          #{String(columnIndex * 10 + index + 1).padStart(2, "0")}
+                        </span>
+                        <span className={`status-badge role-${slot.role.toLowerCase()}`}>{slot.role}</span>
+                      </div>
+                      <div
+                        className={`cta-slot-dropzone ${slot.playerName ? "filled" : "empty"}`}
+                        onDragEnd={() => setDraggingFillPlayerUserId(null)}
+                        onDragStart={(event) => {
+                          if (!canEdit || !slot.playerUserId || !slot.playerName) {
+                            return;
+                          }
+                          event.dataTransfer.setData("text/playerUserId", slot.playerUserId);
+                          event.dataTransfer.setData("text/playerName", slot.playerName);
+                          event.dataTransfer.setData("text/slotKey", slot.slotKey);
+                          event.dataTransfer.setData("text/slotRole", slot.role);
+                          event.dataTransfer.setData("text/slotWeaponName", slot.weaponName);
+                          setDraggingFillPlayerUserId(slot.playerUserId);
+                        }}
+                      >
+                        {slot.playerName ? (
+                          <>
+                            {currentUserId && slot.playerUserId === currentUserId ? (
+                              <span className="status-badge user-self-badge">TU</span>
+                            ) : null}
+                            <span
+                              className="cta-slot-player-chip"
+                              draggable={Boolean(canEdit && slot.playerUserId)}
+                            >
+                              {slot.playerName}
+                            </span>
+                          </>
+                        ) : (
+                          <span>Sin asignar</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <aside className="dashboard-card cta-fill-column">
+            <div className="cta-fill-head">
+              <span className="card-label">Apuntarse:</span>
+              <strong>{fillers.length}</strong>
             </div>
-          ))}
+            <div className="cta-fill-input-grid">
+              {signupNotes.map((value, index) => (
+                <input
+                  className="input compact"
+                  disabled={alreadySignedByCurrentUser || signupBusy}
+                  key={index}
+                  maxLength={60}
+                  onChange={(event) => {
+                    const nextValue = event.currentTarget.value;
+                    setSignupNotes((current) =>
+                      current.map((entry, entryIndex) => (entryIndex === index ? nextValue : entry))
+                    );
+                  }}
+                  placeholder={`Arma / rol ${index + 1}`}
+                  type="text"
+                  value={value}
+                />
+              ))}
+            </div>
+            <button
+              className="button primary compact"
+              disabled={signupBusy || alreadySignedByCurrentUser}
+              onClick={() => void signupForFill()}
+              type="button"
+            >
+              {signupBusy ? "Guardando..." : "Apuntarme (mín. 2)"}
+            </button>
+            {alreadySignedByCurrentUser ? (
+              <p className="cta-fill-hint">Ya estas apuntado en esta CTA.</p>
+            ) : null}
+            <div className="cta-fill-list">
+              <div
+                className={`cta-fill-dropzone ${draggingFillPlayerUserId ? "active" : ""}`}
+                onDragOver={(event) => {
+                  if (!canEdit) {
+                    return;
+                  }
+                  event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  if (!canEdit) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const slotKey = event.dataTransfer.getData("text/slotKey").trim();
+                  if (!slotKey) {
+                    return;
+                  }
+                  void moveAssignedToFill(slotKey);
+                  setDraggingFillPlayerUserId(null);
+                }}
+              >
+                Arrastra aquí para quitar del slot y mantener en apuntados
+              </div>
+              {fillers.map((entry) => (
+                <article
+                  className={`cta-fill-item ${canEdit && entry.playerUserId ? "draggable" : ""}`}
+                  draggable={Boolean(canEdit && entry.playerUserId)}
+                  key={entry.memberId}
+                  onDragEnd={() => setDraggingFillPlayerUserId(null)}
+                  onDragStart={(event) => {
+                    if (!entry.playerUserId) {
+                      return;
+                    }
+                    event.dataTransfer.setData("text/playerUserId", entry.playerUserId);
+                    event.dataTransfer.setData("text/playerName", entry.playerName);
+                    setDraggingFillPlayerUserId(entry.playerUserId);
+                  }}
+                >
+                  <div className="cta-fill-name">
+                    {currentUserId && entry.playerUserId === currentUserId ? (
+                      <span className="status-badge user-self-badge">TU</span>
+                    ) : null}
+                    <strong>{entry.playerName}</strong>
+                  </div>
+                  <p>{entry.preferredRoles.join(" · ")}</p>
+                </article>
+              ))}
+              {fillers.length === 0 ? <p className="empty">Sin apuntados para fillear.</p> : null}
+            </div>
+          </aside>
         </div>
       ) : (
         <p className="empty">Esta CTA aun no tiene composicion vinculada o no se ha publicado signup.</p>

@@ -18,11 +18,12 @@ export default async function ScoutingPage() {
         <div className="section-row">
           <div>
             <span className="card-label">Scouting</span>
-            <h2>Lookup de jugadores de Albion.</h2>
+            <h2>El ojo espia</h2>
           </div>
         </div>
         <p className="lede">
-          Busca por nombre de Albion Online y revisa Kill Fame, Death Fame y KD Fame.
+          Busca por nombre de Albion y revisa métricas agregadas: kills, deaths, KD, damage,
+          attendance, IP y fame.
         </p>
         <AlbionScoutingLookup />
       </article>

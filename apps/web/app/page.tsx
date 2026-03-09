@@ -30,6 +30,10 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
   const discordInviteUrl =
     process.env.DISCORD_INVITE_URL ?? defaultDiscordInviteUrl;
   const enforceLaunchCountdown = process.env.LAUNCH_COUNTDOWN_ENABLED !== "0";
+  const launchAtMs = new Date("2026-03-23T12:00:00+01:00").getTime();
+  const hasLaunched = Date.now() >= launchAtMs;
+  const shouldLockJoin = enforceLaunchCountdown && !hasLaunched && !inviteValid;
+  const canJoin = !shouldLockJoin;
 
   return (
     <PageEntryLoader
@@ -79,7 +83,11 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
                 real.
               </p>
               <div className="hero-actions">
-                <a className="button primary" href={authStartUrl}>
+                <a
+                  aria-disabled={!canJoin}
+                  className={`button primary ${!canJoin ? "is-disabled" : ""}`}
+                  href={canJoin ? authStartUrl : "#"}
+                >
                   Quiero Unirme
                 </a>
                 <Link
