@@ -187,6 +187,37 @@ export function AlbionScoutingLookup() {
               const guildName = entry.player?.guildName;
 
               if (!stats) {
+                if (entry.player) {
+                  return (
+                    <article
+                      className="dashboard-card scouting-result scouting-response-block scouting-kd-result"
+                      key={entry.query}
+                    >
+                      <div className="section-row">
+                        <div>
+                          <h2>{guildName ? `${playerName} - ${guildName}` : playerName}</h2>
+                        </div>
+                      </div>
+                      <p className="scouting-hint">
+                        No hay actividad agregada con estos filtros; mostrando datos generales del perfil.
+                      </p>
+                      <div className="scouting-kd-grid">
+                        <article className="metric-card scouting-kd-card scouting-kd-killfame">
+                          <span className="card-label">Kill fame</span>
+                          <strong>{formatCompact(entry.player.killFame ?? 0)}</strong>
+                        </article>
+                        <article className="metric-card scouting-kd-card scouting-kd-deathfame">
+                          <span className="card-label">Death fame</span>
+                          <strong>{formatCompact(entry.player.deathFame ?? 0)}</strong>
+                        </article>
+                        <article className="metric-card scouting-kd-card scouting-kd-heal">
+                          <span className="card-label">K/D fame</span>
+                          <strong>{(entry.player.kdFame ?? 0).toFixed(2).replace(".", ",")}</strong>
+                        </article>
+                      </div>
+                    </article>
+                  );
+                }
                 return (
                   <article className="dashboard-card scouting-response-block" key={entry.query}>
                     <p className="empty">
