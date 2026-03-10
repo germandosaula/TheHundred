@@ -1901,11 +1901,15 @@ li {
 }
 
 .comp-header-grid-summary {
-  align-items: center;
+  align-items: end;
 }
 
 .comp-header-grid-summary .comp-summary {
-  align-self: center;
+  align-self: end;
+}
+
+.comp-header-grid-summary .field {
+  align-self: end;
 }
 
 .comp-summary {
@@ -3062,11 +3066,60 @@ li {
 }
 
 .cta-create-field .input {
-  min-height: 44px;
+  min-height: 52px;
+  width: 100%;
+  padding: 0 16px;
+  border: 1px solid rgba(148, 168, 206, 0.28);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(22, 32, 56, 0.95), rgba(16, 26, 48, 0.95));
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.cta-create-field .input::placeholder {
+  color: rgba(226, 234, 255, 0.45);
+  font-weight: 500;
+}
+
+.cta-create-field .input:hover {
+  border-color: rgba(148, 168, 206, 0.4);
+}
+
+.cta-create-field .input:focus,
+.cta-create-field .input:focus-visible {
+  border-color: rgba(240, 200, 90, 0.82);
+  box-shadow:
+    0 0 0 1px rgba(240, 200, 90, 0.26),
+    0 10px 24px rgba(0, 0, 0, 0.26);
+}
+
+.cta-create-field select.input {
+  appearance: none;
+  padding-right: 44px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(226, 234, 255, 0.7) 50%),
+    linear-gradient(135deg, rgba(226, 234, 255, 0.7) 50%, transparent 50%);
+  background-position:
+    calc(100% - 20px) calc(50% - 3px),
+    calc(100% - 14px) calc(50% - 3px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.cta-create-field select.input option {
+  background: #111a2c;
+  color: var(--ink);
 }
 
 .cta-create-action {
-  min-height: 44px;
+  min-height: 52px;
   white-space: nowrap;
 }
 
@@ -3075,8 +3128,8 @@ li {
 }
 
 .cta-create-panel input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  filter: invert(1);
-  opacity: 0.8;
+  filter: brightness(0) invert(1) saturate(0) !important;
+  opacity: 1;
 }
 
 .cta-board-list {
@@ -3092,7 +3145,7 @@ li {
 .cta-index-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: stretch;
   gap: 16px;
   padding: 16px 18px;
 }
@@ -3115,8 +3168,14 @@ li {
 
 .cta-index-meta {
   display: grid;
+  grid-template-rows: auto 1fr;
   justify-items: end;
   gap: 8px;
+  align-self: stretch;
+}
+
+.cta-index-meta .button {
+  align-self: end;
 }
 
 @media (max-width: 900px) {

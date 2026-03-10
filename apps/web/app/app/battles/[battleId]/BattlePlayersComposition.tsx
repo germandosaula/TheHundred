@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   canonicalWeaponVariantKey,
   compRoleBucketLabels,
@@ -105,22 +105,36 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
 
 export function BattlePlayersComposition({ players }: { players: BattlePlayerEntry[] }) {
   const scopeOptions = useMemo<ScopeOption[]>(() => {
-    const allianceOptions = [...new Set(players.map((player) => player.allianceName).filter(Boolean))]
-      .sort((left, right) => left!.localeCompare(right!))
-      .map((alliance) => ({
+    const allianceCounts = new Map<string, number>();
+    const guildCounts = new Map<string, number>();
+
+    for (const player of players) {
+      if (player.allianceName) {
+        allianceCounts.set(player.allianceName, (allianceCounts.get(player.allianceName) ?? 0) + 1);
+      }
+      if (player.guildName) {
+        guildCounts.set(player.guildName, (guildCounts.get(player.guildName) ?? 0) + 1);
+      }
+    }
+
+    const allianceOptions = [...allianceCounts.entries()]
+      .filter(([, count]) => count > 10)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([alliance]) => ({
         id: `alliance:${alliance}`,
         label: `[${alliance}]`,
         type: "alliance" as const,
-        value: alliance as string
+        value: alliance
       }));
 
-    const guildOptions = [...new Set(players.map((player) => player.guildName).filter(Boolean))]
-      .sort((left, right) => left!.localeCompare(right!))
-      .map((guild) => ({
+    const guildOptions = [...guildCounts.entries()]
+      .filter(([, count]) => count > 10)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([guild]) => ({
         id: `guild:${guild}`,
-        label: guild as string,
+        label: guild,
         type: "guild" as const,
-        value: guild as string
+        value: guild
       }));
 
     return [...allianceOptions, ...guildOptions];
@@ -130,6 +144,16 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
   const [activeRole, setActiveRole] = useState<AlbionCompRole>("Tank");
   const [hoveredRole, setHoveredRole] = useState<AlbionCompRole | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 160, y: 160 });
+
+  useEffect(() => {
+    if (scopeOptions.length === 0) {
+      setScopeId("all");
+      return;
+    }
+    if (!scopeOptions.some((entry) => entry.id === scopeId)) {
+      setScopeId(scopeOptions[0].id);
+    }
+  }, [scopeId, scopeOptions]);
 
   const scope = scopeOptions.find((entry) => entry.id === scopeId) ?? null;
   const filteredPlayers = useMemo(() => {
@@ -252,15 +276,19 @@ export function BattlePlayersComposition({ players }: { players: BattlePlayerEnt
         <div>
           <span className="card-label">Players Composition</span>
         </div>
-        <label className="battle-search battle-scope-select">
-          <select onChange={(event) => setScopeId(event.target.value)} value={scopeId}>
-            {scopeOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {scopeOptions.length > 0 ? (
+          <label className="battle-search battle-scope-select">
+            <select onChange={(event) => setScopeId(event.target.value)} value={scopeId}>
+              {scopeOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span className="status-badge">Sin guild/alliance con +10 players</span>
+        )}
       </div>
 
       <div className="battle-composition-grid">
