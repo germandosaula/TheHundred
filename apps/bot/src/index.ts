@@ -15,6 +15,7 @@ import type {
   ChatInputCommandInteraction,
   Guild,
   GuildMember,
+  Snowflake,
   StringSelectMenuInteraction
 } from "discord.js";
 import { createRepository, type CompRecord, type CtaSignupRecord } from "@thehundred/db";
@@ -1748,6 +1749,17 @@ async function ensureRecruitmentTickets() {
   }
 
   const guild = await client.guilds.fetch(guildId);
+  let recruitmentParentId: Snowflake | undefined;
+  if (recruitmentCategoryId) {
+    const parentChannel = await guild.channels.fetch(recruitmentCategoryId).catch(() => null);
+    if (parentChannel?.type === ChannelType.GuildCategory) {
+      recruitmentParentId = parentChannel.id;
+    } else {
+      console.error(
+        `Recruitment category ${recruitmentCategoryId} is missing or is not a category. Ticket will be created without parent category.`
+      );
+    }
+  }
 
   for (const application of pendingApplications) {
     try {
@@ -1758,14 +1770,15 @@ async function ensureRecruitmentTickets() {
 
       const guildMember = await guild.members.fetch(user.discordId).catch(() => null);
       if (!guildMember) {
-        console.error(`Recruitment ticket skipped for ${user.displayName}: user is not in the guild yet.`);
-        continue;
+        console.error(
+          `Recruitment ticket for ${user.displayName}: Discord member not found in guild. Creating staff-only ticket.`
+        );
       }
 
       const channel = await guild.channels.create({
         name: buildRecruitmentChannelName(application.displayName, application.id),
         type: ChannelType.GuildText,
-        parent: recruitmentCategoryId || undefined,
+        parent: recruitmentParentId,
         permissionOverwrites: buildRecruitmentOverwrites(guild, guildMember)
       });
 
@@ -2009,14 +2022,22 @@ function buildRecruitmentChannelName(displayName: string, applicationId: string)
   return `recruit-${normalizedName}-${applicationId.slice(0, 6)}`;
 }
 
-function buildRecruitmentOverwrites(guild: Guild, guildMember: GuildMember) {
-  const overwrites = [
+function buildRecruitmentOverwrites(guild: Guild, guildMember: GuildMember | null) {
+  const overwrites: Array<{
+    id: string;
+    type: OverwriteType;
+    allow?: bigint[];
+    deny?: bigint[];
+  }> = [
     {
       id: guild.roles.everyone.id,
       type: OverwriteType.Role,
       deny: [PermissionFlagsBits.ViewChannel]
-    },
-    {
+    }
+  ];
+
+  if (guildMember) {
+    overwrites.push({
       id: guildMember.id,
       type: OverwriteType.Member,
       allow: [
@@ -2024,8 +2045,8 @@ function buildRecruitmentOverwrites(guild: Guild, guildMember: GuildMember) {
         PermissionFlagsBits.SendMessages,
         PermissionFlagsBits.ReadMessageHistory
       ]
-    }
-  ];
+    });
+  }
 
   for (const roleId of managementRoleIds) {
     if (!guild.roles.cache.has(roleId)) {
