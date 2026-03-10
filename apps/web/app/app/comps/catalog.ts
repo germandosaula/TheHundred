@@ -26,7 +26,7 @@ export interface AlbionPartySlotTemplate {
 export const albionWeaponCatalog: AlbionWeaponOption[] = [
   {
     id: "arcane-staff",
-    name: "Arcane Staff",
+    name: "1H Arcane Staff",
     role: "Tank",
     iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Arcane%20Staff.png?locale=en",
     aliases: ["1h-arcane", "1h arcane", "main-arcanestaff"]
@@ -164,7 +164,7 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "rootbound-staff", name: "Rootbound Staff", role: "Support", iconName: "T8_2H_SHAPESHIFTER_SET2", aliases: ["shapeshifter-set2", "2h-shapeshifter-set2"] },
   {
     id: "rootcaller-staff",
-    name: "Rootcaller Staff",
+    name: "Rotcaller Staff",
     role: "Support",
     iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Rotcaller%20Staff.png?locale=en",
     aliases: ["rotcaller staff", "rotcaller-staff", "rootcaller", "rotcaller"]
