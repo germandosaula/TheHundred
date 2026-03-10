@@ -60,6 +60,7 @@ const roleOrder: AlbionCompRole[] = [
   "Tank",
   "Healer",
   "Support",
+  "Pierce",
   "Ranged",
   "Melee",
   "Battlemount"
@@ -69,6 +70,7 @@ const roleColors: Record<AlbionCompRole, string> = {
   Tank: "#4D8DFF",
   Healer: "#28D29A",
   Support: "#8D70FF",
+  Pierce: "#67D8FF",
   Ranged: "#FF9D4D",
   Melee: "#FF4D5C",
   Battlemount: "#B6BDC9"

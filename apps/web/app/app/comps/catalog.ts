@@ -2,6 +2,7 @@ export type AlbionCompRole =
   | "Tank"
   | "Healer"
   | "Support"
+  | "Pierce"
   | "Melee"
   | "Ranged"
   | "Battlemount";
@@ -23,7 +24,13 @@ export interface AlbionPartySlotTemplate {
 }
 
 export const albionWeaponCatalog: AlbionWeaponOption[] = [
-  { id: "arcane-staff", name: "Arcane Staff", role: "Melee" },
+  {
+    id: "arcane-staff",
+    name: "Arcane Staff",
+    role: "Tank",
+    iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Arcane%20Staff.png?locale=en",
+    aliases: ["1h-arcane", "1h arcane", "main-arcanestaff"]
+  },
   { id: "great-arcane-staff", name: "Great Arcane Staff", role: "Tank" },
   { id: "enigmatic-staff", name: "Enigmatic Staff", role: "Support" },
   { id: "witchwork-staff", name: "Witchwork Staff", role: "Ranged" },
@@ -36,7 +43,13 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "grovekeeper", name: "Grovekeeper", role: "Tank" },
   { id: "camlann-mace", name: "Camlann Mace", role: "Tank" },
   { id: "hand-of-justice", name: "Hand of Justice", role: "Tank", iconName: "T8_2H_HAMMER_AVALON" },
-  { id: "realmbreaker", name: "Realmbreaker", role: "Melee" },
+  {
+    id: "realmbreaker",
+    name: "Realmbreaker",
+    role: "Pierce",
+    iconName: "T8_2H_AXE_AVALON",
+    aliases: ["axe-avalon", "2h-axe-avalon", "realmbreaker"]
+  },
   { id: "halberd", name: "Halberd", role: "Melee" },
   { id: "infernal-scythe", name: "Infernal Scythe", role: "Melee", iconName: "T8_2H_SCYTHE_HELL", aliases: ["scythe-hell", "2h-scythe-hell"] },
   { id: "bear-paws", name: "Bear Paws", role: "Melee" },
@@ -58,7 +71,13 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "great-cursed-staff", name: "Great Cursed Staff", role: "Ranged" },
   { id: "demonic-staff", name: "Demonic Staff", role: "Ranged" },
   { id: "lifecurse-staff", name: "Lifecurse Staff", role: "Support", aliases: ["cursedstaff-avalon", "main-cursedstaff-avalon"] },
-  { id: "damnation-staff", name: "Damnation Staff", role: "Support", aliases: ["cursedstaff-morgana", "2h-cursedstaff-morgana"] },
+  {
+    id: "damnation-staff",
+    name: "Damnation Staff",
+    role: "Pierce",
+    iconName: "T8_2H_CURSEDSTAFF_MORGANA",
+    aliases: ["cursedstaff-morgana", "2h-cursedstaff-morgana"]
+  },
   { id: "shadowcaller", name: "Shadowcaller", role: "Support", aliases: ["cursedstaff-undead", "main-cursedstaff-undead"] },
   { id: "cursed-skull", name: "Cursed Skull", role: "Ranged" },
   { id: "dagger", name: "Dagger", role: "Melee" },
@@ -89,6 +108,13 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "tombhammer", name: "Tombhammer", role: "Tank" },
   { id: "forge-hammers", name: "Forge Hammers", role: "Tank" },
   { id: "hallowfall", name: "Hallowfall", role: "Healer", iconName: "T8_MAIN_HOLYSTAFF_AVALON" },
+  {
+    id: "exalted-staff",
+    name: "Exalted Staff",
+    role: "Healer",
+    iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Exalted%20Staff.png?locale=en",
+    aliases: ["holystaff-avalon", "2h-holystaff-avalon"]
+  },
   { id: "fallen-staff", name: "Fallen Staff", role: "Healer" },
   { id: "great-holy-staff", name: "Great Holy Staff", role: "Healer" },
   { id: "redemption-staff", name: "Redemption Staff", role: "Healer" },
@@ -118,13 +144,13 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "pike", name: "Pike", role: "Melee" },
   { id: "glaive", name: "Glaive", role: "Melee" },
   { id: "heron-spear", name: "Heron Spear", role: "Melee" },
-  { id: "spirithunter", name: "Spirithunter", role: "Melee", iconName: "T8_2H_HARPOON_HELL", aliases: ["harpoon-hell", "2h-harpoon-hell"] },
+  { id: "spirithunter", name: "Spirithunter", role: "Pierce", iconName: "T8_2H_HARPOON_HELL", aliases: ["harpoon-hell", "2h-harpoon-hell"] },
   { id: "trinity-spear", name: "Trinity Spear", role: "Melee" },
   { id: "daybreaker", name: "Daybreaker", role: "Melee" },
   { id: "broadsword", name: "Broadsword", role: "Melee" },
   { id: "claymore", name: "Claymore", role: "Melee" },
   { id: "dual-swords", name: "Dual Swords", role: "Melee" },
-  { id: "carving-sword", name: "Carving Sword", role: "Melee", iconName: "T8_2H_CLEAVER_HELL", aliases: ["cleaver-hell", "2h-cleaver-hell"] },
+  { id: "carving-sword", name: "Carving Sword", role: "Pierce", iconName: "T8_2H_CLEAVER_HELL", aliases: ["cleaver-hell", "2h-cleaver-hell"] },
   { id: "clarent-blade", name: "Clarent Blade", role: "Melee" },
   { id: "galatine-pair", name: "Galatine Pair", role: "Melee" },
   { id: "kingmaker", name: "Kingmaker", role: "Melee" },
@@ -136,9 +162,23 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "ravenstrike-cestus", name: "Ravenstrike Cestus", role: "Melee" },
   { id: "avalonian-fists", name: "Brawler Gloves", role: "Melee" },
   { id: "rootbound-staff", name: "Rootbound Staff", role: "Support", iconName: "T8_2H_SHAPESHIFTER_SET2", aliases: ["shapeshifter-set2", "2h-shapeshifter-set2"] },
+  {
+    id: "rootcaller-staff",
+    name: "Rootcaller Staff",
+    role: "Support",
+    iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Rotcaller%20Staff.png?locale=en",
+    aliases: ["rotcaller staff", "rotcaller-staff", "rootcaller", "rotcaller"]
+  },
   { id: "earthrune-staff", name: "Earthrune Staff", role: "Tank", iconName: "T8_2H_SHAPESHIFTER_KEEPER", aliases: ["shapeshifter-keeper", "2h-shapeshifter-keeper"] },
   { id: "lightcaller", name: "Lightcaller", role: "Ranged" },
   { id: "primal-staff", name: "Primal Staff", role: "Melee" },
+  {
+    id: "astral-staff",
+    name: "Astral Staff",
+    role: "Melee",
+    iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Astral%20Staff@0.png?locale=en",
+    aliases: ["astral staff", "astral-staff"]
+  },
   { id: "bloodmoon-staff", name: "Bloodmoon Staff", role: "Melee" },
   { id: "prowling-staff", name: "Prowling Staff", role: "Melee" },
   { id: "still-gaze-staff", name: "Still Gaze Staff", role: "Tank", iconName: "T8_2H_SHAPESHIFTER_CRYSTAL", aliases: ["shapeshifter-crystal", "2h-shapeshifter-crystal"] },
@@ -187,11 +227,11 @@ export const defaultPartySlots: AlbionPartySlotTemplate[] = [
   { id: "slot-06", label: "Nature Healer", role: "Healer", weaponId: "blight-staff" },
   { id: "slot-07", label: "Arcane Support", role: "Support", weaponId: "great-arcane-staff" },
   { id: "slot-08", label: "Defensive Support", role: "Support", weaponId: "enigmatic-staff" },
-  { id: "slot-09", label: "Utility Support", role: "Support", weaponId: "damnation-staff" },
-  { id: "slot-10", label: "Frontline Bruiser 1", role: "Melee", weaponId: "realmbreaker" },
+  { id: "slot-09", label: "Utility Support", role: "Pierce", weaponId: "damnation-staff" },
+  { id: "slot-10", label: "Frontline Bruiser 1", role: "Pierce", weaponId: "realmbreaker" },
   { id: "slot-11", label: "Frontline Bruiser 2", role: "Melee", weaponId: "halberd" },
   { id: "slot-12", label: "Melee Pressure 1", role: "Melee", weaponId: "infernal-scythe" },
-  { id: "slot-13", label: "Melee Pressure 2", role: "Melee", weaponId: "carving-sword" },
+  { id: "slot-13", label: "Melee Pressure 2", role: "Pierce", weaponId: "carving-sword" },
   { id: "slot-14", label: "Ranged Pressure 1", role: "Ranged", weaponId: "permafrost-prism" },
   { id: "slot-15", label: "Ranged Pressure 2", role: "Ranged", weaponId: "glacial-staff" },
   { id: "slot-16", label: "Ranged Pressure 3", role: "Ranged", weaponId: "energy-shaper" },
@@ -205,6 +245,7 @@ export const compRoleLabels: Record<AlbionCompRole, string> = {
   Tank: "Tank",
   Healer: "Healer",
   Support: "Support",
+  Pierce: "Pierce",
   Melee: "Melee",
   Ranged: "Ranged",
   Battlemount: "Battlemount"
@@ -214,6 +255,7 @@ export const compRoleBucketLabels: Record<AlbionCompRole, string> = {
   Tank: "Tanks",
   Healer: "Healers",
   Support: "Supports",
+  Pierce: "Pierces",
   Melee: "Melees",
   Ranged: "Ranges",
   Battlemount: "Battlemounts"
@@ -306,6 +348,23 @@ const weaponRoleKeywordMatchers: Array<{
       compact.includes("earthrune")
   },
   {
+    role: "Pierce",
+    test: (value, compact) =>
+      value.includes("spirithunter") ||
+      value.includes("harpoon hell") ||
+      value.includes("realmbreaker") ||
+      value.includes("damnation") ||
+      value.includes("carving") ||
+      value.includes("cleaver hell") ||
+      compact.includes("spirithunter") ||
+      compact.includes("harpoonhell") ||
+      compact.includes("realmbreaker") ||
+      compact.includes("damnation") ||
+      compact.includes("cursedstaffmorgana") ||
+      compact.includes("carving") ||
+      compact.includes("cleaverhell")
+  },
+  {
     role: "Support",
     test: (value, compact) =>
       value.includes("arcane") ||
@@ -316,7 +375,6 @@ const weaponRoleKeywordMatchers: Array<{
       value.includes("damnation") ||
       value.includes("shadowcaller") ||
       value.includes("oathkeeper") ||
-      value.includes("spirithunter") ||
       value.includes("icicle") ||
       value.includes("rootbound") ||
       value.includes("incubus") ||
@@ -330,7 +388,6 @@ const weaponRoleKeywordMatchers: Array<{
       compact.includes("damnation") ||
       compact.includes("shadowcaller") ||
       compact.includes("oathkeeper") ||
-      compact.includes("spirithunter") ||
       compact.includes("icicle") ||
       compact.includes("rootbound") ||
       compact.includes("incubus")
@@ -430,7 +487,6 @@ const weaponRoleKeywordMatchers: Array<{
       compact.includes("sword") ||
       compact.includes("dualscimitar") ||
       compact.includes("clarent") ||
-      compact.includes("carving") ||
       compact.includes("galatine") ||
       compact.includes("kingmaker") ||
       compact.includes("glove") ||

@@ -437,7 +437,7 @@ export function createApiServices(
     discordBottledEnergyChannelId: string;
   }
 ): ApiServices {
-  const compRoleOrder = ["Tank", "Healer", "Support", "Melee", "Ranged", "Battlemount"];
+  const compRoleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
   const requireStaffAccess = async (actor: User) => {
     const actorMember = await repository.getMemberByUserId(actor.id);
     if (actorMember?.discordRoleStatus === "COUNCIL" && !actorMember.kickedAt) {

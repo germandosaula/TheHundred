@@ -1,6 +1,4 @@
 "use client";
-
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type {
@@ -13,7 +11,6 @@ import type {
 import {
   albionWeaponCatalog,
   compRoleLabels,
-  defaultPartySlots,
   getItemIconUrl,
   getResolvedWeaponIconName,
   resolveAlbionWeapon,
@@ -21,8 +18,10 @@ import {
 } from "./catalog";
 import { CustomSelect } from "./CustomSelect";
 
+type MaybeRole = AlbionCompRole | "";
+
 interface CompPartySlot extends CompSlotEntry {
-  role: AlbionCompRole;
+  role: MaybeRole;
 }
 
 interface PartyState extends Omit<CompPartyEntry, "slots"> {
@@ -131,22 +130,16 @@ function createParty(index: number): PartyState {
   };
 }
 
-function createSlotFromTemplate(slotCount: number): CompPartySlot {
-  const template =
-    defaultPartySlots[Math.min(slotCount, defaultPartySlots.length - 1)];
-  const weapon =
-    albionWeaponCatalog.find((entry) => entry.id === template.weaponId) ??
-    albionWeaponCatalog[0];
-
+function createEmptySlot(slotCount: number): CompPartySlot {
   return {
-    id: `local-slot-${template.id}-${slotCount + 1}`,
+    id: `local-slot-empty-${slotCount + 1}`,
     position: slotCount + 1,
-    label: template.label,
+    label: "",
     playerUserId: undefined,
     playerName: "",
-    role: template.role,
-    weaponId: weapon.id,
-    weaponName: weapon.name,
+    role: "",
+    weaponId: "",
+    weaponName: "",
     buildId: undefined,
     notes: "",
   };
@@ -206,7 +199,10 @@ function reorderSlots(
   }));
 }
 
-function roleClassName(role: AlbionCompRole): string {
+function roleClassName(role: MaybeRole): string {
+  if (!role) {
+    return "role-unassigned";
+  }
   return `role-${role.toLowerCase().replace(/\s+/g, "-")}`;
 }
 
@@ -226,20 +222,24 @@ function createEmptyBuildItems(): BuildEditorState["items"] {
 }
 
 function createBuildEditorFromSlot(slot: CompPartySlot): BuildEditorState {
-  const weapon = getWeaponById(slot.weaponId);
+  const fallbackWeapon = albionWeaponCatalog[0];
+  const weapon = slot.weaponId ? getWeaponById(slot.weaponId) : fallbackWeapon;
   const items = createEmptyBuildItems();
-  const primarySlot = getPrimaryBuildSlot(slot.role);
-  items[primarySlot] = {
-    itemId:
-      getResolvedWeaponIconName(weapon.iconName ?? slot.weaponName) ??
-      slot.weaponName,
-    itemName: slot.weaponName,
-  };
+  const role: AlbionCompRole = slot.role || weapon.role;
+  const primarySlot = getPrimaryBuildSlot(role);
+  if (slot.weaponName.trim().length > 0) {
+    items[primarySlot] = {
+      itemId:
+        getResolvedWeaponIconName(weapon.iconName ?? slot.weaponName) ??
+        slot.weaponName,
+      itemName: slot.weaponName,
+    };
+  }
 
   return {
-    name: `${slot.label} Build`,
-    role: slot.role,
-    weaponId: slot.weaponId,
+    name: `${slot.label || "Slot"} Build`,
+    role,
+    weaponId: slot.weaponId || weapon.id,
     items,
   };
 }
@@ -318,6 +318,10 @@ export function CompsBuilder({
   const [itemSearchResults, setItemSearchResults] = useState<
     AlbionItemSearchResult[]
   >([]);
+  const [lastSavedCompSnapshot, setLastSavedCompSnapshot] = useState(() =>
+    JSON.stringify(normalizeComp(initialComp as CompEntry)),
+  );
+  const [buildSnapshot, setBuildSnapshot] = useState<string | null>(null);
 
   const activeParty =
     comp.parties.find((party) => party.key === activePartyKey) ??
@@ -334,6 +338,18 @@ export function CompsBuilder({
   const activeEditorVisualSlots = editorBuild
     ? getBuildVisualGridSlots(editorBuild.role)
     : defaultBuildVisualGridSlots;
+  const serializedComp = useMemo(() => JSON.stringify(comp), [comp]);
+  const serializedBuild = useMemo(
+    () => (editorBuild ? JSON.stringify(editorBuild) : null),
+    [editorBuild],
+  );
+  const hasUnsavedCompChanges =
+    canEdit && serializedComp !== lastSavedCompSnapshot;
+  const hasUnsavedBuildChanges =
+    canEdit &&
+    Boolean(editorBuild) &&
+    Boolean(buildSnapshot) &&
+    serializedBuild !== buildSnapshot;
   const buildPrimaryIconById = useMemo(() => {
     const map = new Map<string, string>();
     for (const build of builds) {
@@ -352,13 +368,16 @@ export function CompsBuilder({
     () =>
       allSlots.reduce<Record<AlbionCompRole, number>>(
         (accumulator, slot) => {
-          accumulator[slot.role] += 1;
+          if (slot.role && slot.role in accumulator) {
+            accumulator[slot.role] += 1;
+          }
           return accumulator;
         },
         {
           Tank: 0,
           Healer: 0,
           Support: 0,
+          Pierce: 0,
           Melee: 0,
           Ranged: 0,
           Battlemount: 0,
@@ -476,23 +495,54 @@ export function CompsBuilder({
     setFeedback(null);
   }
 
+  function removeActiveParty() {
+    if (!canEdit || comp.parties.length <= 1) {
+      return;
+    }
+
+    const remaining = comp.parties
+      .filter((party) => party.key !== activePartyKey)
+      .map((party, index) => ({
+        ...party,
+        position: index + 1,
+      }));
+
+    setComp((current) => ({
+      ...current,
+      parties: remaining,
+    }));
+    if (remaining.length > 0) {
+      setActivePartyKey(remaining[0].key);
+    }
+    setFeedback(null);
+  }
+
   function addSlot() {
     if (activeParty.slots.length >= 20) {
       return;
     }
 
-    const baseSlot = createSlotFromTemplate(activeParty.slots.length);
-    const preferredBuild = getPreferredBuildForWeapon(baseSlot.weaponId);
+    const baseSlot = createEmptySlot(activeParty.slots.length);
 
     updateActiveParty((party) => ({
       ...party,
-      slots: [
-        ...party.slots,
-        {
-          ...baseSlot,
-          buildId: preferredBuild?.id,
-        },
-      ],
+      slots: [...party.slots, baseSlot],
+    }));
+  }
+
+  function removeSlot(slotId: string) {
+    if (!canEdit) {
+      return;
+    }
+
+    updateActiveParty((party) => ({
+      ...party,
+      slots: party.slots
+        .filter((slot) => slot.id !== slotId)
+        .map((slot, index) => ({
+          ...slot,
+          position: index + 1,
+        })),
     }));
   }
 
@@ -517,16 +567,13 @@ export function CompsBuilder({
         }
 
         if (field === "role") {
-          const role = value as AlbionCompRole;
-          const nextWeapon =
-            albionWeaponCatalog.find((weapon) => weapon.role === role) ??
-            albionWeaponCatalog[0];
+          const role = value as MaybeRole;
 
           return {
             ...slot,
             role,
-            weaponId: nextWeapon.id,
-            weaponName: nextWeapon.name,
+            weaponId: "",
+            weaponName: "",
             buildId: undefined,
           };
         }
@@ -578,9 +625,21 @@ export function CompsBuilder({
         ? createBuildEditorFromBuild(selectedBuild)
         : createBuildEditorFromSlot(slot),
     );
-    setActiveEditorSlot(getPrimaryBuildSlot(slot.role));
+    setActiveEditorSlot(
+      getPrimaryBuildSlot(
+        (slot.role ||
+          getWeaponById(slot.weaponId || albionWeaponCatalog[0].id).role) as AlbionCompRole,
+      ),
+    );
     setItemSearchQuery("");
     setItemSearchResults([]);
+    setBuildSnapshot(
+      JSON.stringify(
+        selectedBuild
+          ? createBuildEditorFromBuild(selectedBuild)
+          : createBuildEditorFromSlot(slot),
+      ),
+    );
   }
 
   function updateEditorItem(
@@ -685,6 +744,7 @@ export function CompsBuilder({
 
       setEditorBuild(null);
       setEditorContext(null);
+      setBuildSnapshot(null);
       setFeedback("Build guardada y asignada al slot.");
     } catch (error) {
       setFeedback(
@@ -697,6 +757,22 @@ export function CompsBuilder({
 
   async function saveComp() {
     if (!canEdit) {
+      return;
+    }
+
+    const hasIncompleteSlot = comp.parties.some((party) =>
+      party.slots.some(
+        (slot) =>
+          !slot.role ||
+          slot.weaponId.trim().length === 0 ||
+          slot.label.trim().length === 0,
+      ),
+    );
+
+    if (hasIncompleteSlot) {
+      setFeedback(
+        "Completa todos los slots (rol, arma y función) antes de guardar.",
+      );
       return;
     }
 
@@ -743,6 +819,7 @@ export function CompsBuilder({
       const normalized = normalizeComp(payload as CompEntry);
       setComp(normalized);
       setActivePartyKey(normalized.parties[0]?.key ?? activePartyKey);
+      setLastSavedCompSnapshot(JSON.stringify(normalized));
       setFeedback("Comp guardada para toda la guild.");
     } catch (error) {
       setFeedback(
@@ -785,18 +862,48 @@ export function CompsBuilder({
     }
   }
 
+  function goBackToComps() {
+    if (hasUnsavedCompChanges || hasUnsavedBuildChanges) {
+      const shouldLeave = window.confirm(
+        "Hay cambios sin guardar en comp/build. ¿Quieres salir igualmente?",
+      );
+      if (!shouldLeave) {
+        return;
+      }
+    }
+    router.push("/app/comps");
+  }
+
+  function closeBuildEditor() {
+    if (hasUnsavedBuildChanges) {
+      const shouldClose = window.confirm(
+        "Hay cambios sin guardar en la build. ¿Quieres cerrar igualmente?",
+      );
+      if (!shouldClose) {
+        return;
+      }
+    }
+    setEditorBuild(null);
+    setEditorContext(null);
+    setBuildSnapshot(null);
+  }
+
   return (
     <section className="dashboard-stack">
       <article className="dashboard-card comp-parties-card">
-        <div className="section-row">
+        <div className="section-row comp-editor-header-row">
           <div>
             <span className="card-label">Comps</span>
             <h2>Editor de compos del roster.</h2>
           </div>
           <div className="actions">
-            <Link className="button ghost" href="/app/comps">
+            <button
+              className="button ghost"
+              onClick={goBackToComps}
+              type="button"
+            >
               Ver todas las comps
-            </Link>
+            </button>
             {canEdit ? (
               <>
                 {comp.id ? (
@@ -850,7 +957,7 @@ export function CompsBuilder({
         <div className="section-row">
           <div>
             <span className="card-label">Parties</span>
-            <h2>{activeParty.name}</h2>
+            <h2>Edición de Party</h2>
           </div>
           <div className="actions">
             <span className="status-badge">
@@ -859,6 +966,15 @@ export function CompsBuilder({
             {canEdit ? (
               <button className="button ghost" onClick={addParty} type="button">
                 + Nueva party
+              </button>
+            ) : null}
+            {canEdit && comp.parties.length > 1 ? (
+              <button
+                className="button ghost danger comp-delete-party-inline"
+                onClick={removeActiveParty}
+                type="button"
+              >
+                Eliminar party
               </button>
             ) : null}
           </div>
@@ -898,9 +1014,20 @@ export function CompsBuilder({
             <span className="card-label">Editor de party</span>
             <h2>{activeParty.name}</h2>
           </div>
-          <span className="status-badge">
-            {activeParty.slots.length}/20 slots
-          </span>
+          <div className="actions comp-editor-top-actions">
+            <span className="status-badge">
+              {activeParty.slots.length}/20 slots
+            </span>
+            {canEdit && activeParty.slots.length < 20 ? (
+              <button
+                className="button primary comp-add-slot-top"
+                onClick={addSlot}
+                type="button"
+              >
+                + Agregar slot
+              </button>
+            ) : null}
+          </div>
         </div>
         {activeParty.slots.length > 0 ? (
           <>
@@ -912,12 +1039,16 @@ export function CompsBuilder({
                     key={`col-${columnIndex}`}
                   >
                     {columnSlots.map((slot, index) => {
-                      const weaponOptions = albionWeaponCatalog.filter(
-                        (weapon) => weapon.role === slot.role,
-                      );
-                      const selectedWeapon = getWeaponById(slot.weaponId);
+                      const weaponOptions = slot.role
+                        ? albionWeaponCatalog.filter(
+                            (weapon) => weapon.role === slot.role,
+                          )
+                        : [];
+                      const selectedWeapon = slot.weaponId
+                        ? getWeaponById(slot.weaponId)
+                        : null;
                       const slotWeaponIconSource =
-                        slot.weaponName || selectedWeapon.name;
+                        slot.weaponName || selectedWeapon?.name || "";
                       const slotBuildIconSource = slot.buildId
                         ? buildPrimaryIconById.get(slot.buildId)
                         : undefined;
@@ -959,16 +1090,16 @@ export function CompsBuilder({
                               </div>
                             ) : (
                               <span className="comp-slot-role">
-                                {compRoleLabels[slot.role]}
+                                {slot.role ? compRoleLabels[slot.role] : "Sin rol"}
                               </span>
                             )}
                           </div>
                           <div className="comp-weapon-cell">
                             <button
                               aria-label={`Ver build de ${slot.label}`}
-                              className="comp-weapon-icon-button"
+                              className={`comp-weapon-icon-button ${slot.weaponId ? "" : "empty"}`}
                               onClick={() => {
-                                if (canEdit) {
+                                if (canEdit && slot.weaponId) {
                                   openBuildEditor(
                                     {
                                       partyKey: activeParty.key,
@@ -979,24 +1110,29 @@ export function CompsBuilder({
                                   );
                                 }
                               }}
+                              disabled={!slot.weaponId}
                               type="button"
                             >
-                              <img
-                                alt={slot.weaponName || selectedWeapon.name}
-                                className="comp-weapon-icon"
-                                decoding="async"
-                                height={56}
-                                loading="lazy"
-                                src={getItemIconUrl(
-                                  slotBuildIconSource ?? slotWeaponIconSource,
-                                )}
-                                width={56}
-                              />
+                              {slot.weaponId ? (
+                                <img
+                                  alt={slot.weaponName || selectedWeapon?.name || "Arma"}
+                                  className="comp-weapon-icon"
+                                  decoding="async"
+                                  height={56}
+                                  loading="lazy"
+                                  src={getItemIconUrl(
+                                    slotBuildIconSource ?? slotWeaponIconSource,
+                                  )}
+                                  width={56}
+                                />
+                              ) : (
+                                <span className="comp-weapon-icon-empty">+</span>
+                              )}
                             </button>
                             <label className="field comp-field">
                               <span className="comp-mobile-label">Arma</span>
                               <CustomSelect
-                                disabled={!canEdit}
+                                disabled={!canEdit || !slot.role}
                                 onChange={(nextWeaponId) =>
                                   updateSlot(slot.id, "weaponId", nextWeaponId)
                                 }
@@ -1004,6 +1140,9 @@ export function CompsBuilder({
                                   value: weapon.id,
                                   label: weapon.name,
                                 }))}
+                                placeholder={
+                                  slot.role ? "Selecciona arma" : "Elige rol primero"
+                                }
                                 value={slot.weaponId}
                               />
                             </label>
@@ -1018,6 +1157,17 @@ export function CompsBuilder({
                               value={slot.label}
                             />
                           </label>
+                          {canEdit ? (
+                            <button
+                              aria-label={`Eliminar ${slot.label}`}
+                              className="comp-row-delete-slot"
+                              onClick={() => removeSlot(slot.id)}
+                              title="Eliminar slot"
+                              type="button"
+                            >
+                              ×
+                            </button>
+                          ) : null}
                         </article>
                       );
                     })}
@@ -1025,15 +1175,6 @@ export function CompsBuilder({
                 ),
               )}
             </div>
-            {canEdit && activeParty.slots.length < 20 ? (
-              <button
-                className="comp-add-row comp-add-row-wide"
-                onClick={addSlot}
-                type="button"
-              >
-                + Slot
-              </button>
-            ) : null}
           </>
         ) : (
           <div className="panel">
@@ -1074,7 +1215,7 @@ export function CompsBuilder({
                 </button>
                 <button
                   className="button ghost compact"
-                  onClick={() => setEditorBuild(null)}
+                  onClick={closeBuildEditor}
                   type="button"
                 >
                   Cerrar
