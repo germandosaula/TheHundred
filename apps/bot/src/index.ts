@@ -12,6 +12,7 @@ import {
   SlashCommandBuilder
 } from "discord.js";
 import type {
+  AutocompleteInteraction,
   ChatInputCommandInteraction,
   Guild,
   GuildMember,
@@ -23,7 +24,14 @@ import { type CTA, type MemberStatus } from "@thehundred/domain";
 import { createKillboardClient } from "@thehundred/killboard";
 import { loadEnvFile } from "./load-env.ts";
 
-loadEnvFile();
+const envLoad = loadEnvFile();
+
+function resolveEnvSource(key: string) {
+  if (!process.env[key]) {
+    return "unset";
+  }
+  return envLoad.loadedFromFile[key] ?? "process.env(shell/container)";
+}
 
 const repository = createRepository({
   provider: process.env.REPOSITORY_PROVIDER === "supabase" ? "supabase" : "memory",
@@ -51,7 +59,6 @@ const supabaseHost = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL
 const staffRoleIds = ["1477718673757180026"];
 const recruiterRoleIds = ["1480276764524806145"];
 const phase2AllowedRoleIds = [...new Set([...managementRoleIds, ...recruiterRoleIds])];
-const lootSplitRoleChoices = ["TODOS", "TRIAL", "CORE", "BENCHED", "STAFF"] as const;
 const albionBbBaseUrl = process.env.ALBION_BB_API_BASE_URL ?? "https://api.albionbb.com/eu";
 const killboardClient = createKillboardClient({
   source: "albionbb",
@@ -145,13 +152,13 @@ const payCommand = new SlashCommandBuilder()
 const withdrawRoleCommand = new SlashCommandBuilder()
   .setName("retirar_dinero_rol")
   .setDescription("Retira dinero a todos los miembros de un rol")
-  .addStringOption((option) => {
-    let next = option.setName("rol").setDescription("Rol objetivo").setRequired(true);
-    for (const role of lootSplitRoleChoices.filter((entry) => entry !== "TODOS")) {
-      next = next.addChoices({ name: role, value: role });
-    }
-    return next;
-  })
+  .addStringOption((option) =>
+    option
+      .setName("rol")
+      .setDescription("Rol de Discord objetivo")
+      .setRequired(true)
+      .setAutocomplete(true)
+  )
   .addIntegerOption((option) =>
     option
       .setName("cantidad")
@@ -270,6 +277,9 @@ if (!token) {
 console.log("[bot] startup config", {
   repositoryProvider: process.env.REPOSITORY_PROVIDER === "supabase" ? "supabase" : "memory",
   supabaseHost,
+  supabaseUrlSource: resolveEnvSource("SUPABASE_URL"),
+  supabaseServiceRoleKeySource: resolveEnvSource("SUPABASE_SERVICE_ROLE_KEY"),
+  repositoryProviderSource: resolveEnvSource("REPOSITORY_PROVIDER"),
   guildId: guildId ?? "global"
 });
 
@@ -319,6 +329,10 @@ client.once("clientReady", async () => {
 
 client.on("interactionCreate", async (interaction) => {
   try {
+    if (interaction.isAutocomplete()) {
+      await handleAutocomplete(interaction);
+      return;
+    }
 
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId.startsWith("cta-signup:")) {
@@ -398,6 +412,40 @@ client.on("interactionCreate", async (interaction) => {
     console.error("Interaction handler failed", error);
   }
 });
+
+async function handleAutocomplete(interaction: AutocompleteInteraction): Promise<void> {
+  if (interaction.commandName !== "retirar_dinero_rol") {
+    await interaction.respond([]);
+    return;
+  }
+
+  const focused = interaction.options.getFocused(true);
+  if (focused.name !== "rol") {
+    await interaction.respond([]);
+    return;
+  }
+
+  const guild =
+    interaction.guild ?? (guildId ? await client.guilds.fetch(guildId).catch(() => null) : null);
+  if (!guild) {
+    await interaction.respond([]);
+    return;
+  }
+
+  await guild.roles.fetch();
+  const query = String(focused.value ?? "").trim().toLowerCase();
+  const choices = guild.roles.cache
+    .filter((role) => role.id !== guild.id && !role.managed)
+    .sort((a, b) => b.position - a.position)
+    .filter((role) => (query.length === 0 ? true : role.name.toLowerCase().includes(query)))
+    .first(25)
+    .map((role) => ({
+      name: role.name.slice(0, 100),
+      value: role.id
+    }));
+
+  await interaction.respond(choices);
+}
 
 client.on("guildMemberUpdate", async (_oldMember, newMember) => {
   if (!guildId || newMember.guild.id !== guildId) {
@@ -805,7 +853,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
   }
   if (mockNames.length === 0 && battleIds.length === 0) {
     await interaction.editReply(
-      "No se pudieron extraer battle ids del `battle_link` (usa ids=... o `mock:Nombre1,Nombre2`)."
+      "No se pudieron extraer battle ids del `battle_link` (usa `battles/multi?ids=...`, `battles/<id>` o `mock:Nombre1,Nombre2`)."
     );
     return;
   }
@@ -1172,38 +1220,65 @@ async function handleRetirarDineroRolCommand(
     return;
   }
 
-  const role = interaction.options.getString("rol", true) as Exclude<
-    (typeof lootSplitRoleChoices)[number],
-    "TODOS"
-  >;
-  const targetStatus: MemberStatus = role === "STAFF" ? "COUNCIL" : role;
+  const roleId = interaction.options.getString("rol", true);
   const amount = interaction.options.getInteger("cantidad", true);
   const actorUserId = await resolveActorUserId(interaction);
 
-  const [members, accounts, users] = await Promise.all([
-    repository.getMembers(),
-    repository.listWalletAccounts(),
-    repository.getUsers()
-  ]);
-  const accountByUserId = new Map(accounts.map((entry) => [entry.userId, entry]));
-  const userById = new Map(users.map((entry) => [entry.id, entry]));
-
-  const targetMembers = members.filter((entry) => entry.status === targetStatus);
-  if (targetMembers.length === 0) {
+  const guild =
+    interaction.guild ?? (guildId ? await client.guilds.fetch(guildId).catch(() => null) : null);
+  if (!guild) {
     await interaction.reply({
-      content: `No hay miembros con rol ${role}.`,
+      content: "No se pudo resolver el servidor de Discord.",
       ephemeral: true
     });
     return;
   }
 
+  const role = await guild.roles.fetch(roleId).catch(() => null);
+  if (!role || role.id === guild.id) {
+    await interaction.reply({
+      content: "No se encontro el rol objetivo en Discord.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  const guildMembers = await guild.members.fetch();
+  const targetDiscordMembers = guildMembers.filter(
+    (member) => !member.user.bot && member.roles.cache.has(role.id)
+  );
+  if (targetDiscordMembers.size === 0) {
+    await interaction.reply({
+      content: `No hay miembros en Discord con el rol ${role.name}.`,
+      ephemeral: true
+    });
+    return;
+  }
+
+  const [accounts, users] = await Promise.all([
+    repository.listWalletAccounts(),
+    repository.getUsers()
+  ]);
+  const accountByUserId = new Map(accounts.map((entry) => [entry.userId, entry]));
+  const userByDiscordId = new Map(
+    users
+      .filter((entry) => Boolean(entry.discordId))
+      .map((entry) => [entry.discordId as string, entry])
+  );
+
   const withdrawn: string[] = [];
   const skippedInsufficient: string[] = [];
+  const skippedUnlinked: string[] = [];
 
-  for (const member of targetMembers) {
-    const account = accountByUserId.get(member.userId);
-    const user = userById.get(member.userId);
-    const displayName = user?.displayName ?? member.userId;
+  for (const discordMember of targetDiscordMembers.values()) {
+    const webUser = userByDiscordId.get(discordMember.id);
+    if (!webUser) {
+      skippedUnlinked.push(discordMember.displayName);
+      continue;
+    }
+
+    const account = accountByUserId.get(webUser.id);
+    const displayName = webUser.displayName ?? discordMember.displayName;
     const balance = account?.cashBalance ?? 0;
 
     if (balance < amount) {
@@ -1212,12 +1287,13 @@ async function handleRetirarDineroRolCommand(
     }
 
     await repository.addWalletTransaction({
-      userId: member.userId,
+      userId: webUser.id,
       cashDelta: -amount,
       reason: "bulk_role_withdraw",
       createdBy: actorUserId ?? undefined,
       metadata: {
-        role: targetStatus,
+        roleId: role.id,
+        roleName: role.name,
         byDiscordId: interaction.user.id,
         byTag: interaction.user.tag
       }
@@ -1227,11 +1303,19 @@ async function handleRetirarDineroRolCommand(
 
   await interaction.reply({
     content: [
-      `Retiro por rol ${role}: -${formatMoney(amount)} por miembro.`,
+      `Retiro por rol ${role.name}: -${formatMoney(amount)} por miembro.`,
       `✅ Aplicados: ${withdrawn.length}`,
+      `⚠️ Sin usuario web enlazado: ${skippedUnlinked.length}`,
       `⚠️ Sin saldo suficiente: ${skippedInsufficient.length}`,
-      withdrawn.length > 0 ? `Pagadores: ${withdrawn.join(", ")}` : "",
-      skippedInsufficient.length > 0 ? `Omitidos: ${skippedInsufficient.join(", ")}` : ""
+      withdrawn.length > 0
+        ? `Pagadores: ${withdrawn.slice(0, 20).join(", ")}${withdrawn.length > 20 ? "…" : ""}`
+        : "",
+      skippedUnlinked.length > 0
+        ? `No enlazados: ${skippedUnlinked.slice(0, 20).join(", ")}${skippedUnlinked.length > 20 ? "…" : ""}`
+        : "",
+      skippedInsufficient.length > 0
+        ? `Omitidos: ${skippedInsufficient.slice(0, 20).join(", ")}${skippedInsufficient.length > 20 ? "…" : ""}`
+        : ""
     ]
       .filter(Boolean)
       .join("\n"),
@@ -1340,6 +1424,11 @@ function extractBattleIdsFromLink(link: string): string[] {
   const fromPath = normalized.match(/multi:ids:([0-9,]+)/i)?.[1] ?? "";
   if (fromPath) {
     return [...new Set(fromPath.split(",").map((entry) => entry.trim()).filter(Boolean))];
+  }
+
+  const singleBattleId = normalized.match(/\/battles\/([0-9]+)(?:[/?#]|$)/i)?.[1] ?? "";
+  if (singleBattleId) {
+    return [singleBattleId];
   }
 
   return [];

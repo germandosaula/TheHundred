@@ -1,5 +1,5 @@
 import { type Attendance, type CTA, type CTAStatus, type GuildConfig, type GuildMember, type MemberStatus, type PointsEntry, type User, type UserRole } from "@thehundred/domain";
-import type { BuildTemplateRecord, BattleMemberAttendanceRecord, BattlePerformanceBombRecord, BattlePerformanceSnapshotRecord, CouncilTaskRecord, CouncilTaskStatus, CtaSignupRecord, CompRecord, CreateCouncilTaskInput, CreateCtaInput, DatabaseRepository, InviteRecord, OverviewAnnouncementRecord, RecruitmentApplicationRecord, RecruitmentApplicationStatus, RegisterMemberInput, SaveCompInput, SaveBuildTemplateInput, SaveRecruitmentApplicationInput, UpdateCouncilTaskInput } from "./repository.ts";
+import type { BottledEnergyBalanceRecord, BottledEnergyImportResult, BottledEnergyLedgerImportRow, BottledEnergyUnmatchedBalanceRecord, BuildTemplateRecord, BattleMemberAttendanceRecord, BattlePerformanceBombRecord, BattlePerformanceSnapshotRecord, CouncilTaskRecord, CouncilTaskStatus, CtaSignupRecord, CompRecord, CreateCouncilTaskInput, CreateCtaInput, DatabaseRepository, InviteRecord, LootSplitPayoutRecord, OverviewAnnouncementRecord, RecruitmentApplicationRecord, RecruitmentApplicationStatus, RegisterMemberInput, SaveCompInput, SaveBuildTemplateInput, SaveRecruitmentApplicationInput, UpdateCouncilTaskInput, WalletAccountRecord, WalletTransactionRecord } from "./repository.ts";
 interface SupabaseRepositoryOptions {
     url: string;
     serviceRoleKey: string;
@@ -16,6 +16,10 @@ export declare class SupabaseDatabaseRepository implements DatabaseRepository {
     }): Promise<User>;
     updateUserAvatar(userId: string, avatarUrl?: string): Promise<User | null>;
     updateUserAlbionName(userId: string, albionName: string): Promise<User | null>;
+    updateUserCtaRoles(userId: string, _input: {
+        ctaPrimaryRole: string;
+        ctaSecondaryRole: string;
+    }): Promise<User | null>;
     getMembers(): Promise<GuildMember[]>;
     getMemberById(memberId: string): Promise<GuildMember | null>;
     getMemberByUserId(userId: string): Promise<GuildMember | null>;
@@ -117,6 +121,54 @@ export declare class SupabaseDatabaseRepository implements DatabaseRepository {
     createInvite(createdBy: string): Promise<InviteRecord>;
     getInviteByCode(code: string): Promise<InviteRecord | null>;
     consumeInvite(code: string, consumedBy: string): Promise<InviteRecord | null>;
+    getWalletAccount(userId: string): Promise<WalletAccountRecord>;
+    listWalletAccounts(): Promise<WalletAccountRecord[]>;
+    addWalletTransaction(input: {
+        userId: string;
+        cashDelta: number;
+        bankDelta?: number;
+        reason: string;
+        createdBy?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<WalletTransactionRecord>;
+    createLootSplitPayout(input: {
+        createdBy: string;
+        battleLink: string;
+        battleIds: string[];
+        guildName: string;
+        splitRole: string;
+        estValue: number;
+        bags: number;
+        repairCost: number;
+        taxPercent: number;
+        grossTotal: number;
+        netAfterRep: number;
+        taxAmount: number;
+        finalPool: number;
+        participantCount: number;
+        perPerson: number;
+        payouts: Array<{
+            memberId: string;
+            userId: string;
+            playerName: string;
+            amount: number;
+        }>;
+        idempotencyKey?: string;
+    }): Promise<{
+        payout: LootSplitPayoutRecord;
+        alreadyProcessed: boolean;
+    }>;
+    importBottledEnergyLedger(input: {
+        importedBy: string;
+        sourcePreview?: string;
+        rows: BottledEnergyLedgerImportRow[];
+    }): Promise<BottledEnergyImportResult>;
+    listBottledEnergyBalances(): Promise<BottledEnergyBalanceRecord[]>;
+    listBottledEnergyUnmatchedBalances(): Promise<BottledEnergyUnmatchedBalanceRecord[]>;
+    resetBottledEnergyLedger(): Promise<{
+        deletedLedgerRows: number;
+        deletedImportRows: number;
+    }>;
 }
 export declare function createSupabaseRepository(options: SupabaseRepositoryOptions): DatabaseRepository;
 export {};

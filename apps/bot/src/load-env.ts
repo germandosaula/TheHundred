@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-export function loadEnvFile(filename = ".env"): void {
+export type EnvLoadResult = {
+  loadedFromFile: Record<string, string>;
+  scannedPaths: string[];
+};
+
+export function loadEnvFile(filename = ".env"): EnvLoadResult {
   const cwd = process.cwd();
   const paths: string[] = [];
   let current = cwd;
@@ -22,6 +27,7 @@ export function loadEnvFile(filename = ".env"): void {
 
   const shellDefinedKeys = new Set(Object.keys(process.env));
   const loadedValues = new Map<string, string>();
+  const loadedFromPath = new Map<string, string>();
 
   for (const path of paths) {
     if (!existsSync(path)) {
@@ -47,12 +53,18 @@ export function loadEnvFile(filename = ".env"): void {
       }
 
       loadedValues.set(key, stripWrappingQuotes(value));
+      loadedFromPath.set(key, path);
     }
   }
 
   for (const [key, value] of loadedValues) {
     process.env[key] = value;
   }
+
+  return {
+    loadedFromFile: Object.fromEntries(loadedFromPath),
+    scannedPaths: paths
+  };
 }
 
 function stripWrappingQuotes(value: string): string {

@@ -94,6 +94,9 @@ export class SupabaseDatabaseRepository {
         }
         return data ? mapUser(data) : null;
     }
+    async updateUserCtaRoles(userId, _input) {
+        return this.getUserById(userId);
+    }
     async getMembers() {
         const { data, error } = await this.client
             .from("guild_members")
@@ -935,7 +938,7 @@ export class SupabaseDatabaseRepository {
             slot_key: input.slotKey,
             slot_label: input.slotLabel,
             weapon_name: input.weaponName,
-            reaction_emoji: input.reactionEmoji ?? null,
+            reaction_emoji: input.reactionEmoji ?? "",
             preferred_roles: input.preferredRoles ?? [],
             is_fill: input.isFill ?? false,
             player_name: input.playerName,
@@ -1081,9 +1084,269 @@ export class SupabaseDatabaseRepository {
         }
         return data ? mapInvite(data) : null;
     }
+    async getWalletAccount(userId) {
+        const { error: upsertError } = await this.client.from("wallet_accounts").upsert({
+            user_id: userId
+        }, {
+            onConflict: "user_id",
+            ignoreDuplicates: true
+        });
+        if (upsertError) {
+            throw createSupabaseDomainError("Failed to ensure wallet account in Supabase", upsertError);
+        }
+        const { data, error } = await this.client
+            .from("wallet_accounts")
+            .select("user_id, cash_balance, bank_balance, updated_at")
+            .eq("user_id", userId)
+            .single();
+        if (error || !data) {
+            throw createSupabaseDomainError("Failed to load wallet account from Supabase", error);
+        }
+        return mapWalletAccount(data);
+    }
+    async listWalletAccounts() {
+        const { data, error } = await this.client
+            .from("wallet_accounts")
+            .select("user_id, cash_balance, bank_balance, updated_at")
+            .returns();
+        if (error) {
+            throw createSupabaseDomainError("Failed to list wallet accounts from Supabase", error);
+        }
+        return (data ?? []).map(mapWalletAccount);
+    }
+    async addWalletTransaction(input) {
+        const { data, error } = await this.client.rpc("apply_wallet_transaction", {
+            p_user_id: input.userId,
+            p_cash_delta: input.cashDelta,
+            p_bank_delta: input.bankDelta ?? 0,
+            p_reason: input.reason,
+            p_created_by: input.createdBy ?? null,
+            p_metadata: input.metadata ?? null
+        });
+        if (error) {
+            if (error.message?.includes("Saldo insuficiente")) {
+                throw new DomainError("Saldo insuficiente.");
+            }
+            throw createSupabaseDomainError("Failed to apply wallet transaction via RPC", error);
+        }
+        const row = (Array.isArray(data) ? data[0] : data);
+        if (!row) {
+            throw new DomainError("Wallet transaction RPC returned no rows");
+        }
+        return mapWalletTransaction(row);
+    }
+    async createLootSplitPayout(input) {
+        const { data, error } = await this.client.rpc("process_loot_split_payout", {
+            p_created_by: input.createdBy,
+            p_battle_link: input.battleLink,
+            p_battle_ids: input.battleIds,
+            p_guild_name: input.guildName,
+            p_split_role: input.splitRole,
+            p_est_value: input.estValue,
+            p_bags: input.bags,
+            p_repair_cost: input.repairCost,
+            p_tax_percent: input.taxPercent,
+            p_gross_total: input.grossTotal,
+            p_net_after_rep: input.netAfterRep,
+            p_tax_amount: input.taxAmount,
+            p_final_pool: input.finalPool,
+            p_participant_count: input.participantCount,
+            p_per_person: input.perPerson,
+            p_payouts: input.payouts,
+            p_idempotency_key: input.idempotencyKey ?? null
+        });
+        if (error) {
+            if (error.message?.includes("Saldo insuficiente")) {
+                throw new DomainError("Saldo insuficiente.");
+            }
+            throw createSupabaseDomainError("Failed to process loot split payout via RPC", error);
+        }
+        const rpcRow = (Array.isArray(data) ? data[0] : data);
+        if (!rpcRow?.payout_id) {
+            throw new DomainError("Loot split payout RPC returned no payout_id");
+        }
+        const { data: payout, error: payoutError } = await this.client
+            .from("loot_split_payouts")
+            .select("id, created_by, battle_link, battle_ids, guild_name, split_role, est_value, bags, repair_cost, tax_percent, gross_total, net_after_rep, tax_amount, final_pool, participant_count, per_person, idempotency_key, created_at")
+            .eq("id", rpcRow.payout_id)
+            .single();
+        if (payoutError || !payout) {
+            throw createSupabaseDomainError("Failed to load loot split payout from Supabase", payoutError);
+        }
+        return {
+            payout: mapLootSplitPayout(payout),
+            alreadyProcessed: Boolean(rpcRow.already_processed)
+        };
+    }
+    async importBottledEnergyLedger(input) {
+        const { data: importRow, error: importError } = await this.client
+            .from("bottled_energy_imports")
+            .insert({
+            imported_by: input.importedBy,
+            row_count: input.rows.length,
+            source_preview: input.sourcePreview ?? null
+        })
+            .select("id, imported_by, row_count, inserted_rows, duplicate_rows, source_preview, created_at")
+            .single();
+        if (importError || !importRow) {
+            throw createSupabaseDomainError("Failed to create bottled energy import in Supabase", importError);
+        }
+        const rowHashes = [...new Set(input.rows.map((row) => row.rowHash))];
+        const existingHashes = new Set();
+        for (const hashChunk of chunkArray(rowHashes, 200)) {
+            const { data, error } = await this.client
+                .from("bottled_energy_ledger")
+                .select("row_hash")
+                .in("row_hash", hashChunk)
+                .returns();
+            if (error) {
+                throw createSupabaseDomainError("Failed to load bottled energy existing hashes in Supabase", error);
+            }
+            for (const row of data ?? []) {
+                existingHashes.add(row.row_hash);
+            }
+        }
+        const rowsToInsert = input.rows.filter((row) => !existingHashes.has(row.rowHash));
+        if (rowsToInsert.length > 0) {
+            const { error: insertError } = await this.client.from("bottled_energy_ledger").insert(rowsToInsert.map((row) => ({
+                import_id: importRow.id,
+                happened_at: row.happenedAt,
+                albion_player: row.albionPlayer,
+                albion_player_normalized: row.albionPlayerNormalized,
+                reason: row.reason,
+                amount: row.amount,
+                user_id: row.userId ?? null,
+                row_hash: row.rowHash
+            })));
+            if (insertError) {
+                throw createSupabaseDomainError("Failed to insert bottled energy ledger rows in Supabase", insertError);
+            }
+        }
+        const insertedRows = rowsToInsert.length;
+        const duplicateRows = input.rows.length - insertedRows;
+        const { error: updateError } = await this.client
+            .from("bottled_energy_imports")
+            .update({
+            inserted_rows: insertedRows,
+            duplicate_rows: duplicateRows
+        })
+            .eq("id", importRow.id);
+        if (updateError) {
+            throw createSupabaseDomainError("Failed to finalize bottled energy import in Supabase", updateError);
+        }
+        return {
+            importId: importRow.id,
+            insertedRows,
+            duplicateRows,
+            totalRows: input.rows.length
+        };
+    }
+    async listBottledEnergyBalances() {
+        const [members, users, ledgerRows] = await Promise.all([
+            this.getMembers(),
+            this.getUsers(),
+            this.client
+                .from("bottled_energy_ledger")
+                .select("user_id, amount")
+                .not("user_id", "is", null)
+                .returns()
+        ]);
+        if (ledgerRows.error) {
+            throw createSupabaseDomainError("Failed to load bottled energy ledger balances in Supabase", ledgerRows.error);
+        }
+        const balanceByUserId = new Map();
+        for (const row of ledgerRows.data ?? []) {
+            balanceByUserId.set(row.user_id, (balanceByUserId.get(row.user_id) ?? 0) + row.amount);
+        }
+        const usersById = new Map(users.map((user) => [user.id, user]));
+        return members
+            .filter((member) => !member.kickedAt)
+            .map((member) => {
+            const user = usersById.get(member.userId);
+            return {
+                memberId: member.id,
+                userId: member.userId,
+                discordId: user?.discordId ?? "",
+                displayName: user?.displayName ?? member.userId,
+                albionName: user?.albionName,
+                balance: balanceByUserId.get(member.userId) ?? 0
+            };
+        })
+            .sort((left, right) => left.displayName.localeCompare(right.displayName, "es"));
+    }
+    async listBottledEnergyUnmatchedBalances() {
+        const { data, error } = await this.client
+            .from("bottled_energy_ledger")
+            .select("albion_player, albion_player_normalized, amount, happened_at")
+            .is("user_id", null)
+            .returns();
+        if (error) {
+            throw createSupabaseDomainError("Failed to load unmatched bottled energy rows from Supabase", error);
+        }
+        const grouped = new Map();
+        for (const row of data ?? []) {
+            const key = row.albion_player_normalized;
+            const current = grouped.get(key) ?? {
+                albionName: row.albion_player,
+                balance: 0,
+                lastSeenAt: row.happened_at
+            };
+            current.balance += row.amount;
+            if (Date.parse(row.happened_at) > Date.parse(current.lastSeenAt)) {
+                current.lastSeenAt = row.happened_at;
+                current.albionName = row.albion_player;
+            }
+            grouped.set(key, current);
+        }
+        return [...grouped.values()].sort((left, right) => Math.abs(right.balance) - Math.abs(left.balance));
+    }
+    async resetBottledEnergyLedger() {
+        const [{ count: ledgerCount, error: ledgerCountError }, { count: importCount, error: importCountError }] = await Promise.all([
+            this.client
+                .from("bottled_energy_ledger")
+                .select("id", { count: "exact", head: true }),
+            this.client
+                .from("bottled_energy_imports")
+                .select("id", { count: "exact", head: true })
+        ]);
+        if (ledgerCountError) {
+            throw createSupabaseDomainError("Failed to count bottled energy ledger rows in Supabase", ledgerCountError);
+        }
+        if (importCountError) {
+            throw createSupabaseDomainError("Failed to count bottled energy import rows in Supabase", importCountError);
+        }
+        const { error: deleteLedgerError } = await this.client
+            .from("bottled_energy_ledger")
+            .delete()
+            .neq("id", "00000000-0000-0000-0000-000000000000");
+        if (deleteLedgerError) {
+            throw createSupabaseDomainError("Failed to clear bottled energy ledger in Supabase", deleteLedgerError);
+        }
+        const { error: deleteImportsError } = await this.client
+            .from("bottled_energy_imports")
+            .delete()
+            .neq("id", "00000000-0000-0000-0000-000000000000");
+        if (deleteImportsError) {
+            throw createSupabaseDomainError("Failed to clear bottled energy imports in Supabase", deleteImportsError);
+        }
+        return {
+            deletedLedgerRows: ledgerCount ?? 0,
+            deletedImportRows: importCount ?? 0
+        };
+    }
 }
 export function createSupabaseRepository(options) {
     return new SupabaseDatabaseRepository(options);
+}
+function chunkArray(items, chunkSize) {
+    if (chunkSize <= 0) {
+        return [items];
+    }
+    const chunks = [];
+    for (let index = 0; index < items.length; index += chunkSize) {
+        chunks.push(items.slice(index, index + chunkSize));
+    }
+    return chunks;
 }
 function mapUser(row) {
     return {
@@ -1224,7 +1487,7 @@ function mapCtaSignup(row) {
         slotKey: row.slot_key,
         slotLabel: row.slot_label,
         weaponName: row.weapon_name,
-        reactionEmoji: row.reaction_emoji ?? undefined,
+        reactionEmoji: row.reaction_emoji || undefined,
         playerName: row.player_name,
         preferredRoles: row.preferred_roles ?? [],
         isFill: row.is_fill ?? false,
@@ -1253,6 +1516,50 @@ function mapOverviewAnnouncement(row) {
         body: row.body,
         updatedAt: row.updated_at,
         updatedBy: row.updated_by ?? undefined
+    };
+}
+function mapWalletAccount(row) {
+    return {
+        userId: row.user_id,
+        cashBalance: Number(row.cash_balance),
+        bankBalance: Number(row.bank_balance),
+        updatedAt: row.updated_at
+    };
+}
+function mapWalletTransaction(row) {
+    return {
+        id: row.id,
+        userId: row.user_id,
+        cashDelta: Number(row.cash_delta),
+        bankDelta: Number(row.bank_delta),
+        cashBalanceAfter: Number(row.cash_balance_after),
+        bankBalanceAfter: Number(row.bank_balance_after),
+        reason: row.reason,
+        createdBy: row.created_by ?? undefined,
+        metadata: row.metadata ?? undefined,
+        createdAt: row.created_at
+    };
+}
+function mapLootSplitPayout(row) {
+    return {
+        id: row.id,
+        createdBy: row.created_by,
+        battleLink: row.battle_link,
+        battleIds: row.battle_ids ?? [],
+        guildName: row.guild_name,
+        splitRole: row.split_role,
+        estValue: Number(row.est_value),
+        bags: Number(row.bags),
+        repairCost: Number(row.repair_cost),
+        taxPercent: Number(row.tax_percent),
+        grossTotal: Number(row.gross_total),
+        netAfterRep: Number(row.net_after_rep),
+        taxAmount: Number(row.tax_amount),
+        finalPool: Number(row.final_pool),
+        participantCount: Number(row.participant_count),
+        perPerson: Number(row.per_person),
+        createdAt: row.created_at,
+        idempotencyKey: row.idempotency_key ?? undefined
     };
 }
 function createSupabaseDomainError(message, error) {

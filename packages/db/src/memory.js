@@ -564,6 +564,185 @@ export class InMemoryDatabaseRepository {
         invite.consumedAt = new Date().toISOString();
         return invite;
     }
+    async getWalletAccount(userId) {
+        let account = this.state.walletAccounts.find((entry) => entry.userId === userId) ?? null;
+        if (!account) {
+            account = {
+                userId,
+                cashBalance: 0,
+                bankBalance: 0,
+                updatedAt: new Date().toISOString()
+            };
+            this.state.walletAccounts.push(account);
+        }
+        return account;
+    }
+    async listWalletAccounts() {
+        return [...this.state.walletAccounts];
+    }
+    async addWalletTransaction(input) {
+        const account = await this.getWalletAccount(input.userId);
+        const bankDelta = input.bankDelta ?? 0;
+        const nextCash = account.cashBalance + input.cashDelta;
+        const nextBank = account.bankBalance + bankDelta;
+        if (nextCash < 0 || nextBank < 0) {
+            throw new Error("Insufficient funds");
+        }
+        account.cashBalance = nextCash;
+        account.bankBalance = nextBank;
+        account.updatedAt = new Date().toISOString();
+        const tx = {
+            id: randomUUID(),
+            userId: input.userId,
+            cashDelta: input.cashDelta,
+            bankDelta,
+            cashBalanceAfter: account.cashBalance,
+            bankBalanceAfter: account.bankBalance,
+            reason: input.reason,
+            createdBy: input.createdBy,
+            metadata: input.metadata,
+            createdAt: new Date().toISOString()
+        };
+        this.state.walletTransactions.push(tx);
+        return tx;
+    }
+    async createLootSplitPayout(input) {
+        if (input.idempotencyKey) {
+            const existing = this.state.lootSplitPayouts.find((entry) => entry.idempotencyKey === input.idempotencyKey);
+            if (existing) {
+                return {
+                    payout: existing,
+                    alreadyProcessed: true
+                };
+            }
+        }
+        const now = new Date().toISOString();
+        for (const payout of input.payouts) {
+            await this.addWalletTransaction({
+                userId: payout.userId,
+                cashDelta: payout.amount,
+                reason: "loot_split_payout",
+                createdBy: input.createdBy,
+                metadata: {
+                    battleIds: input.battleIds,
+                    guildName: input.guildName,
+                    splitRole: input.splitRole,
+                    playerName: payout.playerName
+                }
+            });
+        }
+        const record = {
+            id: randomUUID(),
+            createdBy: input.createdBy,
+            battleLink: input.battleLink,
+            battleIds: [...input.battleIds],
+            guildName: input.guildName,
+            splitRole: input.splitRole,
+            estValue: input.estValue,
+            bags: input.bags,
+            repairCost: input.repairCost,
+            taxPercent: input.taxPercent,
+            grossTotal: input.grossTotal,
+            netAfterRep: input.netAfterRep,
+            taxAmount: input.taxAmount,
+            finalPool: input.finalPool,
+            participantCount: input.participantCount,
+            perPerson: input.perPerson,
+            createdAt: now,
+            idempotencyKey: input.idempotencyKey
+        };
+        this.state.lootSplitPayouts.push(record);
+        return {
+            payout: record,
+            alreadyProcessed: false
+        };
+    }
+    async importBottledEnergyLedger(input) {
+        const importId = randomUUID();
+        const existingHashes = new Set(this.state.bottledEnergyLedger.map((entry) => entry.rowHash));
+        let insertedRows = 0;
+        for (const row of input.rows) {
+            if (existingHashes.has(row.rowHash)) {
+                continue;
+            }
+            existingHashes.add(row.rowHash);
+            this.state.bottledEnergyLedger.push({
+                ...row,
+                id: randomUUID(),
+                importId,
+                createdAt: new Date().toISOString()
+            });
+            insertedRows += 1;
+        }
+        this.state.bottledEnergyImports.push({
+            id: importId,
+            importedBy: input.importedBy,
+            rowCount: input.rows.length,
+            insertedRows,
+            duplicateRows: input.rows.length - insertedRows,
+            sourcePreview: input.sourcePreview,
+            createdAt: new Date().toISOString()
+        });
+        return {
+            importId,
+            insertedRows,
+            duplicateRows: input.rows.length - insertedRows,
+            totalRows: input.rows.length
+        };
+    }
+    async listBottledEnergyBalances() {
+        const balanceByUserId = new Map();
+        for (const entry of this.state.bottledEnergyLedger) {
+            if (!entry.userId) {
+                continue;
+            }
+            balanceByUserId.set(entry.userId, (balanceByUserId.get(entry.userId) ?? 0) + entry.amount);
+        }
+        const usersById = new Map(this.state.users.map((user) => [user.id, user]));
+        return this.state.members
+            .filter((member) => !member.kickedAt)
+            .map((member) => {
+            const user = usersById.get(member.userId);
+            return {
+                memberId: member.id,
+                userId: member.userId,
+                discordId: user?.discordId ?? "",
+                displayName: user?.displayName ?? member.userId,
+                albionName: user?.albionName,
+                balance: balanceByUserId.get(member.userId) ?? 0
+            };
+        })
+            .sort((left, right) => left.displayName.localeCompare(right.displayName, "es"));
+    }
+    async listBottledEnergyUnmatchedBalances() {
+        const byName = new Map();
+        for (const entry of this.state.bottledEnergyLedger) {
+            if (entry.userId) {
+                continue;
+            }
+            const current = byName.get(entry.albionPlayer) ?? {
+                albionName: entry.albionPlayer,
+                balance: 0,
+                lastSeenAt: entry.happenedAt
+            };
+            current.balance += entry.amount;
+            if (Date.parse(entry.happenedAt) > Date.parse(current.lastSeenAt)) {
+                current.lastSeenAt = entry.happenedAt;
+            }
+            byName.set(entry.albionPlayer, current);
+        }
+        return [...byName.values()].sort((left, right) => Math.abs(right.balance) - Math.abs(left.balance));
+    }
+    async resetBottledEnergyLedger() {
+        const deletedLedgerRows = this.state.bottledEnergyLedger.length;
+        const deletedImportRows = this.state.bottledEnergyImports.length;
+        this.state.bottledEnergyLedger = [];
+        this.state.bottledEnergyImports = [];
+        return {
+            deletedLedgerRows,
+            deletedImportRows
+        };
+    }
 }
 export function createSeedState() {
     return {
@@ -665,6 +844,11 @@ export function createSeedState() {
         ],
         recruitmentApplications: [],
         invites: [],
+        walletAccounts: [],
+        walletTransactions: [],
+        lootSplitPayouts: [],
+        bottledEnergyImports: [],
+        bottledEnergyLedger: [],
         config: {
             attendancePoints: 10,
             absencePenalty: 5,

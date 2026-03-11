@@ -204,6 +204,76 @@ export interface BattleMemberAttendanceRecord {
     battleId: string;
     memberId: string;
 }
+export interface WalletAccountRecord {
+    userId: string;
+    cashBalance: number;
+    bankBalance: number;
+    updatedAt: string;
+}
+export interface WalletTransactionRecord {
+    id: string;
+    userId: string;
+    cashDelta: number;
+    bankDelta: number;
+    cashBalanceAfter: number;
+    bankBalanceAfter: number;
+    reason: string;
+    createdBy?: string;
+    metadata?: Record<string, unknown>;
+    createdAt: string;
+}
+export interface LootSplitPayoutRecord {
+    id: string;
+    createdBy: string;
+    battleLink: string;
+    battleIds: string[];
+    guildName: string;
+    splitRole: string;
+    estValue: number;
+    bags: number;
+    repairCost: number;
+    taxPercent: number;
+    grossTotal: number;
+    netAfterRep: number;
+    taxAmount: number;
+    finalPool: number;
+    participantCount: number;
+    perPerson: number;
+    createdAt: string;
+    idempotencyKey?: string;
+}
+export interface LootSplitPayoutCreateResult {
+    payout: LootSplitPayoutRecord;
+    alreadyProcessed: boolean;
+}
+export interface BottledEnergyLedgerImportRow {
+    happenedAt: string;
+    albionPlayer: string;
+    albionPlayerNormalized: string;
+    reason: string;
+    amount: number;
+    rowHash: string;
+    userId?: string;
+}
+export interface BottledEnergyImportResult {
+    importId: string;
+    insertedRows: number;
+    duplicateRows: number;
+    totalRows: number;
+}
+export interface BottledEnergyBalanceRecord {
+    memberId: string;
+    userId: string;
+    discordId: string;
+    displayName: string;
+    albionName?: string;
+    balance: number;
+}
+export interface BottledEnergyUnmatchedBalanceRecord {
+    albionName: string;
+    balance: number;
+    lastSeenAt: string;
+}
 export interface DatabaseRepository {
     getConfig(): Promise<GuildConfig>;
     getUsers(): Promise<User[]>;
@@ -308,4 +378,49 @@ export interface DatabaseRepository {
     createInvite(createdBy: string): Promise<InviteRecord>;
     getInviteByCode(code: string): Promise<InviteRecord | null>;
     consumeInvite(code: string, consumedBy: string): Promise<InviteRecord | null>;
+    getWalletAccount(userId: string): Promise<WalletAccountRecord>;
+    listWalletAccounts(): Promise<WalletAccountRecord[]>;
+    addWalletTransaction(input: {
+        userId: string;
+        cashDelta: number;
+        bankDelta?: number;
+        reason: string;
+        createdBy?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<WalletTransactionRecord>;
+    createLootSplitPayout(input: {
+        createdBy: string;
+        battleLink: string;
+        battleIds: string[];
+        guildName: string;
+        splitRole: string;
+        estValue: number;
+        bags: number;
+        repairCost: number;
+        taxPercent: number;
+        grossTotal: number;
+        netAfterRep: number;
+        taxAmount: number;
+        finalPool: number;
+        participantCount: number;
+        perPerson: number;
+        payouts: Array<{
+            memberId: string;
+            userId: string;
+            playerName: string;
+            amount: number;
+        }>;
+        idempotencyKey?: string;
+    }): Promise<LootSplitPayoutCreateResult>;
+    importBottledEnergyLedger(input: {
+        importedBy: string;
+        sourcePreview?: string;
+        rows: BottledEnergyLedgerImportRow[];
+    }): Promise<BottledEnergyImportResult>;
+    listBottledEnergyBalances(): Promise<BottledEnergyBalanceRecord[]>;
+    listBottledEnergyUnmatchedBalances(): Promise<BottledEnergyUnmatchedBalanceRecord[]>;
+    resetBottledEnergyLedger(): Promise<{
+        deletedLedgerRows: number;
+        deletedImportRows: number;
+    }>;
 }
