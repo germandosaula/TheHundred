@@ -51,6 +51,20 @@ function ToggleSidebarIcon({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+function MobileMenuIcon() {
+  return (
+    <svg aria-hidden="true" className="sidebar-toggle-icon" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M5 7h14M5 12h14M5 17h10"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.2"
+      />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
     <svg aria-hidden="true" className="nav-icon" fill="none" viewBox="0 0 24 24">
@@ -140,7 +154,7 @@ export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSid
   if (isCouncil) {
     staffItems.push({
       href: "/app/council-tasks",
-      label: "Tareas Council",
+      label: "Tareas Staff",
       icon: "M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"
     });
     staffItems.push({
@@ -246,8 +260,13 @@ export function AppSidebar({ me, canManageCouncil, isCouncil, children }: AppSid
       <section className="app-main">
         <header className="app-topbar app-topbar-minimal">
           <div className="topbar-actions">
-            <button className="sidebar-toggle mobile-only" onClick={() => setSidebarOpen(true)} type="button">
-              <ToggleSidebarIcon collapsed />
+            <button
+              aria-label="Abrir menu"
+              className="sidebar-toggle sidebar-toggle-open mobile-only"
+              onClick={() => setSidebarOpen(true)}
+              type="button"
+            >
+              <MobileMenuIcon />
             </button>
           </div>
         </header>

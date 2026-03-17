@@ -29,6 +29,9 @@ import type {
   CompSlotRecord,
   LootSplitPayoutRecord,
   OverviewAnnouncementRecord,
+  ScheduledEventRecord,
+  MemberActivityExclusionRecord,
+  CreateScheduledEventInput,
   CreateCouncilTaskInput,
   CreateCtaInput,
   DatabaseRepository,
@@ -58,6 +61,8 @@ export interface RepositoryState {
   buildTemplates: BuildTemplateRecord[];
   councilTasks: CouncilTaskRecord[];
   overviewAnnouncements: OverviewAnnouncementRecord[];
+  scheduledEvents: ScheduledEventRecord[];
+  memberActivityExclusions: MemberActivityExclusionRecord[];
   recruitmentApplications: RecruitmentApplicationRecord[];
   invites: InviteRecord[];
   walletAccounts: WalletAccountRecord[];
@@ -658,6 +663,49 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     );
   }
 
+  async getMemberActivityExclusions(): Promise<MemberActivityExclusionRecord[]> {
+    return [...this.state.memberActivityExclusions].sort(
+      (left, right) => new Date(right.endsAt).getTime() - new Date(left.endsAt).getTime()
+    );
+  }
+
+  async upsertMemberActivityExclusion(input: {
+    memberId: string;
+    startsAt: string;
+    endsAt: string;
+    reason?: string;
+    createdBy: string;
+  }): Promise<MemberActivityExclusionRecord> {
+    const existing =
+      this.state.memberActivityExclusions.find((entry) => entry.memberId === input.memberId) ?? null;
+    const next: MemberActivityExclusionRecord = {
+      memberId: input.memberId,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      reason: input.reason?.trim() || undefined,
+      createdBy: existing?.createdBy ?? input.createdBy,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (existing) {
+      existing.startsAt = next.startsAt;
+      existing.endsAt = next.endsAt;
+      existing.reason = next.reason;
+      existing.updatedAt = next.updatedAt;
+      return existing;
+    }
+
+    this.state.memberActivityExclusions.push(next);
+    return next;
+  }
+
+  async clearMemberActivityExclusion(memberId: string): Promise<boolean> {
+    const next = this.state.memberActivityExclusions.filter((entry) => entry.memberId !== memberId);
+    const deleted = next.length !== this.state.memberActivityExclusions.length;
+    this.state.memberActivityExclusions = next;
+    return deleted;
+  }
+
   async replaceOverviewAnnouncements(
     input: Array<{ title: string; body: string }>,
     updatedBy: string
@@ -674,10 +722,47 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     return this.getOverviewAnnouncements();
   }
 
+  async getScheduledEvents(): Promise<ScheduledEventRecord[]> {
+    return [...this.state.scheduledEvents].sort((left, right) => {
+      const leftTime = Date.parse(left.targetUtc);
+      const rightTime = Date.parse(right.targetUtc);
+      return (Number.isFinite(leftTime) ? leftTime : 0) - (Number.isFinite(rightTime) ? rightTime : 0);
+    });
+  }
+
+  async createScheduledEvent(input: CreateScheduledEventInput): Promise<ScheduledEventRecord> {
+    const next: ScheduledEventRecord = {
+      id: randomUUID(),
+      description: input.description.trim(),
+      mapName: input.mapName.trim(),
+      targetUtc: input.targetUtc,
+      createdByDiscordId: input.createdByDiscordId,
+      createdByDisplayName: input.createdByDisplayName,
+      createdAt: new Date().toISOString()
+    };
+    this.state.scheduledEvents.push(next);
+    return next;
+  }
+
+  async deleteScheduledEvent(eventId: string): Promise<boolean> {
+    const next = this.state.scheduledEvents.filter((entry) => entry.id !== eventId);
+    const deleted = next.length !== this.state.scheduledEvents.length;
+    this.state.scheduledEvents = next;
+    return deleted;
+  }
+
   async getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]> {
     return this.state.ctaSignups
       .filter((entry) => entry.ctaId === ctaId)
       .sort((left, right) => left.reactedAt.localeCompare(right.reactedAt));
+  }
+
+  async getAllCtaSignups(): Promise<CtaSignupRecord[]> {
+    return [...this.state.ctaSignups].sort((left, right) => left.reactedAt.localeCompare(right.reactedAt));
+  }
+
+  async getAttendances(): Promise<Attendance[]> {
+    return [...this.state.attendance];
   }
 
   async upsertCtaSignup(input: {
@@ -1171,6 +1256,8 @@ export function createSeedState(): RepositoryState {
         updatedBy: "u1"
       }
     ],
+    scheduledEvents: [],
+    memberActivityExclusions: [],
     recruitmentApplications: [],
     invites: [],
     walletAccounts: [],

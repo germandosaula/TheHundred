@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   description:
     "TheHundred es una guild de Albion Online enfocada en ZvZ. Únete a un gremio que quiere cambiar cómo funcionan las demás guilds.",
   icons: {
-    icon: "/thehundred_logo.png",
-    shortcut: "/thehundred_logo.png",
-    apple: "/thehundred_logo.png",
+    icon: "/APP_LOGO.png",
+    shortcut: "/APP_LOGO.png",
+    apple: "/APP_LOGO.png",
   },
   openGraph: {
     title: "The Hundred",
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     siteName: "The Hundred",
     images: [
       {
-        url: "/fondohero.jpeg",
+        url: "/FondoTheHundred.png",
         width: 1200,
         height: 630,
         alt: "The Hundred Guild",

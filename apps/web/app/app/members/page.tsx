@@ -19,13 +19,13 @@ export default async function MembersPage() {
           </div>
         </div>
         <p className="lede">
-          El roster no se gestiona solo. Reject para que pierdan permisos
-          temporales,kick para mandarlos a tomar por culo.
+          Revisa el roster real, corrige nombres de Albion, organiza bombs y abre seguimientos
+          cuando alguien entra en riesgo o cae en inactividad. Todo ocurre aquí, sin salir del
+          panel de miembros.
         </p>
         {!canManageCouncil ? (
           <p className="empty">
-            Solo council, officers y admins pueden acceder a la gestion del
-            roster.
+            Solo Staff puede acceder a la gestión del roster y al seguimiento de actividad.
           </p>
         ) : members ? (
           <MemberStatusManager members={members} />

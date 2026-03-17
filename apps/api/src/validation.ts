@@ -26,7 +26,17 @@ export interface UpdateMemberBombGroupPayload {
   bombGroupName?: string;
 }
 
+export interface UpdateMemberAlbionNamePayload {
+  albionName: string;
+}
+
 export interface KickMemberPayload {
+  reason?: string;
+}
+
+export interface MemberActivityExclusionPayload {
+  startsAt: string;
+  endsAt: string;
   reason?: string;
 }
 
@@ -86,7 +96,7 @@ export interface CtaFillSignupPayload {
 export interface CreateCouncilTaskPayload {
   title: string;
   description: string;
-  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
   assignedMemberId?: string;
   executeAt?: string;
 }
@@ -94,7 +104,7 @@ export interface CreateCouncilTaskPayload {
 export interface UpdateCouncilTaskPayload {
   title?: string;
   description?: string;
-  category?: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  category?: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
   assignedMemberId?: string;
   executeAt?: string;
   status?: "TODO" | "IN_PROGRESS" | "DONE";
@@ -184,6 +194,22 @@ export function requireMemberBombGroupPayload(
   };
 }
 
+export function requireMemberAlbionNamePayload(
+  payload: UpdateMemberAlbionNamePayload | null
+): UpdateMemberAlbionNamePayload {
+  const albionName = payload?.albionName?.trim();
+
+  if (!albionName) {
+    throw new DomainError("albionName is required");
+  }
+
+  if (albionName.length > 40) {
+    throw new DomainError("albionName must be 40 characters or fewer");
+  }
+
+  return { albionName };
+}
+
 export function requireKickMemberPayload(payload: KickMemberPayload | null): KickMemberPayload {
   const reason = payload?.reason?.trim();
 
@@ -192,6 +218,39 @@ export function requireKickMemberPayload(payload: KickMemberPayload | null): Kic
   }
 
   return {
+    reason: reason || undefined
+  };
+}
+
+export function requireMemberActivityExclusionPayload(
+  payload: MemberActivityExclusionPayload | null
+): MemberActivityExclusionPayload {
+  const startsAt = payload?.startsAt?.trim();
+  const endsAt = payload?.endsAt?.trim();
+  const reason = payload?.reason?.trim();
+
+  if (!startsAt || !endsAt) {
+    throw new DomainError("startsAt and endsAt are required");
+  }
+
+  const startsAtTimestamp = Date.parse(startsAt);
+  const endsAtTimestamp = Date.parse(endsAt);
+
+  if (Number.isNaN(startsAtTimestamp) || Number.isNaN(endsAtTimestamp)) {
+    throw new DomainError("startsAt and endsAt must be valid ISO dates");
+  }
+
+  if (endsAtTimestamp < startsAtTimestamp) {
+    throw new DomainError("endsAt must be greater than or equal to startsAt");
+  }
+
+  if (reason && reason.length > 200) {
+    throw new DomainError("reason must be 200 characters or fewer");
+  }
+
+  return {
+    startsAt,
+    endsAt,
     reason: reason || undefined
   };
 }
@@ -304,7 +363,13 @@ const allowedBuildSlots = new Set([
   "FOOD",
   "POTION"
 ]);
-const allowedCouncilTaskCategories = new Set(["LOGISTICA", "ECONOMIA", "CONTENT", "ANUNCIOS"]);
+const allowedCouncilTaskCategories = new Set([
+  "LOGISTICA",
+  "ECONOMIA",
+  "CONTENT",
+  "ANUNCIOS",
+  "REVISION_MIEMBROS"
+]);
 const allowedCouncilTaskStatuses = new Set(["TODO", "IN_PROGRESS", "DONE"]);
 
 export function requireSaveBuildPayload(payload: SaveBuildPayload | null): SaveBuildPayload {

@@ -5,7 +5,7 @@ import type { CouncilMemberEntry, CouncilTaskEntry } from "../../lib";
 
 type CouncilTaskTab = "LIST" | "KANBAN";
 type CouncilTaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
-type CouncilTaskCategory = "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+type CouncilTaskCategory = "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
 
 interface CouncilTasksBoardProps {
   initialTasks: CouncilTaskEntry[];
@@ -22,11 +22,80 @@ const categoryLabels: Record<CouncilTaskCategory, string> = {
   LOGISTICA: "Logistica",
   ECONOMIA: "Economia",
   CONTENT: "Content",
-  ANUNCIOS: "Anuncios"
+  ANUNCIOS: "Anuncios",
+  REVISION_MIEMBROS: "Revisión miembros"
 };
 
 const categoryOptions = Object.keys(categoryLabels) as CouncilTaskCategory[];
 const statusOptions = Object.keys(statusLabels) as CouncilTaskStatus[];
+
+function parseAutoMemberActivityTask(description: string) {
+  if (!description.startsWith("[AUTO_MEMBER_ACTIVITY]")) {
+    return null;
+  }
+
+  const values = new Map<string, string>();
+  for (const line of description.split("\n").slice(1)) {
+    const [rawKey, ...rawValue] = line.split("=");
+    if (!rawKey || rawValue.length === 0) {
+      continue;
+    }
+    values.set(rawKey.trim(), rawValue.join("=").trim());
+  }
+
+  return {
+    displayName: values.get("displayName") ?? "Miembro sin nombre",
+    role: values.get("rol") ?? "Sin rol",
+    state: values.get("estado") ?? "Sin estado",
+    inactiveDays: values.get("diasSinActividad") ?? "0",
+    lastActivity: values.get("ultimaActividad") ?? "sin registros"
+  };
+}
+
+function formatAutoActivityStateLabel(state: string) {
+  switch (state) {
+    case "OK":
+      return "Activo";
+    case "RIESGO":
+      return "Poca Actividad";
+    case "INACTIVO":
+      return "Inactivo";
+    case "EXCLUIDO":
+      return "Falta justificada";
+    default:
+      return state;
+  }
+}
+
+function formatAutoActivityDate(value: string) {
+  if (!value || value === "sin registros") {
+    return "Sin actividad registrada";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatAutoActivitySummary(inactiveDays: string) {
+  const days = Number(inactiveDays);
+  if (!Number.isFinite(days) || days <= 0) {
+    return "Actividad reciente detectada.";
+  }
+  if (days === 1) {
+    return "Lleva 1 dia sin actividad registrada.";
+  }
+  return `Lleva ${days} dias sin actividad registrada.`;
+}
 
 function formatDateInput(value?: string) {
   if (!value) {
@@ -187,8 +256,13 @@ export function CouncilTasksBoard({ initialTasks, councilMembers }: CouncilTasks
   }
 
   function renderTaskEditor(task: CouncilTaskEntry) {
+    const autoActivity = parseAutoMemberActivityTask(task.description);
+
     return (
-      <article className={`council-task-card category-${task.category.toLowerCase()}`} key={task.id}>
+      <article
+        className={`council-task-card category-${task.category.toLowerCase()}${autoActivity ? " is-auto-activity" : ""}`}
+        key={task.id}
+      >
         <input
           defaultValue={task.title}
           onBlur={(event) => {
@@ -199,17 +273,51 @@ export function CouncilTasksBoard({ initialTasks, councilMembers }: CouncilTasks
           }}
           placeholder="Titulo"
         />
-        <textarea
-          defaultValue={task.description}
-          onBlur={(event) => {
-            const next = event.currentTarget.value.trim();
-            if (next && next !== task.description) {
-              void updateTask(task.id, { description: next });
-            }
-          }}
-          placeholder="Descripcion"
-          rows={3}
-        />
+        {autoActivity ? (
+          <div className="council-task-auto-panel">
+            <div className="council-task-auto-head">
+              <div>
+                <span className="council-task-auto-label">Seguimiento automático</span>
+                <strong>Attendance de {autoActivity.displayName}</strong>
+              </div>
+              <span className="status-badge">{formatAutoActivityStateLabel(autoActivity.state)}</span>
+            </div>
+            <p className="council-task-auto-summary">{formatAutoActivitySummary(autoActivity.inactiveDays)}</p>
+            <div className="council-task-auto-grid">
+              <div className="council-task-auto-item">
+                <span>Miembro</span>
+                <strong>{autoActivity.displayName}</strong>
+              </div>
+              <div className="council-task-auto-item">
+                <span>Rol</span>
+                <strong>{autoActivity.role}</strong>
+              </div>
+              <div className="council-task-auto-item">
+                <span>Días sin actividad</span>
+                <strong>{autoActivity.inactiveDays}</strong>
+              </div>
+              <div className="council-task-auto-item">
+                <span>Última actividad</span>
+                <strong>{formatAutoActivityDate(autoActivity.lastActivity)}</strong>
+              </div>
+            </div>
+            <p className="council-task-auto-note">
+              Revisa si hay falta justificada o si toca hacer seguimiento directo desde Staff.
+            </p>
+          </div>
+        ) : (
+          <textarea
+            defaultValue={task.description}
+            onBlur={(event) => {
+              const next = event.currentTarget.value.trim();
+              if (next && next !== task.description) {
+                void updateTask(task.id, { description: next });
+              }
+            }}
+            placeholder="Descripcion"
+            rows={3}
+          />
+        )}
         <div className="council-task-meta">
           <select
             defaultValue={task.category}
@@ -385,6 +493,12 @@ export function CouncilTasksBoard({ initialTasks, councilMembers }: CouncilTasks
               </header>
               <div className="council-kanban-items">
                 {tasksByStatus[status].map((task) => (
+                  (() => {
+                    const autoActivity = parseAutoMemberActivityTask(task.description);
+                    const kanbanDescription = autoActivity
+                      ? `${formatAutoActivityStateLabel(autoActivity.state)} · ${autoActivity.inactiveDays} días · Última actividad ${formatAutoActivityDate(autoActivity.lastActivity)}`
+                      : task.description;
+                    return (
                   <article
                     className={`council-task-card category-${task.category.toLowerCase()}`}
                     draggable={busyTaskId !== task.id}
@@ -393,7 +507,7 @@ export function CouncilTasksBoard({ initialTasks, councilMembers }: CouncilTasks
                     onDragStart={() => setDraggingTaskId(task.id)}
                   >
                     <strong>{task.title}</strong>
-                    <p>{task.description}</p>
+                    <p>{kanbanDescription}</p>
                     <div className="council-task-foot">
                       <span className="status-badge">{categoryLabels[task.category]}</span>
                       <span className="status-badge">{task.assignedDisplayName ?? "Sin asignar"}</span>
@@ -407,6 +521,8 @@ export function CouncilTasksBoard({ initialTasks, councilMembers }: CouncilTasks
                       </button>
                     </div>
                   </article>
+                    );
+                  })()
                 ))}
               </div>
             </section>

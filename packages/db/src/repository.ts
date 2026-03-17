@@ -67,6 +67,24 @@ export interface OverviewAnnouncementRecord {
   updatedBy?: string;
 }
 
+export interface ScheduledEventRecord {
+  id: string;
+  description: string;
+  mapName: string;
+  targetUtc: string;
+  createdByDiscordId: string;
+  createdByDisplayName: string;
+  createdAt: string;
+}
+
+export interface CreateScheduledEventInput {
+  description: string;
+  mapName: string;
+  targetUtc: string;
+  createdByDiscordId: string;
+  createdByDisplayName: string;
+}
+
 export interface SaveRecruitmentApplicationInput {
   userId: string;
   displayName: string;
@@ -128,7 +146,12 @@ export interface SaveBuildTemplateInput {
 }
 
 export type CouncilTaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
-export type CouncilTaskCategory = "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+export type CouncilTaskCategory =
+  | "LOGISTICA"
+  | "ECONOMIA"
+  | "CONTENT"
+  | "ANUNCIOS"
+  | "REVISION_MIEMBROS";
 
 export interface CouncilTaskRecord {
   id: string;
@@ -140,6 +163,15 @@ export interface CouncilTaskRecord {
   executeAt?: string;
   createdBy: string;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemberActivityExclusionRecord {
+  memberId: string;
+  startsAt: string;
+  endsAt: string;
+  reason?: string;
+  createdBy: string;
   updatedAt: string;
 }
 
@@ -420,6 +452,9 @@ export interface DatabaseRepository {
     input: Array<{ title: string; body: string }>,
     updatedBy: string
   ): Promise<OverviewAnnouncementRecord[]>;
+  getScheduledEvents(): Promise<ScheduledEventRecord[]>;
+  createScheduledEvent(input: CreateScheduledEventInput): Promise<ScheduledEventRecord>;
+  deleteScheduledEvent(eventId: string): Promise<boolean>;
   getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]>;
   upsertCtaSignup(input: SaveCtaSignupInput): Promise<CtaSignupRecord>;
   deleteCtaSignup(ctaId: string, memberId: string): Promise<boolean>;
@@ -481,4 +516,15 @@ export interface DatabaseRepository {
   listBottledEnergyBalances(): Promise<BottledEnergyBalanceRecord[]>;
   listBottledEnergyUnmatchedBalances(): Promise<BottledEnergyUnmatchedBalanceRecord[]>;
   resetBottledEnergyLedger(): Promise<{ deletedLedgerRows: number; deletedImportRows: number }>;
+  getMemberActivityExclusions(): Promise<MemberActivityExclusionRecord[]>;
+  upsertMemberActivityExclusion(input: {
+    memberId: string;
+    startsAt: string;
+    endsAt: string;
+    reason?: string;
+    createdBy: string;
+  }): Promise<MemberActivityExclusionRecord>;
+  clearMemberActivityExclusion(memberId: string): Promise<boolean>;
+  getAttendances(): Promise<Attendance[]>;
+  getAllCtaSignups(): Promise<CtaSignupRecord[]>;
 }

@@ -19,7 +19,12 @@ import type {
   Snowflake,
   StringSelectMenuInteraction
 } from "discord.js";
-import { createRepository, type CompRecord, type CtaSignupRecord } from "@thehundred/db";
+import {
+  createRepository,
+  type CompRecord,
+  type CtaSignupRecord,
+  type ScheduledEventRecord
+} from "@thehundred/db";
 import { type CTA, type MemberStatus } from "@thehundred/domain";
 import { createKillboardClient } from "@thehundred/killboard";
 import { loadEnvFile } from "./load-env.ts";
@@ -121,7 +126,13 @@ const payoutLootCommand = new SlashCommandBuilder()
 
 const balanceCommand = new SlashCommandBuilder()
   .setName("bal")
-  .setDescription("Muestra el balance de tu monedero");
+  .setDescription("Muestra el balance del monedero")
+  .addUserOption((option) =>
+    option
+      .setName("usuario")
+      .setDescription("Usuario de Discord (solo Staff para consultar terceros)")
+      .setRequired(false)
+  );
 
 const withdrawCommand = new SlashCommandBuilder()
   .setName("retirar")
@@ -179,6 +190,46 @@ const phase2Command = new SlashCommandBuilder()
   .setName("fase2")
   .setDescription("Publica el mensaje de paso a fase 2 en este canal");
 
+const eventRegisterCommand = new SlashCommandBuilder()
+  .setName("evento_registrar")
+  .setDescription("Registra un evento con cuenta atras")
+  .addStringOption((option) =>
+    option
+      .setName("descripcion")
+      .setDescription("Descripcion del evento")
+      .setRequired(true)
+      .setMaxLength(120)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("mapa")
+      .setDescription("Nombre del mapa")
+      .setRequired(true)
+      .setMaxLength(80)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("cuanto_queda")
+      .setDescription("Ejemplos: 3h, 2h30m, 90m")
+      .setRequired(true)
+      .setMaxLength(20)
+  );
+
+const eventDeleteCommand = new SlashCommandBuilder()
+  .setName("evento_eliminar")
+  .setDescription("Elimina un evento registrado")
+  .addStringOption((option) =>
+    option
+      .setName("id")
+      .setDescription("ID del evento (completo o prefijo)")
+      .setRequired(true)
+      .setMaxLength(36)
+  );
+
+const eventsCommand = new SlashCommandBuilder()
+  .setName("eventos")
+  .setDescription("Muestra los eventos activos ordenados por cuanto queda");
+
 const ctaRoleEmojiMap = {
   Tank: "🛡️",
   Healer: "💚",
@@ -219,7 +270,9 @@ const ctaReminderThresholds = [
 ] as const;
 const ctaReminderToleranceMs = 60 * 1000;
 const ctaReminderChannelId = "1479151829832171731";
+const scheduledEventsReminderChannelId = process.env.DISCORD_EVENTS_CHANNEL_ID ?? ctaReminderChannelId;
 const sentCtaReminders = new Set<string>();
+let lastScheduledEventsReminderHour = "";
 const allowMockLootSplit =
   process.env.LOOTSPLIT_ALLOW_MOCK === "1" ||
   process.env.NODE_ENV !== "production";
@@ -269,6 +322,96 @@ async function sendCtaReminderMessage(title: string, label: string): Promise<voi
   );
 }
 
+function parseRemainingDuration(value: string): number | null {
+  const raw = value.trim().toLowerCase().replace(/\s+/g, "");
+  if (!raw) {
+    return null;
+  }
+
+  let totalMs = 0;
+  const regex = /(\d+)([hm])/g;
+  let consumed = 0;
+  for (const match of raw.matchAll(regex)) {
+    const amount = Number(match[1]);
+    const unit = match[2];
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return null;
+    }
+
+    consumed += match[0].length;
+    totalMs += unit === "h" ? amount * 60 * 60 * 1000 : amount * 60 * 1000;
+  }
+
+  if (consumed !== raw.length || totalMs <= 0) {
+    return null;
+  }
+
+  return totalMs;
+}
+
+function formatEventRemainingLabel(targetUtc: string): string {
+  const diffMs = new Date(targetUtc).getTime() - Date.now();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) {
+    return "ahora";
+  }
+
+  const totalMinutes = Math.ceil(diffMs / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `en ${days}d ${hours}h`;
+  }
+
+  if (hours > 0) {
+    return `en ${hours}h ${minutes}m`;
+  }
+
+  return `en ${minutes}m`;
+}
+
+function formatEventUtcTime(targetUtc: string): string {
+  return (
+    new Date(targetUtc).toLocaleTimeString("es-ES", {
+      timeZone: "UTC",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }) + " UTC"
+  );
+}
+
+function buildEventsEmbed(events: ScheduledEventRecord[]): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setColor(0x4f46e5)
+    .setTitle("Events")
+    .setDescription("Registro activo ordenado por cuanto queda.")
+    .setTimestamp(new Date());
+
+  if (events.length === 0) {
+    embed.addFields({
+      name: "Sin eventos activos",
+      value: "Registra uno con `/evento_registrar`."
+    });
+    return embed;
+  }
+
+  const lines = events.slice(0, 20).map((event) => {
+    return `**${formatEventRemainingLabel(event.targetUtc)}** | \`${formatEventUtcTime(event.targetUtc)}\` | <@${event.createdByDiscordId}> | **${event.mapName}** / ${event.description}`;
+  });
+
+  embed.addFields({
+    name: "Listado",
+    value: lines.join("\n")
+  });
+  embed.setFooter({
+    text: events.length > 20 ? `Mostrando 20/${events.length} eventos` : "Horas en UTC"
+  });
+
+  return embed;
+}
+
 if (!token) {
   console.log("DISCORD_BOT_TOKEN is not configured. Bot bootstrap skipped.");
   process.exit(0);
@@ -305,7 +448,10 @@ client.once("clientReady", async () => {
     withdrawRoleCommand.toJSON(),
     economyCommand.toJSON(),
     resetEconomyCommand.toJSON(),
-    phase2Command.toJSON()
+    phase2Command.toJSON(),
+    eventRegisterCommand.toJSON(),
+    eventDeleteCommand.toJSON(),
+    eventsCommand.toJSON()
   ];
 
   if (guildId) {
@@ -319,10 +465,12 @@ client.once("clientReady", async () => {
     void ensureRecruitmentTickets();
     void reconcileGuildRoleSync();
     void ensureCtaReminders();
+    void ensureScheduledEventsReminder(true);
     setInterval(() => {
       void ensureRecruitmentTickets();
       void reconcileGuildRoleSync();
       void ensureCtaReminders();
+      void ensureScheduledEventsReminder();
     }, syncIntervalMs);
   }
 });
@@ -403,6 +551,21 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "fase2") {
       await handleFase2Command(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "evento_registrar") {
+      await handleEventRegisterCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "evento_eliminar") {
+      await handleEventDeleteCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "eventos") {
+      await handleEventsCommand(interaction);
       return;
     }
   } catch (error) {
@@ -1089,8 +1252,39 @@ function buildLootSplitRoleName(channelName: string): string {
 }
 
 async function handleBalanceCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const requestedDiscordUser = interaction.options.getUser("usuario");
   const actorUserId = await resolveActorUserId(interaction);
-  if (!actorUserId) {
+  const isSelfQuery = !requestedDiscordUser || requestedDiscordUser.id === interaction.user.id;
+
+  if (!isSelfQuery) {
+    if (
+      !(await requireDiscordRoles(
+        interaction,
+        staffRoleIds,
+        "Solo Staff puede consultar el balance de otros usuarios."
+      ))
+    ) {
+      return;
+    }
+  }
+
+  let targetUserId: string | null = actorUserId;
+  let targetDisplayName = interaction.user.username;
+  let targetAvatarUrl = interaction.user.displayAvatarURL({ size: 256 });
+
+  if (!isSelfQuery && requestedDiscordUser) {
+    const target = await repository.getUserByDiscordId(requestedDiscordUser.id);
+    if (!target) {
+      await interaction.reply({
+        content: "No se encontro usuario web enlazado para ese usuario de Discord.",
+        ephemeral: true
+      });
+      return;
+    }
+    targetUserId = target.id;
+    targetDisplayName = target.displayName;
+    targetAvatarUrl = requestedDiscordUser.displayAvatarURL({ size: 256 });
+  } else if (!targetUserId) {
     await interaction.reply({
       content: "Tu usuario Discord no esta enlazado en web.",
       ephemeral: true
@@ -1098,20 +1292,14 @@ async function handleBalanceCommand(interaction: ChatInputCommandInteraction): P
     return;
   }
 
-  const [account, users] = await Promise.all([
-    repository.getWalletAccount(actorUserId),
-    repository.getUsers()
-  ]);
-  const me = users.find((entry) => entry.id === actorUserId);
-
-  const avatar = interaction.user.displayAvatarURL({ size: 256 });
+  const account = await repository.getWalletAccount(targetUserId);
   const embed = new EmbedBuilder()
     .setColor(0x00b3ff)
     .setAuthor({
-      name: me?.displayName ?? interaction.user.username,
-      iconURL: avatar
+      name: targetDisplayName,
+      iconURL: targetAvatarUrl
     })
-    .setTitle("Wallet")
+    .setTitle("Balance")
     .addFields({ name: "Cash", value: `🪙 ${formatMoney(account.cashBalance)}`, inline: true });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -1153,8 +1341,22 @@ async function handleRetirarCommand(interaction: ChatInputCommandInteraction): P
       }
     });
 
+    const actorName = interaction.member && "displayName" in interaction.member
+      ? String(interaction.member.displayName ?? interaction.user.username)
+      : interaction.user.username;
+    const embed = new EmbedBuilder()
+      .setColor(0xff7a7a)
+      .setTitle("💸 Retiro aplicado")
+      .addFields(
+        { name: "Usuario", value: target.displayName, inline: true },
+        { name: "Cantidad", value: `-${formatMoney(amount)}`, inline: true },
+        { name: "Nuevo balance", value: formatMoney(tx.cashBalanceAfter), inline: true },
+        { name: "Ejecutado por", value: actorName, inline: true }
+      )
+      .setTimestamp(new Date());
+
     await interaction.reply({
-      content: `Retiro aplicado a ${target.displayName}: -${formatMoney(amount)}. Nuevo cash: ${formatMoney(tx.cashBalanceAfter)}.`
+      embeds: [embed]
     });
   } catch (error) {
     await interaction.reply({
@@ -1301,24 +1503,37 @@ async function handleRetirarDineroRolCommand(
     withdrawn.push(displayName);
   }
 
+  const totalWithdrawn = withdrawn.length * amount;
+  const embed = new EmbedBuilder()
+    .setColor(0xffb36b)
+    .setTitle("🏦 Retiro masivo por rol")
+    .addFields(
+      { name: "Rol", value: role.name, inline: true },
+      { name: "Cantidad por miembro", value: `-${formatMoney(amount)}`, inline: true },
+      { name: "Total retirado", value: formatMoney(totalWithdrawn), inline: true },
+      { name: "✅ Aplicados", value: String(withdrawn.length), inline: true },
+      { name: "⚠️ No enlazados", value: String(skippedUnlinked.length), inline: true },
+      { name: "⚠️ Sin saldo", value: String(skippedInsufficient.length), inline: true }
+    )
+    .setTimestamp(new Date());
+
+  const details = [
+    withdrawn.length > 0
+      ? `**Aplicados:** ${withdrawn.slice(0, 20).join(", ")}${withdrawn.length > 20 ? "…" : ""}`
+      : "",
+    skippedUnlinked.length > 0
+      ? `**No enlazados:** ${skippedUnlinked.slice(0, 20).join(", ")}${skippedUnlinked.length > 20 ? "…" : ""}`
+      : "",
+    skippedInsufficient.length > 0
+      ? `**Sin saldo:** ${skippedInsufficient.slice(0, 20).join(", ")}${skippedInsufficient.length > 20 ? "…" : ""}`
+      : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   await interaction.reply({
-    content: [
-      `Retiro por rol ${role.name}: -${formatMoney(amount)} por miembro.`,
-      `✅ Aplicados: ${withdrawn.length}`,
-      `⚠️ Sin usuario web enlazado: ${skippedUnlinked.length}`,
-      `⚠️ Sin saldo suficiente: ${skippedInsufficient.length}`,
-      withdrawn.length > 0
-        ? `Pagadores: ${withdrawn.slice(0, 20).join(", ")}${withdrawn.length > 20 ? "…" : ""}`
-        : "",
-      skippedUnlinked.length > 0
-        ? `No enlazados: ${skippedUnlinked.slice(0, 20).join(", ")}${skippedUnlinked.length > 20 ? "…" : ""}`
-        : "",
-      skippedInsufficient.length > 0
-        ? `Omitidos: ${skippedInsufficient.slice(0, 20).join(", ")}${skippedInsufficient.length > 20 ? "…" : ""}`
-        : ""
-    ]
-      .filter(Boolean)
-      .join("\n"),
+    embeds: [embed],
+    content: details || undefined,
     ephemeral: true
   });
 }
@@ -1411,6 +1626,103 @@ async function handleFase2Command(interaction: ChatInputCommandInteraction): Pro
   await interaction.reply({
     content: "Mensaje de Fase 2 enviado.",
     ephemeral: true
+  });
+}
+
+async function handleEventRegisterCommand(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  const description = interaction.options.getString("descripcion", true).trim();
+  const mapName = interaction.options.getString("mapa", true).trim();
+  const remainingRaw = interaction.options.getString("cuanto_queda", true).trim();
+  const remainingMs = parseRemainingDuration(remainingRaw);
+
+  if (!remainingMs) {
+    await interaction.reply({
+      content: "Formato invalido en `cuanto_queda`. Usa por ejemplo: `3h`, `2h30m`, `90m`.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  const targetUtc = new Date(Date.now() + remainingMs).toISOString();
+  const actorName =
+    interaction.member && "displayName" in interaction.member
+      ? String(interaction.member.displayName ?? interaction.user.username)
+      : interaction.user.username;
+
+  const event = await repository.createScheduledEvent({
+    description,
+    mapName,
+    targetUtc,
+    createdByDiscordId: interaction.user.id,
+    createdByDisplayName: actorName
+  });
+
+  await interaction.reply({
+    content: [
+      "Evento registrado.",
+      `ID: \`${event.id.slice(0, 8)}\``,
+      `Queda: ${formatEventRemainingLabel(event.targetUtc)} (${formatEventUtcTime(event.targetUtc)})`
+    ].join("\n"),
+    ephemeral: true
+  });
+}
+
+async function handleEventDeleteCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const requestedId = interaction.options.getString("id", true).trim().toLowerCase();
+  const events = await repository.getScheduledEvents();
+  const matches = events.filter(
+    (entry) =>
+      entry.id.toLowerCase() === requestedId || entry.id.toLowerCase().startsWith(requestedId)
+  );
+
+  if (matches.length === 0) {
+    await interaction.reply({
+      content: "No existe ningun evento con ese ID.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  if (matches.length > 1) {
+    await interaction.reply({
+      content: "El ID es ambiguo. Indica mas caracteres.",
+      ephemeral: true
+    });
+    return;
+  }
+
+  const event = matches[0];
+  if (event.createdByDiscordId !== interaction.user.id) {
+    const canDeleteAny = await requireDiscordRoles(
+      interaction,
+      staffRoleIds,
+      "Solo el creador o Staff puede eliminar este evento."
+    );
+    if (!canDeleteAny) {
+      return;
+    }
+  }
+
+  const deleted = await repository.deleteScheduledEvent(event.id);
+  await interaction.reply({
+    content: deleted
+      ? `Evento eliminado: \`${event.id.slice(0, 8)}\` (${event.mapName} / ${event.description}).`
+      : "No se pudo eliminar el evento.",
+    ephemeral: true
+  });
+}
+
+async function handleEventsCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const now = Date.now();
+  const events = (await repository.getScheduledEvents())
+    .filter((entry) => Date.parse(entry.targetUtc) > now)
+    .sort((left, right) => Date.parse(left.targetUtc) - Date.parse(right.targetUtc));
+
+  await interaction.reply({
+    embeds: [buildEventsEmbed(events)],
+    ephemeral: false
   });
 }
 
@@ -1754,6 +2066,52 @@ async function ensureCtaReminders() {
   }
 }
 
+async function ensureScheduledEventsReminder(force = false) {
+  try {
+    const now = Date.now();
+    const allEvents = await repository.getScheduledEvents();
+    const activeEvents: ScheduledEventRecord[] = [];
+
+    for (const event of allEvents) {
+      const targetMs = Date.parse(event.targetUtc);
+      if (!Number.isFinite(targetMs)) {
+        continue;
+      }
+      if (targetMs < now - 30 * 60 * 1000) {
+        await repository.deleteScheduledEvent(event.id);
+        continue;
+      }
+      if (targetMs >= now) {
+        activeEvents.push(event);
+      }
+    }
+
+    if (activeEvents.length === 0) {
+      return;
+    }
+
+    activeEvents.sort((left, right) => Date.parse(left.targetUtc) - Date.parse(right.targetUtc));
+
+    const hourKey = new Date().toISOString().slice(0, 13);
+    if (!force && lastScheduledEventsReminderHour === hourKey) {
+      return;
+    }
+
+    const channel = await client.channels.fetch(scheduledEventsReminderChannelId).catch(() => null);
+    if (!channel?.isTextBased() || !("send" in channel)) {
+      return;
+    }
+
+    await channel.send({
+      content: "@everyone",
+      embeds: [buildEventsEmbed(activeEvents)]
+    });
+    lastScheduledEventsReminderHour = hourKey;
+  } catch (error) {
+    console.error("Scheduled events reminders failed", error);
+  }
+}
+
 async function reconcileGuildRoleSync() {
   if (!guildId) {
     return;
@@ -1897,6 +2255,11 @@ async function ensureRecruitmentTickets() {
           inline: true
         },
         {
+          name: "Albion Name",
+          value: user.albionName || "No especificado",
+          inline: true
+        },
+        {
           name: "Disponibilidad UTC",
           value: application.timezone || "No especificado",
           inline: false
@@ -1917,13 +2280,8 @@ async function ensureRecruitmentTickets() {
           inline: false
         },
         {
-          name: "Experiencia ZvZ",
-          value: parsed.experience,
-          inline: false
-        },
-        {
-          name: "Notas",
-          value: parsed.notes,
+          name: "Vouch",
+          value: parsed.vouch,
           inline: false
         },
         {
@@ -1958,8 +2316,7 @@ function parseRecruitmentApplicationDetails(application: {
   const base = {
     secondaryRole: "No especificado",
     previousGuilds: "No especificado",
-    experience: "No especificado",
-    notes: "No especificado"
+    vouch: "No especificado"
   };
 
   const normalize = (value: string) =>
@@ -1971,17 +2328,14 @@ function parseRecruitmentApplicationDetails(application: {
 
   const rawExperience = application.zvzExperience?.trim() ?? "";
   const rawNotes = application.notes?.trim() ?? "";
-  const lines = `${rawExperience}\n${rawNotes}`
+  const lines = rawExperience
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  const experienceRemainder: string[] = [];
-  const notesRemainder: string[] = [];
 
   for (const line of lines) {
     const parts = line.split(":");
     if (parts.length < 2) {
-      experienceRemainder.push(line);
       continue;
     }
 
@@ -1999,24 +2353,11 @@ function parseRecruitmentApplicationDetails(application: {
       base.previousGuilds = value;
       continue;
     }
-    if (key.includes("nota")) {
-      notesRemainder.push(value);
-      continue;
-    }
-
-    experienceRemainder.push(line);
   }
 
-  if (experienceRemainder.length > 0) {
-    base.experience = experienceRemainder.join("\n").slice(0, 1000);
-  } else if (rawExperience) {
-    base.experience = rawExperience.slice(0, 1000);
-  }
-
-  if (notesRemainder.length > 0) {
-    base.notes = notesRemainder.join("\n").slice(0, 1000);
-  } else if (rawNotes) {
-    base.notes = rawNotes.slice(0, 1000);
+  if (rawNotes) {
+    const notesValue = rawNotes.replace(/^vouch\s*:\s*/i, "").trim();
+    base.vouch = notesValue || "No especificado";
   }
 
   return base;

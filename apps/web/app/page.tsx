@@ -34,6 +34,40 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
   const hasLaunched = Date.now() >= launchAtMs;
   const shouldLockJoin = enforceLaunchCountdown && !hasLaunched && !inviteValid;
   const canJoin = !shouldLockJoin;
+  const appPreviewFeatures = [
+    {
+      id: "comps-builds",
+      eyebrow: "App + Discord",
+      title: "Comps y Builds",
+      description:
+        "Creación y edición de builds y comps desde la app con integración en todo el ecosistema de The Hundred.",
+      screenshotPath: "/comps.png",
+    },
+    {
+      id: "attendance",
+      eyebrow: "Control de Attendance",
+      title: "Attendance",
+      description:
+        "Mide asistencia real por CTA, detecta consistencia del signup del player en la CTA y compara con las Battles, además visualiza evolución mensual y trackea a cada player.",
+      screenshotPath: "/Gestion.png",
+    },
+    {
+      id: "performance",
+      eyebrow: "Analítica ZvZ",
+      title: "Rendimiento",
+      description:
+        "Analiza rendimiento de cada player, separa Bomb vs Main Zerg y consolida métricas por cada batalla y acumuladas para su revisión.",
+      screenshotPath: "/Rendimiento.png",
+    },
+    {
+      id: "economy",
+      eyebrow: "Balance + Lootsplit",
+      title: "Economía",
+      description:
+        "Automatiza el pago de loot splits, controla balances por miembro y ejecuta los pagos con trazabilidad para la máxima transparencia.",
+      screenshotPath: "/Econ.png",
+    },
+  ] as const;
 
   return (
     <PageEntryLoader
@@ -161,87 +195,96 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
         </section>
 
         <section className="landing-section" id="informacion">
-          <div className="section-heading">
-            <p className="eyebrow">Informacion del proyecto</p>
-            <h2>
-              Una guild creada para cambiar como funcionan las guilds hispanas
-              en Albion Online
-            </h2>
-          </div>
-          <div className="feature-grid">
-            <article className="feature-card">
-              <span className="card-label">Identidad</span>
-              <h3>Full Contenido ZvZ</h3>
-              <p>
-                Buscamos poder ofrecer contenido ZvZ de calidad y directo para
-                jugadores que escapan del Queue Simulator y las guerras del
-                anillo.
+          <div className="project-claim">
+            <div className="project-claim-main">
+              <p className="eyebrow">Informacion del proyecto</p>
+              <h2>
+                Rediseñando como funcionan las guilds hispanas: estructura,
+                criterio y resultados.
+              </h2>
+              <p className="lede">
+                The Hundred no vende humo. Nuestro proyecto es diferente, lo
+                sabemos, buscamos que cada miembro entienda su rol y su
+                responsabilidad en la evolución del gremio.
               </p>
-            </article>
-            <article className="feature-card">
-              <span className="card-label">Dirección</span>
-              <h3>Meritocracia y Votaciones</h3>
-              <p>
-                Todas las decisiones serán votadas por los jugadores, además de
-                que el que lo merezca tendrá la oportunidad de crecer en la
-                organización.
-              </p>
-            </article>
-            <article className="feature-card">
-              <span className="card-label">Valores</span>
-              <h3>The 100th</h3>
-              <p>
-                The Hundred se concibe como guild que busca ser única, cap 100
-                jugadores, todos con la misma mentalidad, todos con el mismo
-                objetivo, si no cumples tu plaza la ocupara otro.
-              </p>
-            </article>
+              <div className="project-claim-pills">
+                <span>Sin toxicidad</span>
+                <span>Mejora tu performance</span>
+                <span>Disciplina y compromiso</span>
+              </div>
+            </div>
+
+            <div className="project-claim-grid">
+              <article className="project-tile project-tile-identity">
+                <span className="card-label">Identidad</span>
+                <h3>Full Contenido ZvZ</h3>
+                <p>
+                  Contenido directo, constante y sin excusas. Puede exisistir
+                  Garrapresta Simulator, no le cojas cariño a un terry ni HO.
+                </p>
+              </article>
+
+              <article className="project-tile project-tile-direction">
+                <span className="card-label">Democracia</span>
+                <h3>Dirección</h3>
+                <p>
+                  Decisiones transparentes y votación constante. <br />
+                  El core elige a sus compañeros votando 2 veces al mes.
+                </p>
+              </article>
+
+              <article className="project-tile project-tile-values">
+                <span className="card-label">Valores</span>
+                <h3>The Hundred</h3>
+                <p>
+                  Plazas limitadas a 100 players para mantener nivel
+                  competitivo, cohesión y exigencia en las CTAs.
+                </p>
+              </article>
+
+              <article className="project-tile project-tile-claim">
+                <span className="card-label">Claim</span>
+                <h3>No somos para todos.</h3>
+                <p>
+                  Somos para quien busca ser el mejor, respeta al equipo y
+                  cumple su parte.
+                </p>
+              </article>
+            </div>
           </div>
         </section>
 
-        <section className="landing-section split" id="requisitos">
+        <section className="landing-section" id="requisitos">
           <div className="section-heading">
-            <p className="eyebrow">Requisitos</p>
-            <h2>Si eres un jugador más, esta guild no es para ti.</h2>
+            <p className="eyebrow">App + Discord</p>
+            <h2>Operativa automatizada para la guild.</h2>
+            <p className="lede">
+              Un ecosistema diseñado para facilitar la gestión del gremio.{" "}
+              <br />
+              Toda la gestión conectada en una sola aplicación.
+            </p>
           </div>
-          <div className="timeline">
-            <article className="timeline-step">
-              <strong>01</strong>
-              <div>
-                <h3>Aplica en la web</h3>
-                <p>Enlazas tu discord y entras al proceso de reclutamiento.</p>
-              </div>
-            </article>
-            <article className="timeline-step">
-              <strong>02</strong>
-              <div>
-                <h3>Validacion en discord</h3>
-                <p>
-                  Un oficial se pondra en contacto contigo para validar si
-                  cumples con los requisitos.
-                </p>
-              </div>
-            </article>
-            <article className="timeline-step">
-              <strong>03</strong>
-              <div>
-                <h3>Se te asignará rol Trial</h3>
-                <p>
-                  Tendras acceso a todo el ecosistema de The Hundred. Tienes 1
-                  semana para demostrar que vales la pena.
-                </p>
-              </div>
-            </article>
-            <article className="timeline-step">
-              <strong>04</strong>
-              <div>
-                <h3>Se te asignará rol 100th</h3>
-                <p>
-                  Si cumples con los requisitos y te comportas como un adulto,
-                  serás miembro de The Hundred.
-                </p>
-              </div>
-            </article>
+          <div className="app-preview-grid">
+            {appPreviewFeatures.map((feature) => (
+              <article
+                className={`app-preview-card app-preview-card-${feature.id}`}
+                key={feature.id}
+              >
+                <div className="app-preview-shot">
+                  <Image
+                    alt={`${feature.title} preview`}
+                    className="app-preview-image"
+                    fill
+                    src={feature.screenshotPath}
+                  />
+                  <div className="app-preview-overlay">
+                    <span>{feature.eyebrow}</span>
+                  </div>
+                </div>
+                <h3>{feature.title}</h3>
+                <p>{feature.description}</p>
+              </article>
+            ))}
           </div>
         </section>
 

@@ -28,8 +28,8 @@ async function hasPrivateAccess(sessionToken?: string): Promise<boolean> {
     const response = await fetch(`${apiBaseUrl}/private/access`, {
       cache: "no-store",
       headers: {
-        "x-session-token": sessionToken
-      }
+        "x-session-token": sessionToken,
+      },
     });
 
     return response.ok;
@@ -38,7 +38,9 @@ async function hasPrivateAccess(sessionToken?: string): Promise<boolean> {
   }
 }
 
-export default async function DiscordCallbackPage({ searchParams }: CallbackPageProps) {
+export default async function DiscordCallbackPage({
+  searchParams,
+}: CallbackPageProps) {
   const params = await searchParams;
   const sessionToken = (await cookies()).get("th_session")?.value;
   const privateAccess = await hasPrivateAccess(sessionToken);
@@ -53,7 +55,9 @@ export default async function DiscordCallbackPage({ searchParams }: CallbackPage
       <main className="page">
         <section className="panel auth-panel">
           <h1>Acceso con Discord</h1>
-          <p className="empty">Discord devolvio un error durante el acceso: {params.error}</p>
+          <p className="empty">
+            Discord devolvio un error durante el acceso: {params.error}
+          </p>
         </section>
       </main>
     );
@@ -64,13 +68,16 @@ export default async function DiscordCallbackPage({ searchParams }: CallbackPage
       <main className="page">
         <section className="panel auth-panel">
           <h1>Acceso con Discord</h1>
-          <p className="empty">No se recibio el contexto necesario para completar el acceso.</p>
+          <p className="empty">
+            No se recibio el contexto necesario para completar el acceso.
+          </p>
         </section>
       </main>
     );
   }
 
-  const displayName = params.display_name ?? params.discord_name ?? "Discord User";
+  const displayName =
+    params.display_name ?? params.discord_name ?? "Discord User";
 
   return (
     <main className="page">
@@ -80,13 +87,19 @@ export default async function DiscordCallbackPage({ searchParams }: CallbackPage
         {isLinked && privateAccess ? (
           <>
             <p>
-              Identidad enlazada como <strong>{displayName}</strong> con rol <strong>{params.role}</strong>.
+              Identidad enlazada como <strong>{displayName}</strong> con rol{" "}
+              <strong>{params.role}</strong>.
             </p>
             <p className="empty">
               Ya estas dentro. El acceso privado de The Hundred esta disponible.
             </p>
             <div className="actions">
-              <a className="button primary" href={discordInviteUrl} target="_blank" rel="noreferrer">
+              <a
+                className="button primary"
+                href={discordInviteUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Ir al Discord
               </a>
               <a className="button ghost" href={privateAccess ? "/app" : "/"}>
@@ -98,8 +111,8 @@ export default async function DiscordCallbackPage({ searchParams }: CallbackPage
           <>
             <p className="empty">
               {isLinked
-                ? "Tu identidad web ya esta enlazada, pero aun no tienes acceso privado. Completa el formulario para que council continue tu reclutamiento en Discord."
-                : "Tu identidad Discord existe, pero todavia no hay perfil enlazado en The Hundred. Completa el formulario para abrir tu proceso de reclutamiento."}
+                ? "Tu identidad web ya esta enlazada, pero aun no tienes acceso privado. Completa el formulario para que el Staff continue tu reclutamiento en Discord."
+                : "Ya tenemos tu usuario de Discord, pero todavia no hay perfil enlazado en The Hundred App. Completa el formulario para abrir tu proceso de reclutamiento."}
             </p>
             <AccessWatcher enabled={isLinked} />
             {params.discord_id ? (

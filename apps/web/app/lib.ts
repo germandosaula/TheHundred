@@ -8,6 +8,16 @@ export interface SlotsData {
   memberCap: number;
 }
 
+export interface PublicScheduledEventEntry {
+  id: string;
+  description: string;
+  mapName: string;
+  targetUtc: string;
+  createdByDiscordId: string;
+  createdByDisplayName: string;
+  createdAt: string;
+}
+
 export interface PublicPerformanceData {
   trackedBattles: number;
   selectedMonth: string;
@@ -220,6 +230,17 @@ export interface MemberEntry {
   bombGroupName?: string;
   attendanceCount: number;
   attendancePercent: number;
+  lastActivityAt?: string;
+  inactiveDays: number;
+  activityState: "OK" | "RIESGO" | "INACTIVO" | "EXCLUIDO";
+  activityReason: string;
+  activityThresholdDays: number;
+  followupTaskId?: string;
+  activityExclusion?: {
+    startsAt: string;
+    endsAt: string;
+    reason?: string;
+  };
   discordRoleStatus?: "PENDING" | "TRIAL" | "CORE" | "BENCHED" | "COUNCIL" | "REJECTED";
   discordRoleSyncedAt?: string;
 }
@@ -246,7 +267,7 @@ export interface CouncilTaskEntry {
   id: string;
   title: string;
   description: string;
-  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
   status: "TODO" | "IN_PROGRESS" | "DONE";
   assignedMemberId?: string;
   assignedDisplayName?: string;
@@ -448,6 +469,10 @@ export async function getLandingData(inviteCode?: string) {
 export async function getPublicPerformanceData(month?: string) {
   const query = month ? `?month=${encodeURIComponent(month)}` : "";
   return getJson<PublicPerformanceData>(`/public/performance${query}`);
+}
+
+export async function getPublicScheduledEventsData() {
+  return getJson<PublicScheduledEventEntry[]>("/public/events");
 }
 
 export async function getPrivateDashboardData(month?: string) {

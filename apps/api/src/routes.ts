@@ -7,8 +7,10 @@ import {
   requireCreateCtaPayload,
   requireCtaFillSignupPayload,
   requireAssignCtaSlotPayload,
+  requireMemberAlbionNamePayload,
   requireMemberBombGroupPayload,
   requireKickMemberPayload,
+  requireMemberActivityExclusionPayload,
   requireCreateCouncilTaskPayload,
   requireUpdateCouncilTaskPayload,
   requireCouncilTaskStatusPayload,
@@ -22,6 +24,7 @@ import {
   type RegisterPayload,
   type SaveCompPayload,
   type UpdateMemberBombGroupPayload,
+  type UpdateMemberAlbionNamePayload,
   type KickMemberPayload,
   type SaveBuildPayload,
   type UpdateMemberStatusPayload,
@@ -30,7 +33,8 @@ import {
   type UpdateCouncilTaskStatusPayload,
   type ReplaceOverviewAnnouncementsPayload,
   type CtaFillSignupPayload,
-  type BottledEnergyImportPayload
+  type BottledEnergyImportPayload,
+  type MemberActivityExclusionPayload
 } from "./validation.ts";
 
 const defaultDevDiscordId = "173816196720885760";
@@ -157,6 +161,10 @@ export async function routeRequest(
     return json(await services.getPublicPerformance({ month: url.searchParams.get("month") ?? undefined }));
   }
 
+  if (method === "GET" && url.pathname === "/public/events") {
+    return json(await services.getPublicScheduledEvents());
+  }
+
   if (method === "GET" && url.pathname === "/public/invites/validate") {
     const code = url.searchParams.get("code")?.trim();
     if (!code) {
@@ -227,6 +235,30 @@ export async function routeRequest(
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
     return json(await services.listMembers(currentUser));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/activity-followup$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const memberId = url.pathname.split("/")[2];
+    return json(await services.openMemberActivityFollowup(currentUser, memberId), 201);
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/activity-exclusion$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const memberId = url.pathname.split("/")[2];
+    const payload = requireMemberActivityExclusionPayload(
+      await parseBody<MemberActivityExclusionPayload>(request)
+    );
+    return json(await services.setMemberActivityExclusion(currentUser, memberId, payload));
+  }
+
+  if (method === "DELETE" && url.pathname.match(/^\/members\/[^/]+\/activity-exclusion$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const memberId = url.pathname.split("/")[2];
+    return json(await services.clearMemberActivityExclusion(currentUser, memberId));
   }
 
   if (method === "GET" && url.pathname === "/council/members") {
@@ -459,6 +491,16 @@ export async function routeRequest(
       await parseBody<UpdateMemberBombGroupPayload>(request)
     );
     return json(await services.updateMemberBombGroup(currentUser, memberId, payload.bombGroupName));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/albion-name$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const memberId = url.pathname.split("/")[2];
+    const payload = requireMemberAlbionNamePayload(
+      await parseBody<UpdateMemberAlbionNamePayload>(request)
+    );
+    return json(await services.updateMemberAlbionName(currentUser, memberId, payload.albionName));
   }
 
   if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/kick$/)) {

@@ -20,6 +20,7 @@ export function RegisterForm({
   const [secondaryRole, setSecondaryRole] = useState("");
   const [availabilityUtc, setAvailabilityUtc] = useState("");
   const [previousGuilds, setPreviousGuilds] = useState("");
+  const [vouch, setVouch] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +43,7 @@ export function RegisterForm({
           timezone: availabilityUtc,
           mainRole: primaryRole,
           zvzExperience: `Rol secundario: ${secondaryRole}\nGremios anteriores: ${previousGuilds}`,
-          notes: ""
+          notes: vouch
         })
       });
 
@@ -141,6 +142,15 @@ export function RegisterForm({
           placeholder="Lista breve de guilds previas"
           required
           value={previousGuilds}
+        />
+      </label>
+      <label className="field">
+        <span>Vouch</span>
+        <input
+          name="vouch"
+          onChange={(event) => setVouch(event.target.value)}
+          placeholder="¿Quién te recomienda en The Hundred?"
+          value={vouch}
         />
       </label>
       <div className="register-form-actions">

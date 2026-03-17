@@ -37,7 +37,10 @@ import type {
   DatabaseRepository,
   InviteRecord,
   LootSplitPayoutRecord,
+  MemberActivityExclusionRecord,
   OverviewAnnouncementRecord,
+  ScheduledEventRecord,
+  CreateScheduledEventInput,
   RecruitmentApplicationRecord,
   RecruitmentApplicationStatus,
   RegisterMemberInput,
@@ -174,6 +177,25 @@ type OverviewAnnouncementRow = {
   body: string;
   updated_at: string;
   updated_by: string | null;
+};
+
+type ScheduledEventRow = {
+  id: string;
+  description: string;
+  map_name: string;
+  target_utc: string;
+  created_by_discord_id: string;
+  created_by_display_name: string;
+  created_at: string;
+};
+
+type MemberActivityExclusionRow = {
+  member_id: string;
+  starts_at: string;
+  ends_at: string;
+  reason: string | null;
+  created_by: string;
+  updated_at: string;
 };
 
 type RecruitmentApplicationRow = {
@@ -1395,6 +1417,62 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     return (data ?? []).map(mapOverviewAnnouncement);
   }
 
+  async getMemberActivityExclusions(): Promise<MemberActivityExclusionRecord[]> {
+    const { data, error } = await this.client
+      .from("member_activity_exclusions")
+      .select("member_id, starts_at, ends_at, reason, created_by, updated_at")
+      .order("ends_at", { ascending: false })
+      .returns<MemberActivityExclusionRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load member activity exclusions from Supabase", error);
+    }
+
+    return (data ?? []).map(mapMemberActivityExclusion);
+  }
+
+  async upsertMemberActivityExclusion(input: {
+    memberId: string;
+    startsAt: string;
+    endsAt: string;
+    reason?: string;
+    createdBy: string;
+  }): Promise<MemberActivityExclusionRecord> {
+    const { data, error } = await this.client
+      .from("member_activity_exclusions")
+      .upsert(
+        {
+          member_id: input.memberId,
+          starts_at: input.startsAt,
+          ends_at: input.endsAt,
+          reason: input.reason?.trim() || null,
+          created_by: input.createdBy,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "member_id" }
+      )
+      .select("member_id, starts_at, ends_at, reason, created_by, updated_at")
+      .single<MemberActivityExclusionRow>();
+    if (error || !data) {
+      throw createSupabaseDomainError("Failed to save member activity exclusion in Supabase", error);
+    }
+
+    return mapMemberActivityExclusion(data);
+  }
+
+  async clearMemberActivityExclusion(memberId: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("member_activity_exclusions")
+      .delete()
+      .eq("member_id", memberId)
+      .select("member_id")
+      .maybeSingle<{ member_id: string }>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to clear member activity exclusion in Supabase", error);
+    }
+
+    return Boolean(data?.member_id);
+  }
+
   async replaceOverviewAnnouncements(
     input: Array<{ title: string; body: string }>,
     updatedBy: string
@@ -1428,6 +1506,54 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     return this.getOverviewAnnouncements();
   }
 
+  async getScheduledEvents(): Promise<ScheduledEventRecord[]> {
+    const { data, error } = await this.client
+      .from("scheduled_events")
+      .select(
+        "id, description, map_name, target_utc, created_by_discord_id, created_by_display_name, created_at"
+      )
+      .order("target_utc", { ascending: true })
+      .returns<ScheduledEventRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load scheduled events from Supabase", error);
+    }
+
+    return (data ?? []).map(mapScheduledEvent);
+  }
+
+  async createScheduledEvent(input: CreateScheduledEventInput): Promise<ScheduledEventRecord> {
+    const { data, error } = await this.client
+      .from("scheduled_events")
+      .insert({
+        description: input.description.trim(),
+        map_name: input.mapName.trim(),
+        target_utc: input.targetUtc,
+        created_by_discord_id: input.createdByDiscordId,
+        created_by_display_name: input.createdByDisplayName
+      })
+      .select(
+        "id, description, map_name, target_utc, created_by_discord_id, created_by_display_name, created_at"
+      )
+      .single<ScheduledEventRow>();
+    if (error || !data) {
+      throw createSupabaseDomainError("Failed to create scheduled event in Supabase", error);
+    }
+
+    return mapScheduledEvent(data);
+  }
+
+  async deleteScheduledEvent(eventId: string): Promise<boolean> {
+    const { error, count } = await this.client
+      .from("scheduled_events")
+      .delete({ count: "exact" })
+      .eq("id", eventId);
+    if (error) {
+      throw createSupabaseDomainError("Failed to delete scheduled event in Supabase", error);
+    }
+
+    return Boolean(count && count > 0);
+  }
+
   async getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]> {
     const { data, error } = await this.client
       .from("cta_signups")
@@ -1442,6 +1568,33 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     }
 
     return (data ?? []).map(mapCtaSignup);
+  }
+
+  async getAllCtaSignups(): Promise<CtaSignupRecord[]> {
+    const { data, error } = await this.client
+      .from("cta_signups")
+      .select(
+        "id, cta_id, member_id, role, slot_key, slot_label, weapon_name, reaction_emoji, preferred_roles, is_fill, player_name, reacted_at"
+      )
+      .order("reacted_at", { ascending: true })
+      .returns<CtaSignupRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load all CTA signups from Supabase", error);
+    }
+
+    return (data ?? []).map(mapCtaSignup);
+  }
+
+  async getAttendances(): Promise<Attendance[]> {
+    const { data, error } = await this.client
+      .from("attendance")
+      .select("id, cta_id, member_id, decision, state")
+      .returns<AttendanceRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load attendances from Supabase", error);
+    }
+
+    return (data ?? []).map(mapAttendance);
   }
 
   async upsertCtaSignup(input: {
@@ -2198,6 +2351,31 @@ function mapOverviewAnnouncement(row: OverviewAnnouncementRow): OverviewAnnounce
     body: row.body,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by ?? undefined
+  };
+}
+
+function mapScheduledEvent(row: ScheduledEventRow): ScheduledEventRecord {
+  return {
+    id: row.id,
+    description: row.description,
+    mapName: row.map_name,
+    targetUtc: row.target_utc,
+    createdByDiscordId: row.created_by_discord_id,
+    createdByDisplayName: row.created_by_display_name,
+    createdAt: row.created_at
+  };
+}
+
+function mapMemberActivityExclusion(
+  row: MemberActivityExclusionRow
+): MemberActivityExclusionRecord {
+  return {
+    memberId: row.member_id,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    reason: row.reason ?? undefined,
+    createdBy: row.created_by,
+    updatedAt: row.updated_at
   };
 }
 

@@ -18,6 +18,17 @@ export interface ApiServices {
     supabaseConfigured: boolean;
   }>;
   getOpenSlots(): Promise<{ slotsOpen: number; memberCap: number }>;
+  getPublicScheduledEvents(): Promise<
+    Array<{
+      id: string;
+      description: string;
+      mapName: string;
+      targetUtc: string;
+      createdByDiscordId: string;
+      createdByDisplayName: string;
+      createdAt: string;
+    }>
+  >;
   registerMember(input: {
     displayName: string;
     discordId: string;
@@ -96,9 +107,50 @@ export interface ApiServices {
         discordId: string;
         attendanceCount: number;
         attendancePercent: number;
+        lastActivityAt?: string;
+        inactiveDays: number;
+        activityState: "OK" | "RIESGO" | "INACTIVO" | "EXCLUIDO";
+        activityReason: string;
+        activityThresholdDays: number;
+        followupTaskId?: string;
+        activityExclusion?: {
+          startsAt: string;
+          endsAt: string;
+          reason?: string;
+        };
       }
     >
   >;
+  openMemberActivityFollowup(
+    actor: User,
+    memberId: string
+  ): Promise<{
+    id: string;
+    title: string;
+    description: string;
+    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
+    status: "TODO" | "IN_PROGRESS" | "DONE";
+    assignedMemberId?: string;
+    assignedDisplayName?: string;
+    executeAt?: string;
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  setMemberActivityExclusion(
+    actor: User,
+    memberId: string,
+    input: { startsAt: string; endsAt: string; reason?: string }
+  ): Promise<{
+    memberId: string;
+    startsAt: string;
+    endsAt: string;
+    reason?: string;
+  }>;
+  clearMemberActivityExclusion(
+    actor: User,
+    memberId: string
+  ): Promise<{ cleared: boolean; memberId: string }>;
   listCouncilMembers(actor: User): Promise<
     Array<{
       memberId: string;
@@ -113,7 +165,7 @@ export interface ApiServices {
       id: string;
       title: string;
       description: string;
-      category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+      category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
       status: "TODO" | "IN_PROGRESS" | "DONE";
       assignedMemberId?: string;
       assignedDisplayName?: string;
@@ -128,7 +180,7 @@ export interface ApiServices {
     input: {
       title: string;
       description: string;
-      category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+      category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
       assignedMemberId?: string;
       executeAt?: string;
     }
@@ -136,7 +188,7 @@ export interface ApiServices {
     id: string;
     title: string;
     description: string;
-    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
     status: "TODO" | "IN_PROGRESS" | "DONE";
     assignedMemberId?: string;
     assignedDisplayName?: string;
@@ -151,7 +203,7 @@ export interface ApiServices {
     input: {
       title?: string;
       description?: string;
-      category?: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+      category?: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
       assignedMemberId?: string;
       executeAt?: string;
       status?: "TODO" | "IN_PROGRESS" | "DONE";
@@ -160,7 +212,7 @@ export interface ApiServices {
     id: string;
     title: string;
     description: string;
-    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
     status: "TODO" | "IN_PROGRESS" | "DONE";
     assignedMemberId?: string;
     assignedDisplayName?: string;
@@ -177,7 +229,7 @@ export interface ApiServices {
     id: string;
     title: string;
     description: string;
-    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
     status: "TODO" | "IN_PROGRESS" | "DONE";
     assignedMemberId?: string;
     assignedDisplayName?: string;
@@ -363,6 +415,7 @@ export interface ApiServices {
   updateMemberStatus(actor: User, memberId: string, nextStatus: GuildMember["status"]): Promise<GuildMember>;
   kickMember(actor: User, memberId: string, reason?: string): Promise<GuildMember>;
   updateMemberBombGroup(actor: User, memberId: string, bombGroupName?: string): Promise<GuildMember>;
+  updateMemberAlbionName(actor: User, memberId: string, albionName: string): Promise<GuildMember>;
   approveRegear(actor: User, regearId: string): Promise<{ approved: true; regearId: string }>;
   listComps(): Promise<Awaited<ReturnType<DatabaseRepository["getComps"]>>>;
   saveComp(
@@ -684,6 +737,17 @@ export function createApiServices(
       return repository.getOpenSlots();
     },
 
+    async getPublicScheduledEvents() {
+      const now = Date.now();
+      const events = await repository.getScheduledEvents();
+      return events
+        .filter((entry) => {
+          const time = Date.parse(entry.targetUtc);
+          return Number.isFinite(time) && time >= now;
+        })
+        .sort((left, right) => Date.parse(left.targetUtc) - Date.parse(right.targetUtc));
+    },
+
     async registerMember(input) {
       if (isPrelaunchActive(options)) {
         const inviteCode = input.inviteCode?.trim();
@@ -934,25 +998,60 @@ export function createApiServices(
         limit: options.albionBattlesLimit
       });
 
-      const [members, users, snapshots, attendances] = await Promise.all([
+      const now = new Date();
+      const [members, users, snapshots, battleAttendances, ctas, manualAttendances, ctaSignups, exclusions, tasks] = await Promise.all([
         repository.getMembers(),
         repository.getUsers(),
         repository.getBattlePerformanceSnapshots(),
-        repository.getBattleMemberAttendances()
+        repository.getBattleMemberAttendances(),
+        repository.getCtas(),
+        repository.getAttendances(),
+        repository.getAllCtaSignups(),
+        repository.getMemberActivityExclusions(),
+        repository.getCouncilTasks()
       ]);
       const usersById = new Map(users.map((user) => [user.id, user]));
       const attendanceCountByMemberId = new Map<string, number>();
+      const ctaById = new Map(ctas.map((cta) => [cta.id, cta]));
+      const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
+      const exclusionByMemberId = new Map(exclusions.map((exclusion) => [exclusion.memberId, exclusion]));
+      const followupTaskByMemberId = new Map<string, string>();
 
-      for (const attendance of attendances) {
+      for (const attendance of battleAttendances) {
         attendanceCountByMemberId.set(
           attendance.memberId,
           (attendanceCountByMemberId.get(attendance.memberId) ?? 0) + 1
         );
       }
 
+      for (const task of tasks) {
+        const memberId = extractMemberIdFromTaskDescription(task.description);
+        if (!memberId || task.status === "DONE" || followupTaskByMemberId.has(memberId)) {
+          continue;
+        }
+        followupTaskByMemberId.set(memberId, task.id);
+      }
+
       return members.filter((member) => !member.kickedAt).map((member) => {
         const user = usersById.get(member.userId);
         const attendanceCount = attendanceCountByMemberId.get(member.id) ?? 0;
+        const lastActivityAt = getMemberLastActivityAt({
+          memberId: member.id,
+          battleAttendances,
+          snapshotByBattleId,
+          manualAttendances,
+          ctaById,
+          ctaSignups
+        });
+        const threshold = getMemberInactivityThreshold(member);
+        const exclusion = exclusionByMemberId.get(member.id);
+        const activity = buildMemberActivityState({
+          member,
+          now,
+          threshold,
+          lastActivityAt,
+          exclusion
+        });
         return {
           ...member,
           displayName: user?.displayName ?? member.userId,
@@ -960,9 +1059,124 @@ export function createApiServices(
           discordId: user?.discordId ?? "unknown",
           avatarUrl: user?.avatarUrl,
           attendanceCount,
-          attendancePercent: snapshots.length > 0 ? (attendanceCount / snapshots.length) * 100 : 0
+          attendancePercent: snapshots.length > 0 ? (attendanceCount / snapshots.length) * 100 : 0,
+          lastActivityAt,
+          inactiveDays: activity.inactiveDays,
+          activityState: activity.state,
+          activityReason: activity.reason,
+          activityThresholdDays: threshold,
+          followupTaskId: followupTaskByMemberId.get(member.id),
+          activityExclusion: exclusion
+            ? {
+                startsAt: exclusion.startsAt,
+                endsAt: exclusion.endsAt,
+                reason: exclusion.reason
+              }
+            : undefined
         };
       });
+    },
+
+    async openMemberActivityFollowup(actor, memberId) {
+      await requireStaffAccess(actor);
+      const [member, users, tasks, snapshots, battleAttendances, ctas, manualAttendances, ctaSignups, exclusions] =
+        await Promise.all([
+          repository.getMemberById(memberId),
+          repository.getUsers(),
+          repository.getCouncilTasks(),
+          repository.getBattlePerformanceSnapshots(),
+          repository.getBattleMemberAttendances(),
+          repository.getCtas(),
+          repository.getAttendances(),
+          repository.getAllCtaSignups(),
+          repository.getMemberActivityExclusions()
+        ]);
+
+      if (!member || member.kickedAt) {
+        throw new DomainError("Member not found");
+      }
+
+      const existingTask = tasks.find(
+        (task) =>
+          task.status !== "DONE" &&
+          extractMemberIdFromTaskDescription(task.description) === memberId
+      );
+      if (existingTask) {
+        return mapCouncilTaskForApi(repository, existingTask);
+      }
+
+      const user = users.find((entry) => entry.id === member.userId);
+      const ctaById = new Map(ctas.map((cta) => [cta.id, cta]));
+      const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
+      const exclusion = exclusions.find((entry) => entry.memberId === memberId);
+      const threshold = getMemberInactivityThreshold(member);
+      const lastActivityAt = getMemberLastActivityAt({
+        memberId,
+        battleAttendances,
+        snapshotByBattleId,
+        manualAttendances,
+        ctaById,
+        ctaSignups
+      });
+      const activity = buildMemberActivityState({
+        member,
+        now: new Date(),
+        threshold,
+        lastActivityAt,
+        exclusion
+      });
+      const displayName = user?.displayName ?? member.userId;
+      const title = `Seguimiento inactividad · ${displayName}`;
+      const description = [
+        "[AUTO_MEMBER_ACTIVITY]",
+        `memberId=${member.id}`,
+        `userId=${member.userId}`,
+        `displayName=${displayName}`,
+        `rol=${formatMemberStatusLabel(member.discordRoleStatus ?? member.status)}`,
+        `estado=${activity.state}`,
+        `diasSinActividad=${activity.inactiveDays}`,
+        `ultimaActividad=${lastActivityAt ?? "sin registros"}`
+      ].join("\n");
+
+      const created = await repository.createCouncilTask({
+        title,
+        description,
+        category: "REVISION_MIEMBROS",
+        createdBy: actor.id
+      });
+
+      return mapCouncilTaskForApi(repository, created);
+    },
+
+    async setMemberActivityExclusion(actor, memberId, input) {
+      await requireStaffAccess(actor);
+      const member = await repository.getMemberById(memberId);
+      if (!member || member.kickedAt) {
+        throw new DomainError("Member not found");
+      }
+
+      await repository.upsertMemberActivityExclusion({
+        memberId,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        reason: input.reason,
+        createdBy: actor.id
+      });
+
+      return {
+        memberId,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        reason: input.reason
+      };
+    },
+
+    async clearMemberActivityExclusion(actor, memberId) {
+      await requireStaffAccess(actor);
+      return {
+        cleared: await repository.clearMemberActivityExclusion(memberId),
+        memberId
+      };
     },
 
     async listCouncilMembers(actor) {
@@ -1694,6 +1908,21 @@ export function createApiServices(
       }
 
       return updated;
+    },
+
+    async updateMemberAlbionName(actor, memberId, albionName) {
+      await requireStaffAccess(actor);
+      const member = await repository.getMemberById(memberId);
+      if (!member) {
+        throw new DomainError("Member not found");
+      }
+
+      const updatedUser = await repository.updateUserAlbionName(member.userId, albionName.trim());
+      if (!updatedUser) {
+        throw new DomainError("Member user not found");
+      }
+
+      return member;
     },
 
     async approveRegear(actor, regearId) {
@@ -2643,7 +2872,7 @@ function buildDiscordMessageChunks(lines: string[], maxLength: number): string[]
 function assertCouncilTaskInput(input: {
   title: string;
   description: string;
-  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
   assignedMemberId?: string;
   executeAt?: string;
 }) {
@@ -2653,7 +2882,7 @@ function assertCouncilTaskInput(input: {
   if (!input.description?.trim()) {
     throw new DomainError("Council task description is required");
   }
-  if (!["LOGISTICA", "ECONOMIA", "CONTENT", "ANUNCIOS"].includes(input.category)) {
+  if (!["LOGISTICA", "ECONOMIA", "CONTENT", "ANUNCIOS", "REVISION_MIEMBROS"].includes(input.category)) {
     throw new DomainError("Council task category is invalid");
   }
   if (input.executeAt && Number.isNaN(Date.parse(input.executeAt))) {
@@ -2664,7 +2893,7 @@ function assertCouncilTaskInput(input: {
 function assertCouncilTaskPatch(input: {
   title?: string;
   description?: string;
-  category?: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+  category?: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
   assignedMemberId?: string;
   executeAt?: string;
   status?: "TODO" | "IN_PROGRESS" | "DONE";
@@ -2687,7 +2916,7 @@ function assertCouncilTaskPatch(input: {
   }
   if (
     input.category !== undefined &&
-    !["LOGISTICA", "ECONOMIA", "CONTENT", "ANUNCIOS"].includes(input.category)
+    !["LOGISTICA", "ECONOMIA", "CONTENT", "ANUNCIOS", "REVISION_MIEMBROS"].includes(input.category)
   ) {
     throw new DomainError("Council task category is invalid");
   }
@@ -2722,7 +2951,7 @@ async function mapCouncilTaskForApi(
     id: string;
     title: string;
     description: string;
-    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS";
+    category: "LOGISTICA" | "ECONOMIA" | "CONTENT" | "ANUNCIOS" | "REVISION_MIEMBROS";
     status: "TODO" | "IN_PROGRESS" | "DONE";
     assignedMemberId?: string;
     executeAt?: string;
@@ -2746,6 +2975,158 @@ async function mapCouncilTaskForApi(
     ...task,
     assignedDisplayName
   };
+}
+
+function extractMemberIdFromTaskDescription(description: string): string | undefined {
+  const match = description.match(/memberId=([a-f0-9-]+)/i);
+  return match?.[1];
+}
+
+function getMemberInactivityThreshold(member: GuildMember): number {
+  const status = member.discordRoleStatus ?? member.status;
+  if (status === "TRIAL") {
+    return 3;
+  }
+  if (status === "COUNCIL") {
+    return 10;
+  }
+  return 7;
+}
+
+function formatMemberStatusLabel(status: GuildMember["status"]): string {
+  switch (status) {
+    case "COUNCIL":
+      return "Staff";
+    case "CORE":
+      return "Core";
+    case "TRIAL":
+      return "Trial";
+    case "BENCHED":
+      return "Benched";
+    case "REJECTED":
+      return "Rechazado";
+    default:
+      return "Pendiente";
+  }
+}
+
+function getMemberLastActivityAt(args: {
+  memberId: string;
+  battleAttendances: Awaited<ReturnType<DatabaseRepository["getBattleMemberAttendances"]>>;
+  snapshotByBattleId: Map<string, Awaited<ReturnType<DatabaseRepository["getBattlePerformanceSnapshots"]>>[number]>;
+  manualAttendances: Awaited<ReturnType<DatabaseRepository["getAttendances"]>>;
+  ctaById: Map<string, Awaited<ReturnType<DatabaseRepository["getCtas"]>>[number]>;
+  ctaSignups: Awaited<ReturnType<DatabaseRepository["getAllCtaSignups"]>>;
+}): string | undefined {
+  let latest: string | undefined;
+
+  for (const signup of args.ctaSignups) {
+    if (signup.memberId !== args.memberId) {
+      continue;
+    }
+    latest = pickLatestIso(latest, signup.reactedAt);
+  }
+
+  for (const attendance of args.manualAttendances) {
+    if (attendance.memberId !== args.memberId) {
+      continue;
+    }
+    const cta = args.ctaById.get(attendance.ctaId);
+    if (cta) {
+      latest = pickLatestIso(latest, cta.datetimeUtc);
+    }
+  }
+
+  for (const attendance of args.battleAttendances) {
+    if (attendance.memberId !== args.memberId) {
+      continue;
+    }
+    const snapshot = args.snapshotByBattleId.get(attendance.battleId);
+    if (snapshot) {
+      latest = pickLatestIso(latest, snapshot.startTime);
+    }
+  }
+
+  return latest;
+}
+
+function pickLatestIso(current: string | undefined, candidate: string | undefined): string | undefined {
+  if (!candidate) {
+    return current;
+  }
+  if (!current) {
+    return candidate;
+  }
+  return Date.parse(candidate) > Date.parse(current) ? candidate : current;
+}
+
+function buildMemberActivityState(args: {
+  member: GuildMember;
+  now: Date;
+  threshold: number;
+  lastActivityAt?: string;
+  exclusion?: { startsAt: string; endsAt: string; reason?: string };
+}): {
+  state: "OK" | "RIESGO" | "INACTIVO" | "EXCLUIDO";
+  reason: string;
+  inactiveDays: number;
+} {
+  const inactiveDays = args.lastActivityAt
+    ? Math.max(0, Math.floor((args.now.getTime() - Date.parse(args.lastActivityAt)) / 86400000))
+    : args.threshold + 1;
+  const nowTimestamp = args.now.getTime();
+
+  if (
+    args.exclusion &&
+    Date.parse(args.exclusion.startsAt) <= nowTimestamp &&
+    Date.parse(args.exclusion.endsAt) >= nowTimestamp
+  ) {
+    return {
+      state: "EXCLUIDO",
+      reason: args.exclusion.reason?.trim()
+        ? `Excluido temporalmente: ${args.exclusion.reason.trim()}`
+        : "Excluido temporalmente",
+      inactiveDays
+    };
+  }
+
+  if (!args.lastActivityAt) {
+    return {
+      state: "INACTIVO",
+      reason: "Sin actividad registrada",
+      inactiveDays
+    };
+  }
+
+  if (inactiveDays >= args.threshold) {
+    return {
+      state: "INACTIVO",
+      reason: `${inactiveDays} dias sin actividad`,
+      inactiveDays
+    };
+  }
+
+  const warningThreshold = Math.max(1, args.threshold - (args.threshold <= 3 ? 1 : 2));
+  if (inactiveDays >= warningThreshold) {
+    return {
+      state: "RIESGO",
+      reason: `${inactiveDays} dias sin actividad`,
+      inactiveDays
+    };
+  }
+
+  return {
+    state: "OK",
+    reason: args.lastActivityAt ? `Ultima actividad ${formatShortDate(args.lastActivityAt)}` : "Activo",
+    inactiveDays
+  };
+}
+
+function formatShortDate(value: string): string {
+  return new Intl.DateTimeFormat("es-ES", {
+    day: "2-digit",
+    month: "2-digit"
+  }).format(new Date(value));
 }
 
 function buildRosterAnalysis(args: {
