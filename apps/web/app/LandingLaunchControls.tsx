@@ -22,17 +22,23 @@ export function LandingLaunchControls({
 }: LandingLaunchControlsProps) {
   const [now, setNow] = useState(() => Date.now());
 
+  const remainingMs = launchAt - now;
   useEffect(() => {
+    if (remainingMs <= 0) {
+      return;
+    }
+
+    const intervalMs =
+      remainingMs > 6 * 60 * 60 * 1000 ? 60_000 : remainingMs > 60 * 60 * 1000 ? 15_000 : 1_000;
     const timerId = window.setInterval(() => {
       setNow(Date.now());
-    }, 1000);
+    }, intervalMs);
 
     return () => {
       window.clearInterval(timerId);
     };
-  }, []);
+  }, [remainingMs]);
 
-  const remainingMs = launchAt - now;
   const hasLaunched = remainingMs <= 0;
   const countdownText = useMemo(() => formatCountdown(remainingMs), [remainingMs]);
   const shouldLockLogin = enforceCountdown && !hasLaunched && !hasValidInvite;

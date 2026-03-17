@@ -47,7 +47,7 @@ body {
     radial-gradient(circle at top center, rgba(216, 166, 40, 0.2), transparent 26%),
     radial-gradient(circle at 22% 20%, rgba(24, 51, 108, 0.28), transparent 30%),
     linear-gradient(180deg, rgba(8, 14, 24, 0.98), rgba(5, 8, 15, 0.98));
-  backdrop-filter: blur(10px);
+  backdrop-filter: none;
 }
 
 .entry-loader-logo {
@@ -56,7 +56,7 @@ body {
   border-radius: 36px;
   object-fit: cover;
   animation: entryLoaderBreath 2200ms ease-in-out infinite;
-  filter: drop-shadow(0 18px 36px rgba(216, 166, 40, 0.22));
+  filter: drop-shadow(0 10px 18px rgba(216, 166, 40, 0.16));
 }
 
 .entry-loader-copy {
@@ -114,7 +114,7 @@ li {
   border: 1px solid var(--line);
   border-radius: 24px;
   background: rgba(8, 14, 24, 0.72);
-  backdrop-filter: blur(14px);
+  backdrop-filter: none;
   box-shadow: var(--shadow);
 }
 
@@ -330,10 +330,10 @@ li {
   width: 42%;
   background: linear-gradient(90deg, transparent, rgba(240, 200, 90, 0.12), transparent);
   transform: skewX(-16deg);
-  filter: blur(14px);
-  opacity: 0.45;
+  filter: none;
+  opacity: 0.28;
   pointer-events: none;
-  animation: heroSweep 7s ease-in-out infinite;
+  animation: heroSweep 10s linear infinite;
   z-index: 0;
 }
 
@@ -423,8 +423,8 @@ li {
 .hero-logo {
   width: min(100%, 616px);
   height: auto;
-  filter: drop-shadow(0 24px 42px rgba(0, 0, 0, 0.42));
-  animation: logoFloat 6s ease-in-out infinite;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.32));
+  animation: logoFloat 8s ease-in-out infinite;
 }
 
 .hero-data {
@@ -713,7 +713,6 @@ li {
   .project-claim-main {
     opacity: 0;
     transform: translateY(38px) scale(0.985);
-    filter: blur(5px);
     animation-name: claimMainIn;
     animation-duration: 1ms;
     animation-timing-function: ease-out;
@@ -725,7 +724,6 @@ li {
   .project-tile {
     opacity: 0;
     transform: translateY(30px) scale(0.99);
-    filter: blur(4px);
     animation-name: claimTileIn;
     animation-duration: 1ms;
     animation-timing-function: ease-out;
@@ -884,7 +882,6 @@ li {
   .app-preview-card {
     opacity: 0;
     transform: translateY(26px) scale(0.992);
-    filter: blur(3px);
     animation-name: appPreviewIn;
     animation-duration: 1ms;
     animation-timing-function: ease-out;
@@ -4751,13 +4748,11 @@ li {
   from {
     opacity: 0;
     transform: translateY(30px) scale(0.99);
-    filter: blur(4px);
   }
 
   to {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0);
   }
 }
 
@@ -4765,13 +4760,11 @@ li {
   from {
     opacity: 0;
     transform: translateY(38px) scale(0.985);
-    filter: blur(5px);
   }
 
   to {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0);
   }
 }
 
@@ -4779,23 +4772,52 @@ li {
   from {
     opacity: 0;
     transform: translateY(26px) scale(0.992);
-    filter: blur(3px);
   }
 
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
-    filter: blur(0);
   }
 }
 
+/* Reduce initial rendering cost on long landing sections. */
+.landing-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 980px;
+}
+
+#hero {
+  content-visibility: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .entry-loader-logo,
   .hero-block,
   .hero-copy,
   .hero-spotlight,
   .hero-block::after,
-  .hero-logo {
+  .hero-logo,
+  .project-claim-main,
+  .project-tile,
+  .app-preview-card {
     animation: none;
+  }
+}
+
+@media (max-width: 1200px), (hover: none), (pointer: coarse) {
+  .hero-block,
+  .hero-copy,
+  .hero-spotlight,
+  .hero-block::after,
+  .hero-logo,
+  .project-claim-main,
+  .project-tile,
+  .app-preview-card {
+    animation: none !important;
+  }
+
+  .hero-block::after {
+    display: none;
   }
 }
 

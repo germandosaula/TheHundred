@@ -9,7 +9,7 @@ interface PageEntryLoaderProps {
   storageKey?: string;
 }
 
-const LOADER_DURATION_MS = 1500;
+const LOADER_DURATION_MS = 700;
 
 export function PageEntryLoader({ children, message, storageKey }: PageEntryLoaderProps) {
   const [isVisible, setIsVisible] = useState(true);

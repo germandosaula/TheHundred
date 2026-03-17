@@ -446,10 +446,9 @@ export async function getLandingData(inviteCode?: string) {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
   const inviteQuery = inviteCode ? `?code=${encodeURIComponent(inviteCode)}` : "";
-  const [slots, me, performance, privateAccessProbe, inviteValidation] = await Promise.all([
+  const [slots, me, privateAccessProbe, inviteValidation] = await Promise.all([
     getJson<SlotsData>("/public/slots"),
     getJson<MeData>("/me", sessionToken, discordId),
-    getJson<PublicPerformanceData>("/public/performance"),
     getJson<{ ok: true }>("/private/access", sessionToken, discordId),
     inviteCode ? getJson<InviteValidationData>(`/public/invites/validate${inviteQuery}`) : Promise.resolve(null)
   ]);
@@ -459,7 +458,6 @@ export async function getLandingData(inviteCode?: string) {
     slots,
     authStartUrl: inviteCode ? `/auth/start?invite=${encodeURIComponent(inviteCode)}` : "/auth/start",
     me,
-    performance,
     hasPrivateAccess: Boolean(privateAccessProbe),
     inviteCode,
     inviteValid: Boolean(inviteValidation?.valid)

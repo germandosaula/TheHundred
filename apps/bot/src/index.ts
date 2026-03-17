@@ -288,6 +288,18 @@ type CtaSignupSlot = {
   emoji: string;
 };
 
+type ScheduledEventsRepositoryCompat = {
+  getScheduledEvents?: () => Promise<ScheduledEventRecord[]>;
+  createScheduledEvent?: (input: {
+    description: string;
+    mapName: string;
+    targetUtc: string;
+    createdByDiscordId: string;
+    createdByDisplayName: string;
+  }) => Promise<ScheduledEventRecord>;
+  deleteScheduledEvent?: (eventId: string) => Promise<boolean>;
+};
+
 function formatCtaCountdownLabel(targetUtc: string): string {
   const diffMs = new Date(targetUtc).getTime() - Date.now();
   if (!Number.isFinite(diffMs) || diffMs <= 0) {
@@ -320,6 +332,169 @@ async function sendCtaReminderMessage(title: string, label: string): Promise<voi
   await channel.send(
     `@everyone Quedan ${label} para la CTA ${title} : https://www.thehundredalbion.com/app/ctas`
   );
+}
+
+function getRepositoryWithScheduledEventsCompat() {
+  return repository as typeof repository & ScheduledEventsRepositoryCompat;
+}
+
+function hasNativeScheduledEventsRepositoryMethods(): boolean {
+  const compat = getRepositoryWithScheduledEventsCompat();
+  return (
+    typeof compat.getScheduledEvents === "function" &&
+    typeof compat.createScheduledEvent === "function" &&
+    typeof compat.deleteScheduledEvent === "function"
+  );
+}
+
+function getSupabaseRestConfig():
+  | { baseUrl: string; serviceRoleKey: string }
+  | null {
+  const baseUrl = process.env.SUPABASE_URL?.trim();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!baseUrl || !serviceRoleKey) {
+    return null;
+  }
+  return { baseUrl: baseUrl.replace(/\/$/, ""), serviceRoleKey };
+}
+
+async function getScheduledEventsCompat(): Promise<ScheduledEventRecord[]> {
+  const compat = getRepositoryWithScheduledEventsCompat();
+  if (typeof compat.getScheduledEvents === "function") {
+    return compat.getScheduledEvents();
+  }
+
+  const supabaseConfig = getSupabaseRestConfig();
+  if (!supabaseConfig) {
+    throw new Error("Scheduled events repository methods are unavailable and Supabase fallback is not configured");
+  }
+
+  const response = await fetch(
+    `${supabaseConfig.baseUrl}/rest/v1/scheduled_events?select=id,description,map_name,target_utc,created_by_discord_id,created_by_display_name,created_at&order=target_utc.asc`,
+    {
+      headers: {
+        apikey: supabaseConfig.serviceRoleKey,
+        authorization: `Bearer ${supabaseConfig.serviceRoleKey}`
+      }
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`Supabase fallback getScheduledEvents failed: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Array<{
+    id: string;
+    description: string;
+    map_name: string;
+    target_utc: string;
+    created_by_discord_id: string;
+    created_by_display_name: string;
+    created_at: string;
+  }>;
+
+  return payload.map((entry) => ({
+    id: entry.id,
+    description: entry.description,
+    mapName: entry.map_name,
+    targetUtc: entry.target_utc,
+    createdByDiscordId: entry.created_by_discord_id,
+    createdByDisplayName: entry.created_by_display_name,
+    createdAt: entry.created_at
+  }));
+}
+
+async function createScheduledEventCompat(input: {
+  description: string;
+  mapName: string;
+  targetUtc: string;
+  createdByDiscordId: string;
+  createdByDisplayName: string;
+}): Promise<ScheduledEventRecord> {
+  const compat = getRepositoryWithScheduledEventsCompat();
+  if (typeof compat.createScheduledEvent === "function") {
+    return compat.createScheduledEvent(input);
+  }
+
+  const supabaseConfig = getSupabaseRestConfig();
+  if (!supabaseConfig) {
+    throw new Error("Scheduled events repository methods are unavailable and Supabase fallback is not configured");
+  }
+
+  const response = await fetch(`${supabaseConfig.baseUrl}/rest/v1/scheduled_events`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      prefer: "return=representation",
+      apikey: supabaseConfig.serviceRoleKey,
+      authorization: `Bearer ${supabaseConfig.serviceRoleKey}`
+    },
+    body: JSON.stringify({
+      description: input.description.trim(),
+      map_name: input.mapName.trim(),
+      target_utc: input.targetUtc,
+      created_by_discord_id: input.createdByDiscordId,
+      created_by_display_name: input.createdByDisplayName
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Supabase fallback createScheduledEvent failed: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Array<{
+    id: string;
+    description: string;
+    map_name: string;
+    target_utc: string;
+    created_by_discord_id: string;
+    created_by_display_name: string;
+    created_at: string;
+  }>;
+  const created = payload[0];
+  if (!created) {
+    throw new Error("Supabase fallback createScheduledEvent returned empty payload");
+  }
+
+  return {
+    id: created.id,
+    description: created.description,
+    mapName: created.map_name,
+    targetUtc: created.target_utc,
+    createdByDiscordId: created.created_by_discord_id,
+    createdByDisplayName: created.created_by_display_name,
+    createdAt: created.created_at
+  };
+}
+
+async function deleteScheduledEventCompat(eventId: string): Promise<boolean> {
+  const compat = getRepositoryWithScheduledEventsCompat();
+  if (typeof compat.deleteScheduledEvent === "function") {
+    return compat.deleteScheduledEvent(eventId);
+  }
+
+  const supabaseConfig = getSupabaseRestConfig();
+  if (!supabaseConfig) {
+    throw new Error("Scheduled events repository methods are unavailable and Supabase fallback is not configured");
+  }
+
+  const response = await fetch(
+    `${supabaseConfig.baseUrl}/rest/v1/scheduled_events?id=eq.${encodeURIComponent(eventId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        prefer: "count=exact",
+        apikey: supabaseConfig.serviceRoleKey,
+        authorization: `Bearer ${supabaseConfig.serviceRoleKey}`
+      }
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`Supabase fallback deleteScheduledEvent failed: HTTP ${response.status}`);
+  }
+
+  const contentRange = response.headers.get("content-range") ?? "";
+  const countPart = contentRange.split("/")[1];
+  const deletedCount = countPart ? Number(countPart) : Number.NaN;
+  return Number.isFinite(deletedCount) ? deletedCount > 0 : true;
 }
 
 function parseRemainingDuration(value: string): number | null {
@@ -423,6 +598,9 @@ console.log("[bot] startup config", {
   supabaseUrlSource: resolveEnvSource("SUPABASE_URL"),
   supabaseServiceRoleKeySource: resolveEnvSource("SUPABASE_SERVICE_ROLE_KEY"),
   repositoryProviderSource: resolveEnvSource("REPOSITORY_PROVIDER"),
+  scheduledEventsRepositoryMethods: hasNativeScheduledEventsRepositoryMethods()
+    ? "native"
+    : "fallback-supabase-rest",
   guildId: guildId ?? "global"
 });
 
@@ -573,6 +751,18 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
     console.error("Interaction handler failed", error);
+    if (interaction.isRepliable()) {
+      const message = error instanceof Error ? error.message : "Error inesperado";
+      const payload = {
+        content: `No se pudo ejecutar el comando: ${message}`,
+        ephemeral: true
+      } as const;
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp(payload).catch(() => undefined);
+      } else {
+        await interaction.reply(payload).catch(() => undefined);
+      }
+    }
   }
 });
 
@@ -1651,7 +1841,7 @@ async function handleEventRegisterCommand(
       ? String(interaction.member.displayName ?? interaction.user.username)
       : interaction.user.username;
 
-  const event = await repository.createScheduledEvent({
+  const event = await createScheduledEventCompat({
     description,
     mapName,
     targetUtc,
@@ -1671,7 +1861,7 @@ async function handleEventRegisterCommand(
 
 async function handleEventDeleteCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const requestedId = interaction.options.getString("id", true).trim().toLowerCase();
-  const events = await repository.getScheduledEvents();
+  const events = await getScheduledEventsCompat();
   const matches = events.filter(
     (entry) =>
       entry.id.toLowerCase() === requestedId || entry.id.toLowerCase().startsWith(requestedId)
@@ -1705,7 +1895,7 @@ async function handleEventDeleteCommand(interaction: ChatInputCommandInteraction
     }
   }
 
-  const deleted = await repository.deleteScheduledEvent(event.id);
+  const deleted = await deleteScheduledEventCompat(event.id);
   await interaction.reply({
     content: deleted
       ? `Evento eliminado: \`${event.id.slice(0, 8)}\` (${event.mapName} / ${event.description}).`
@@ -1716,7 +1906,7 @@ async function handleEventDeleteCommand(interaction: ChatInputCommandInteraction
 
 async function handleEventsCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const now = Date.now();
-  const events = (await repository.getScheduledEvents())
+  const events = (await getScheduledEventsCompat())
     .filter((entry) => Date.parse(entry.targetUtc) > now)
     .sort((left, right) => Date.parse(left.targetUtc) - Date.parse(right.targetUtc));
 
@@ -2069,7 +2259,7 @@ async function ensureCtaReminders() {
 async function ensureScheduledEventsReminder(force = false) {
   try {
     const now = Date.now();
-    const allEvents = await repository.getScheduledEvents();
+    const allEvents = await getScheduledEventsCompat();
     const activeEvents: ScheduledEventRecord[] = [];
 
     for (const event of allEvents) {
@@ -2078,7 +2268,7 @@ async function ensureScheduledEventsReminder(force = false) {
         continue;
       }
       if (targetMs < now - 30 * 60 * 1000) {
-        await repository.deleteScheduledEvent(event.id);
+        await deleteScheduledEventCompat(event.id);
         continue;
       }
       if (targetMs >= now) {
