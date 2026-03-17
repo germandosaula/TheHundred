@@ -3458,6 +3458,69 @@ li {
   color: #f1f4ff;
 }
 
+.overview-events-shell {
+  display: grid;
+  gap: 8px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.overview-events-shell .section-row {
+  margin-bottom: 0;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.overview-events-list {
+  display: grid;
+  gap: 8px;
+}
+
+.overview-event-item {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  gap: 6px 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(136, 156, 196, 0.24);
+  background: rgba(8, 16, 31, 0.72);
+}
+
+.overview-event-item strong,
+.overview-event-item > span:last-child {
+  grid-column: 1 / -1;
+}
+
+.overview-event-remaining,
+.overview-event-utc {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+}
+
+.overview-event-remaining {
+  color: #f0c64f;
+  font-weight: 700;
+}
+
+.overview-event-utc {
+  color: #93c5fd;
+}
+
+.overview-event-creator {
+  color: #b77dff;
+  font-size: 0.8rem;
+}
+
+.overview-event-item strong {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.overview-event-item > span:last-child {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
 .overview-announcements {
   list-style: none;
   margin: 0;

@@ -24,7 +24,7 @@ export function AlbionScoutingLookup() {
   const [name3, setName3] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [minPlayers, setMinPlayers] = useState("10");
+  const [minPlayers, setMinPlayers] = useState("1");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<AlbionPlayerLookupData[]>([]);

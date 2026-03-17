@@ -557,11 +557,18 @@ export function createApiServices(
       }
 
       const minPlayers = clampMinPlayers(filters?.minPlayers);
+      const bbStart = normalizeDateOnly(filters?.start) ?? "2017-01-01";
+      const bbEnd = normalizeDateOnly(filters?.end) ?? normalizeDateOnly(new Date().toISOString()) ?? undefined;
       const bbBaseUrl = options.albionBbApiBaseUrl.replace(/\/$/, "");
+      const bbQuery = new URLSearchParams({
+        minPlayers: String(minPlayers),
+        start: bbStart
+      });
+      if (bbEnd) {
+        bbQuery.set("end", bbEnd);
+      }
       const statsPayload = await fetchJsonSafe(
-        `${bbBaseUrl}/stats/players/${encodeURIComponent(query)}?${new URLSearchParams({
-          minPlayers: String(minPlayers)
-        }).toString()}`
+        `${bbBaseUrl}/stats/players/${encodeURIComponent(query)}?${bbQuery.toString()}`
       );
       const statsEntries = extractAlbionBbStatsEntries(statsPayload);
       const filteredStatsEntries = filterAlbionBbEntriesByDate(
@@ -569,7 +576,7 @@ export function createApiServices(
         filters?.start,
         filters?.end
       );
-      const scope = filteredStatsEntries.length > 0 ? filteredStatsEntries : statsEntries;
+      const scope = filteredStatsEntries;
 
       if (scope.length > 0) {
         const totals = scope.reduce(

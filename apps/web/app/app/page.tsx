@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   getPrivateOverviewData,
   getPublicPerformanceData,
+  getPublicScheduledEventsData,
 } from "../lib";
 import { OverviewAnnouncements } from "./OverviewAnnouncements";
 import { OverviewPlayerPerformanceCard } from "./OverviewPlayerPerformanceCard";
@@ -27,10 +28,31 @@ function getCtaTimeColorClass(datetimeUtc: string) {
   return "cta-time-default";
 }
 
+function formatEventRemaining(targetUtc: string): string {
+  const diffMs = new Date(targetUtc).getTime() - Date.now();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) {
+    return "Ahora";
+  }
+
+  const totalMinutes = Math.ceil(diffMs / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `en ${days}d ${hours}h`;
+  }
+  if (hours > 0) {
+    return `en ${hours}h ${minutes}m`;
+  }
+  return `en ${minutes}m`;
+}
+
 export default async function PrivateOverviewPage() {
-  const [{ me, slots, ctas, canManageCouncil, announcements }, performance] = await Promise.all([
+  const [{ me, slots, ctas, canManageCouncil, announcements }, performance, events] = await Promise.all([
     getPrivateOverviewData(),
     getPublicPerformanceData(),
+    getPublicScheduledEventsData(),
   ]);
 
   if (!me || !slots) {
@@ -38,6 +60,10 @@ export default async function PrivateOverviewPage() {
   }
 
   const openCtas = (ctas ?? []).filter((cta) => cta.status !== "FINALIZED" && cta.status !== "CANCELED");
+  const upcomingEvents = (events ?? [])
+    .filter((event) => Date.parse(event.targetUtc) > Date.now())
+    .sort((left, right) => Date.parse(left.targetUtc) - Date.parse(right.targetUtc))
+    .slice(0, 8);
   const occupiedSlots = Math.max(0, slots.memberCap - slots.slotsOpen);
   const canEditAnnouncements = canManageCouncil;
 
@@ -83,6 +109,38 @@ export default async function PrivateOverviewPage() {
 
             <OverviewPlayerPerformanceCard albionName={me.albionName} displayName={me.displayName} />
           </div>
+
+          <article className="dashboard-card overview-events-shell">
+            <div className="section-row">
+              <div>
+                <span className="card-label">Events activos</span>
+                <h2>Resumen Events</h2>
+              </div>
+            </div>
+            {upcomingEvents.length > 0 ? (
+              <div className="overview-events-list">
+                {upcomingEvents.map((event) => (
+                  <article className="overview-event-item" key={event.id}>
+                    <span className="overview-event-remaining">{formatEventRemaining(event.targetUtc)}</span>
+                    <span className="overview-event-utc">
+                      {new Date(event.targetUtc).toLocaleTimeString("es-ES", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                        timeZone: "UTC"
+                      })}{" "}
+                      UTC
+                    </span>
+                    <span className="overview-event-creator">@{event.createdByDisplayName}</span>
+                    <strong>{event.mapName}</strong>
+                    <span>{event.description}</span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="empty">No hay events activos.</p>
+            )}
+          </article>
         </div>
 
         <aside className="overview-right">
@@ -117,6 +175,7 @@ export default async function PrivateOverviewPage() {
               <p className="empty">No hay CTAs activas.</p>
             )}
           </article>
+
         </aside>
       </div>
     </section>
