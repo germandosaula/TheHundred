@@ -2293,7 +2293,6 @@ async function ensureScheduledEventsReminder(force = false) {
     }
 
     await channel.send({
-      content: "@everyone",
       embeds: [buildEventsEmbed(activeEvents)]
     });
     lastScheduledEventsReminderHour = hourKey;
