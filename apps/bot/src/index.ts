@@ -64,6 +64,8 @@ const supabaseHost = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL
 const staffRoleIds = ["1477718673757180026"];
 const recruiterRoleIds = ["1480276764524806145"];
 const phase2AllowedRoleIds = [...new Set([...managementRoleIds, ...recruiterRoleIds])];
+const economyAuditChannelId =
+  process.env.DISCORD_ECONOMY_AUDIT_CHANNEL_ID ?? "1483471603495993484";
 const albionBbBaseUrl = process.env.ALBION_BB_API_BASE_URL ?? "https://api.albionbb.com/eu";
 const killboardClient = createKillboardClient({
   source: "albionbb",
@@ -598,6 +600,8 @@ console.log("[bot] startup config", {
   supabaseUrlSource: resolveEnvSource("SUPABASE_URL"),
   supabaseServiceRoleKeySource: resolveEnvSource("SUPABASE_SERVICE_ROLE_KEY"),
   repositoryProviderSource: resolveEnvSource("REPOSITORY_PROVIDER"),
+  economyAuditChannelId,
+  economyAuditChannelSource: resolveEnvSource("DISCORD_ECONOMY_AUDIT_CHANNEL_ID"),
   scheduledEventsRepositoryMethods: hasNativeScheduledEventsRepositoryMethods()
     ? "native"
     : "fallback-supabase-rest",
@@ -1391,6 +1395,23 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
       .filter(Boolean)
       .join("\n")
   );
+
+  await sendEconomyAuditLog({
+    action: "pagar-loot",
+    interaction,
+    summary: payoutResult.alreadyProcessed
+      ? `Reintento detectado para payout ${payoutRecord.id}. Sin cambios de balance.`
+      : `Lootsplit procesado para ${eligiblePayouts.length} participantes.`,
+    details: [
+      `Payout ID: ${payoutRecord.id}`,
+      `Guild: ${guildName}`,
+      `Pool final: ${formatMoney(finalPool)}`,
+      `Por persona: ${formatMoney(perPerson)}`,
+      `Participantes: ${eligiblePayouts.length}`,
+      `No elegibles: ${unresolvedCount}`
+    ],
+    color: payoutResult.alreadyProcessed ? 0x94a3b8 : 0x22c55e
+  });
 }
 
 async function ensureLootSplitChannelRole(
@@ -1548,6 +1569,18 @@ async function handleRetirarCommand(interaction: ChatInputCommandInteraction): P
     await interaction.reply({
       embeds: [embed]
     });
+
+    await sendEconomyAuditLog({
+      action: "retirar",
+      interaction,
+      summary: `Retiro aplicado a ${target.displayName}.`,
+      details: [
+        `Usuario: ${target.displayName}`,
+        `Cantidad: -${formatMoney(amount)}`,
+        `Balance resultante: ${formatMoney(tx.cashBalanceAfter)}`
+      ],
+      color: 0xef4444
+    });
   } catch (error) {
     await interaction.reply({
       content:
@@ -1596,6 +1629,18 @@ async function handlePagarCommand(interaction: ChatInputCommandInteraction): Pro
   await interaction.reply({
     content: `Pago aplicado a ${target.displayName}: +${formatMoney(amount)}. Nuevo cash: ${formatMoney(tx.cashBalanceAfter)}.`,
     ephemeral: true
+  });
+
+  await sendEconomyAuditLog({
+    action: "pagar",
+    interaction,
+    summary: `Pago aplicado a ${target.displayName}.`,
+    details: [
+      `Usuario: ${target.displayName}`,
+      `Cantidad: +${formatMoney(amount)}`,
+      `Balance resultante: ${formatMoney(tx.cashBalanceAfter)}`
+    ],
+    color: 0x22c55e
   });
 }
 
@@ -1726,6 +1771,21 @@ async function handleRetirarDineroRolCommand(
     content: details || undefined,
     ephemeral: true
   });
+
+  await sendEconomyAuditLog({
+    action: "retirar_dinero_rol",
+    interaction,
+    summary: `Retiro masivo aplicado al rol ${role.name}.`,
+    details: [
+      `Rol: ${role.name}`,
+      `Cantidad por miembro: -${formatMoney(amount)}`,
+      `Aplicados: ${withdrawn.length}`,
+      `No enlazados: ${skippedUnlinked.length}`,
+      `Sin saldo: ${skippedInsufficient.length}`,
+      `Total retirado: ${formatMoney(totalWithdrawn)}`
+    ],
+    color: 0xf97316
+  });
 }
 
 async function handleEconomiaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -1788,6 +1848,17 @@ async function handleResetEconomiaCommand(interaction: ChatInputCommandInteracti
   await interaction.editReply(
     `Reset completado. Cuentas actualizadas a 0: ${touched}/${accounts.length}.`
   );
+
+  await sendEconomyAuditLog({
+    action: "reset_economia",
+    interaction,
+    summary: `Reset de economia ejecutado.`,
+    details: [
+      `Cuentas actualizadas: ${touched}/${accounts.length}`,
+      `Balance total previo aprox: ${formatMoney(accounts.reduce((sum, entry) => sum + entry.cashBalance + entry.bankBalance, 0))}`
+    ],
+    color: 0xf59e0b
+  });
 }
 
 async function handleFase2Command(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -2048,6 +2119,51 @@ async function assignRoleToPaidUsers(
 
 function formatMoney(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.max(0, value));
+}
+
+async function sendEconomyAuditLog(input: {
+  action: string;
+  interaction: ChatInputCommandInteraction;
+  summary: string;
+  details?: string[];
+  color?: number;
+}): Promise<void> {
+  if (!economyAuditChannelId) {
+    return;
+  }
+
+  try {
+    const channel = await client.channels.fetch(economyAuditChannelId).catch(() => null);
+    if (!channel?.isTextBased() || !("send" in channel)) {
+      return;
+    }
+
+    const location =
+      input.interaction.channel && "id" in input.interaction.channel
+        ? `<#${input.interaction.channel.id}>`
+        : "Canal no disponible";
+
+    const embed = new EmbedBuilder()
+      .setColor(input.color ?? 0xf0c64f)
+      .setTitle(`Economia · ${input.action}`)
+      .setDescription(input.summary)
+      .addFields(
+        { name: "Ejecutado por", value: `<@${input.interaction.user.id}> (${input.interaction.user.tag})`, inline: true },
+        { name: "Canal", value: location, inline: true }
+      )
+      .setTimestamp(new Date());
+
+    if (input.details && input.details.length > 0) {
+      embed.addFields({
+        name: "Detalle",
+        value: input.details.join("\n").slice(0, 1024)
+      });
+    }
+
+    await channel.send({ embeds: [embed] });
+  } catch (error) {
+    console.error("Economy audit log failed", error);
+  }
 }
 
 function buildLootSplitIdempotencyKey(input: {
