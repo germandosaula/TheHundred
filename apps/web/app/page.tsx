@@ -41,7 +41,7 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
       title: "Comps y Builds",
       description:
         "Creación y edición de builds y comps desde la app con integración en todo el ecosistema de The Hundred.",
-      screenshotPath: "/comps.png",
+      screenshotPath: "/comps.avif",
     },
     {
       id: "attendance",
@@ -49,7 +49,7 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
       title: "Attendance",
       description:
         "Mide asistencia real por CTA, detecta consistencia del signup del player en la CTA y compara con las Battles, además visualiza evolución mensual y trackea a cada player.",
-      screenshotPath: "/Gestion.png",
+      screenshotPath: "/Gestion.avif",
     },
     {
       id: "performance",
@@ -57,7 +57,7 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
       title: "Rendimiento",
       description:
         "Analiza rendimiento de cada player, separa Bomb vs Main Zerg y consolida métricas por cada batalla y acumuladas para su revisión.",
-      screenshotPath: "/Rendimiento.png",
+      screenshotPath: "/Rendimiento.avif",
     },
     {
       id: "economy",
@@ -65,7 +65,7 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
       title: "Economía",
       description:
         "Automatiza el pago de loot splits, controla balances por miembro y ejecuta los pagos con trazabilidad para la máxima transparencia.",
-      screenshotPath: "/Econ.png",
+      screenshotPath: "/Econ.avif",
     },
   ] as const;
 
@@ -271,12 +271,14 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
                 key={feature.id}
               >
                 <div className="app-preview-shot">
-                  <Image
-                    alt={`${feature.title} preview`}
-                    className="app-preview-image"
-                    fill
-                    src={feature.screenshotPath}
-                  />
+                <Image
+                  alt={`${feature.title} preview`}
+                  className="app-preview-image"
+                  fill
+                  quality={65}
+                  sizes="(max-width: 1100px) 100vw, 50vw"
+                  src={feature.screenshotPath}
+                />
                   <div className="app-preview-overlay">
                     <span>{feature.eyebrow}</span>
                   </div>
