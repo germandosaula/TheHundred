@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope, Outfit } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const displayFont = Outfit({
@@ -47,6 +48,7 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${displayFont.variable} ${uiFont.variable}`}>
         {children}
+        <Analytics />
       </body>
     </html>
   );
