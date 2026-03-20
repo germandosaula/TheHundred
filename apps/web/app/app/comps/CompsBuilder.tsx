@@ -322,6 +322,7 @@ export function CompsBuilder({
     JSON.stringify(normalizeComp(initialComp as CompEntry)),
   );
   const [buildSnapshot, setBuildSnapshot] = useState<string | null>(null);
+  const [viewerBuildId, setViewerBuildId] = useState<string | null>(null);
 
   const activeParty =
     comp.parties.find((party) => party.key === activePartyKey) ??
@@ -331,6 +332,9 @@ export function CompsBuilder({
   const allSlots = comp.parties.flatMap((party) => party.slots);
   const activeEditorItem = editorBuild
     ? editorBuild.items[activeEditorSlot]
+    : null;
+  const viewerBuild = viewerBuildId
+    ? builds.find((entry) => entry.id === viewerBuildId) ?? null
     : null;
   const activeEditorPrimarySlot = editorBuild
     ? getPrimaryBuildSlot(editorBuild.role)
@@ -640,6 +644,16 @@ export function CompsBuilder({
           : createBuildEditorFromSlot(slot),
       ),
     );
+  }
+
+  function resolveBuildForSlot(slot: CompPartySlot): BuildTemplateEntry | null {
+    if (slot.buildId) {
+      const explicit = builds.find((entry) => entry.id === slot.buildId);
+      if (explicit) {
+        return explicit;
+      }
+    }
+    return getPreferredBuildForWeapon(slot.weaponId);
   }
 
   function updateEditorItem(
@@ -1099,7 +1113,11 @@ export function CompsBuilder({
                               aria-label={`Ver build de ${slot.label}`}
                               className={`comp-weapon-icon-button ${slot.weaponId ? "" : "empty"}`}
                               onClick={() => {
-                                if (canEdit && slot.weaponId) {
+                                if (!slot.weaponId) {
+                                  return;
+                                }
+
+                                if (canEdit) {
                                   openBuildEditor(
                                     {
                                       partyKey: activeParty.key,
@@ -1108,6 +1126,12 @@ export function CompsBuilder({
                                     slot,
                                     slot.buildId,
                                   );
+                                  return;
+                                }
+
+                                const selectedBuild = resolveBuildForSlot(slot);
+                                if (selectedBuild) {
+                                  setViewerBuildId(selectedBuild.id);
                                 }
                               }}
                               disabled={!slot.weaponId}
@@ -1386,6 +1410,47 @@ export function CompsBuilder({
                   )}
                 </div>
               </div>
+            </div>
+          </article>
+        </div>
+      ) : null}
+      {viewerBuild ? (
+        <div className="comp-modal-overlay" role="dialog" aria-modal="true">
+          <article className="comp-modal cta-build-modal">
+            <div className="section-row">
+              <div>
+                <span className="card-label">Build</span>
+                <h2>{viewerBuild.name}</h2>
+              </div>
+              <button
+                className="button ghost compact"
+                onClick={() => setViewerBuildId(null)}
+                type="button"
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="comp-build-meta">
+              <span className="status-badge">{viewerBuild.role}</span>
+              <span className="status-badge">{viewerBuild.weaponId}</span>
+            </div>
+            <div className="comp-build-grid">
+              {buildItemSlotOrder.map((slotKey) => {
+                const item = viewerBuild.items.find((entry) => entry.slot === slotKey);
+                return (
+                  <article className="comp-build-item" key={slotKey}>
+                    <span>{buildItemSlotLabel[slotKey]}</span>
+                    {item ? (
+                      <>
+                        <img alt={item.itemName} height={72} src={getItemIconUrl(item.itemId)} width={72} />
+                        <strong>{item.itemName}</strong>
+                      </>
+                    ) : (
+                      <em>Sin item</em>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           </article>
         </div>
