@@ -1886,7 +1886,7 @@ export function createApiServices(
 
       const usersById = new Map(users.map((user) => [user.id, user]));
       const ctasInMonth = ctas.filter((cta) => {
-        if (cta.status === "CANCELED") {
+        if (cta.status !== "FINALIZED") {
           return false;
         }
         const time = new Date(cta.datetimeUtc).getTime();
