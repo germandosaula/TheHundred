@@ -157,6 +157,13 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "trinity-spear", name: "Trinity Spear", role: "Melee" , iconName: "T8_2H_TRIDENT_UNDEAD"},
   { id: "daybreaker", name: "Daybreaker", role: "Melee" , iconName: "T8_MAIN_SPEAR_LANCE_AVALON"},
   { id: "broadsword", name: "Broadsword", role: "Melee" , iconName: "T8_MAIN_SWORD"},
+  {
+    id: "infinity-blade",
+    name: "Infinity Blade",
+    role: "Melee",
+    iconName: "T8_MAIN_SWORD_CRYSTAL",
+    aliases: ["main-sword-crystal", "sword-crystal"]
+  },
   { id: "claymore", name: "Claymore", role: "Melee" , iconName: "T8_2H_CLAYMORE"},
   { id: "dual-swords", name: "Dual Swords", role: "Melee" , iconName: "T8_2H_DUALSWORD"},
   { id: "carving-sword", name: "Carving Sword", role: "Pierce", iconName: "T8_2H_CLEAVER_HELL", aliases: ["cleaver-hell", "2h-cleaver-hell"] },
