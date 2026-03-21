@@ -647,29 +647,31 @@ export function createApiServices(
       minute: "2-digit",
       hour12: false
     })} UTC`;
-  const buildCtaRoleSummary = (comp: Awaited<ReturnType<DatabaseRepository["getCompById"]>>) => {
-    const totalByRole = new Map<string, number>();
+  const buildCtaWeaponLines = (
+    comp: Awaited<ReturnType<DatabaseRepository["getCompById"]>>,
+    signups: Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>
+  ) => {
     if (!comp) {
-      return totalByRole;
+      return [];
     }
-    for (const party of comp.parties) {
-      for (const slot of party.slots) {
-        totalByRole.set(slot.role, (totalByRole.get(slot.role) ?? 0) + 1);
-      }
-    }
-    return totalByRole;
-  };
-  const buildCtaAssignedSummary = (signups: Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>) => {
-    const byRole = new Map<string, string[]>();
-    for (const signup of signups) {
-      if (signup.isFill || signup.slotKey === "__FILL__") {
-        continue;
-      }
-      const current = byRole.get(signup.role) ?? [];
-      current.push(signup.playerName);
-      byRole.set(signup.role, current);
-    }
-    return byRole;
+    const signupBySlotKey = new Map(
+      signups
+        .filter((entry) => !entry.isFill && entry.slotKey !== "__FILL__")
+        .map((entry) => [entry.slotKey, entry])
+    );
+
+    return [...comp.parties]
+      .sort((left, right) => left.position - right.position)
+      .flatMap((party) =>
+        [...party.slots]
+          .sort((left, right) => left.position - right.position)
+          .map((slot) => {
+            const slotKey = `${party.key}:${slot.position}`;
+            const signup = signupBySlotKey.get(slotKey);
+            const assigned = signup?.playerName?.trim() ? `@${signup.playerName.trim()}` : "-";
+            return `• ${slot.weaponName} - ${assigned}`;
+          })
+      );
   };
   const buildCtaFillSummary = (signups: Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>) =>
     signups
@@ -698,24 +700,8 @@ export function createApiServices(
       repository.getCtaSignups(cta.id)
     ]);
 
-    const totalByRole = buildCtaRoleSummary(comp);
-    const assignedByRole = buildCtaAssignedSummary(signups);
+    const weaponLines = buildCtaWeaponLines(comp, signups);
     const fillLines = buildCtaFillSummary(signups);
-    const roleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
-    const roleLines = roleOrder
-      .filter((role) => totalByRole.has(role))
-      .map((role) => {
-        const assigned = assignedByRole.get(role)?.length ?? 0;
-        const total = totalByRole.get(role) ?? 0;
-        return `• ${role}: ${assigned}/${total}`;
-      });
-    const assignedLines = roleOrder.flatMap((role) => {
-      const players = assignedByRole.get(role) ?? [];
-      if (players.length === 0) {
-        return [];
-      }
-      return [`**${role}**`, ...players.map((name) => `• ${name}`)];
-    });
 
     const ctaUrl = buildCtaWebUrl(cta.id);
     const embed = {
@@ -729,13 +715,8 @@ export function createApiServices(
       ].join("\n"),
       fields: [
         {
-          name: "Roles disponibles",
-          value: roleLines.length > 0 ? roleLines.join("\n").slice(0, 1024) : "Sin comp asignada.",
-          inline: true
-        },
-        {
-          name: "Apuntados por rol",
-          value: assignedLines.length > 0 ? assignedLines.join("\n").slice(0, 1024) : "Sin apuntados todavía.",
+          name: "Armas / apuntados",
+          value: weaponLines.length > 0 ? weaponLines.join("\n").slice(0, 1024) : "Sin comp asignada.",
           inline: true
         },
         {

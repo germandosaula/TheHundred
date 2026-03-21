@@ -4,15 +4,30 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { CompEntry } from "../../lib";
 
-function toIsoUtc(datetimeLocal: string): string | null {
-  if (!datetimeLocal) {
+function toIsoUtcFromUtcInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
     return null;
   }
-  const date = new Date(datetimeLocal);
-  if (Number.isNaN(date.getTime())) {
+
+  const match = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/
+  );
+  if (!match) {
     return null;
   }
-  return date.toISOString();
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  if (Number.isNaN(utcDate.getTime())) {
+    return null;
+  }
+
+  return utcDate.toISOString();
 }
 
 export function CtaCreatePanel({ comps }: { comps: CompEntry[] }) {
@@ -26,7 +41,7 @@ export function CtaCreatePanel({ comps }: { comps: CompEntry[] }) {
     if (busy) {
       return;
     }
-    const datetimeUtc = toIsoUtc(datetimeLocal);
+    const datetimeUtc = toIsoUtcFromUtcInput(datetimeLocal);
     if (!title.trim() || !datetimeUtc) {
       window.alert("Titulo y fecha/hora son obligatorios.");
       return;
@@ -102,6 +117,9 @@ export function CtaCreatePanel({ comps }: { comps: CompEntry[] }) {
             type="datetime-local"
             value={datetimeLocal}
           />
+          <small>
+            El valor introducido se interpreta como UTC (no como hora local).
+          </small>
         </label>
         <button className="button primary compact cta-create-action" disabled={busy} onClick={() => void createCta()} type="button">
           {busy ? "Creando..." : "Crear CTA"}
