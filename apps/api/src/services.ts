@@ -1578,7 +1578,7 @@ export function createApiServices(
         slotKey: "__FILL__",
         slotLabel: "Para fillear",
         weaponName: "",
-        playerName: actor.displayName,
+        playerName: getCtaSignupPlayerName(actor),
         preferredRoles: normalizedRoles,
         isFill: true
       });
@@ -1593,7 +1593,7 @@ export function createApiServices(
         ok: true,
         filler: {
           memberId: member.id,
-          playerName: actor.displayName,
+          playerName: getCtaSignupPlayerName(actor),
           playerUserId: actor.id,
           preferredRoles: normalizedRoles
         }
@@ -2076,7 +2076,7 @@ export function createApiServices(
         slotKey: targetSlot.slotKey,
         slotLabel: targetSlot.label,
         weaponName: targetSlot.weaponName,
-        playerName: user.displayName,
+        playerName: getCtaSignupPlayerName(user),
         preferredRoles: [],
         isFill: false
       });
@@ -2106,6 +2106,14 @@ export function createApiServices(
 function normalizeRosterPlayerName(value?: string): string | null {
   const normalized = value?.trim().toLowerCase();
   return normalized ? normalized : null;
+}
+
+function getCtaSignupPlayerName(user: { albionName?: string; displayName: string }): string {
+  const albionName = user.albionName?.trim();
+  if (albionName) {
+    return albionName;
+  }
+  return user.displayName;
 }
 
 function normalizeGuildName(value?: string): string | null {

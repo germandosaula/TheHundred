@@ -2730,7 +2730,7 @@ async function handleCtaSignupSelect(interaction: StringSelectMenuInteraction) {
     slotKey: selectedSlot.key,
     slotLabel: selectedSlot.label,
     weaponName: selectedSlot.weaponName,
-    playerName: user.displayName
+    playerName: user.albionName?.trim() || user.displayName
   });
   await repository.upsertAttendance({
     ctaId: cta.id,
