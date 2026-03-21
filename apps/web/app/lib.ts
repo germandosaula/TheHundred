@@ -296,6 +296,7 @@ export interface BottledEnergyData {
   balances: BottledEnergyBalanceEntry[];
   unmatched: BottledEnergyUnmatchedEntry[];
   updatedAt: string;
+  publishConfigured?: boolean;
 }
 
 export interface AlbionPlayerLookupData {

@@ -66,6 +66,8 @@ const recruiterRoleIds = ["1480276764524806145"];
 const phase2AllowedRoleIds = [...new Set([...managementRoleIds, ...recruiterRoleIds])];
 const economyAuditChannelId =
   process.env.DISCORD_ECONOMY_AUDIT_CHANNEL_ID ?? "1483471603495993484";
+const pagarSinPeleaVoiceChannelId =
+  process.env.DISCORD_PAGAR_SIN_PELEA_VOICE_CHANNEL_ID ?? "1477634488673505315";
 const albionBbBaseUrl = process.env.ALBION_BB_API_BASE_URL ?? "https://api.albionbb.com/eu";
 const killboardClient = createKillboardClient({
   source: "albionbb",
@@ -108,6 +110,39 @@ const payoutLootCommand = new SlashCommandBuilder()
       .setName("guild_name")
       .setDescription("Nombre exacto de la guild a filtrar")
       .setRequired(true)
+  )
+  .addIntegerOption((option) =>
+    option.setName("est_value").setDescription("Loot estimado").setRequired(true).setMinValue(0)
+  )
+  .addIntegerOption((option) =>
+    option.setName("bolsas").setDescription("Bolsas/cash extra").setRequired(true).setMinValue(0)
+  )
+  .addIntegerOption((option) =>
+    option
+      .setName("repair_cost")
+      .setDescription("Coste total de reparacion")
+      .setRequired(true)
+      .setMinValue(0)
+  )
+  .addIntegerOption((option) =>
+    option.setName("tax").setDescription("Tax %").setRequired(true).setMinValue(0).setMaxValue(100)
+  );
+
+const payoutNoBattleCommand = new SlashCommandBuilder()
+  .setName("pagarsinpelea")
+  .setDescription("Procesa un lootsplit sin battle link usando conectados de voz.")
+  .addChannelOption((option) =>
+    option
+      .setName("canal_voz")
+      .setDescription("Canal de voz a usar (si no, usa el canal fijo configurado)")
+      .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
+      .setRequired(false)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("guild_name")
+      .setDescription("Nombre de la guild para el recibo/auditoria")
+      .setRequired(false)
   )
   .addIntegerOption((option) =>
     option.setName("est_value").setDescription("Loot estimado").setRequired(true).setMinValue(0)
@@ -602,6 +637,8 @@ console.log("[bot] startup config", {
   repositoryProviderSource: resolveEnvSource("REPOSITORY_PROVIDER"),
   economyAuditChannelId,
   economyAuditChannelSource: resolveEnvSource("DISCORD_ECONOMY_AUDIT_CHANNEL_ID"),
+  pagarSinPeleaVoiceChannelId: pagarSinPeleaVoiceChannelId ?? "unset",
+  pagarSinPeleaVoiceChannelSource: resolveEnvSource("DISCORD_PAGAR_SIN_PELEA_VOICE_CHANNEL_ID"),
   scheduledEventsRepositoryMethods: hasNativeScheduledEventsRepositoryMethods()
     ? "native"
     : "fallback-supabase-rest",
@@ -612,7 +649,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildVoiceStates
   ],
   partials: [Partials.Message, Partials.Channel]
 });
@@ -624,6 +662,7 @@ client.once("clientReady", async () => {
     syncMemberCommand.toJSON(),
     rolesAuditCommand.toJSON(),
     payoutLootCommand.toJSON(),
+    payoutNoBattleCommand.toJSON(),
     balanceCommand.toJSON(),
     payCommand.toJSON(),
     withdrawCommand.toJSON(),
@@ -698,6 +737,11 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "pagar-loot") {
       await handlePagarLootCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "pagarsinpelea") {
+      await handlePagarSinPeleaCommand(interaction);
       return;
     }
 
@@ -1223,6 +1267,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
     await interaction.editReply("No se encontraron jugadores de esa guild en las batallas indicadas.");
     return;
   }
+  const participantCountForSplit = memberNames.size;
 
   const [users, members] = await Promise.all([repository.getUsers(), repository.getMembers()]);
   const usersByAlbionLower = new Map<string, Array<(typeof users)[number]>>();
@@ -1287,7 +1332,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
     return;
   }
 
-  const perPerson = Math.floor(finalPool / eligiblePayouts.length);
+  const perPerson = Math.floor(finalPool / participantCountForSplit);
   if (perPerson <= 0) {
     await interaction.editReply("El reparto por persona da 0. Ajusta valores.");
     return;
@@ -1307,7 +1352,8 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
     bags,
     repairCost,
     taxPercent,
-    participantUserIds: eligiblePayouts.map((entry) => entry.userId)
+    participantUserIds: eligiblePayouts.map((entry) => entry.userId),
+    participantNames: [...memberNames]
   });
 
   const payoutResult = await repository.createLootSplitPayout({
@@ -1324,7 +1370,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
     netAfterRep,
     taxAmount,
     finalPool,
-    participantCount: eligiblePayouts.length,
+    participantCount: participantCountForSplit,
     perPerson,
     payouts: eligiblePayouts.map((entry) => ({
       ...entry,
@@ -1372,13 +1418,15 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
       formatReceiptRow(`Impuesto (${taxPercent}%)`, `-${formatMoney(taxAmount)}`),
       formatReceiptDivider(),
       formatReceiptRow("POOL FINAL", formatMoney(finalPool)),
-      formatReceiptRow("Particip. (eleg.)", String(eligiblePayouts.length)),
+      formatReceiptRow("Particip. total", String(participantCountForSplit)),
+      formatReceiptRow("Pagados auto", String(eligiblePayouts.length)),
+      formatReceiptRow("Pend. manuales", String(unresolvedCount)),
       formatReceiptRow("POR PERSONA", formatMoney(perPerson)),
       "```",
       payoutResult.alreadyProcessed
         ? `ℹ️ Reintento detectado: payout ya procesado (sin pagos duplicados).`
-        : `✅ Pagados: ${eligiblePayouts.length}`,
-      `⚠️ No encontrados/inelegibles: ${unresolvedCount}`,
+        : `✅ Pagados automáticos: ${eligiblePayouts.length}/${participantCountForSplit}`,
+      `⚠️ Pendientes manuales: ${unresolvedCount}`,
       `Payout ID: ${payoutRecord.id}`,
       channelRole ? `Rol CTA: <@&${channelRole.id}>` : "",
       channelRole && !payoutResult.alreadyProcessed
@@ -1401,14 +1449,259 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
     interaction,
     summary: payoutResult.alreadyProcessed
       ? `Reintento detectado para payout ${payoutRecord.id}. Sin cambios de balance.`
-      : `Lootsplit procesado para ${eligiblePayouts.length} participantes.`,
+      : `Lootsplit procesado para ${participantCountForSplit} participantes (${eligiblePayouts.length} pagos automáticos).`,
     details: [
       `Payout ID: ${payoutRecord.id}`,
       `Guild: ${guildName}`,
       `Pool final: ${formatMoney(finalPool)}`,
       `Por persona: ${formatMoney(perPerson)}`,
-      `Participantes: ${eligiblePayouts.length}`,
-      `No elegibles: ${unresolvedCount}`
+      `Participantes totales: ${participantCountForSplit}`,
+      `Pagados automáticos: ${eligiblePayouts.length}`,
+      `Pendientes manuales: ${unresolvedCount}`
+    ],
+    color: payoutResult.alreadyProcessed ? 0x94a3b8 : 0x22c55e
+  });
+}
+
+async function handlePagarSinPeleaCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      staffRoleIds,
+      "Solo Staff puede usar /pagarsinpelea."
+    ))
+  ) {
+    return;
+  }
+
+  await interaction.deferReply();
+
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.editReply("Este comando solo se puede usar dentro del servidor.");
+    return;
+  }
+
+  const selectedVoiceChannel = interaction.options.getChannel("canal_voz");
+  const targetVoiceChannelId = selectedVoiceChannel?.id ?? pagarSinPeleaVoiceChannelId;
+  if (!targetVoiceChannelId) {
+    await interaction.editReply(
+      "Falta configurar el canal de voz. Usa la opción `canal_voz` o define DISCORD_PAGAR_SIN_PELEA_VOICE_CHANNEL_ID."
+    );
+    return;
+  }
+
+  const voiceChannel = await guild.channels.fetch(targetVoiceChannelId).catch(() => null);
+  if (
+    !voiceChannel ||
+    (voiceChannel.type !== ChannelType.GuildVoice &&
+      voiceChannel.type !== ChannelType.GuildStageVoice)
+  ) {
+    await interaction.editReply("No pude resolver un canal de voz válido para este pago.");
+    return;
+  }
+
+  const connectedMembers = [...voiceChannel.members.values()].filter((member) => !member.user.bot);
+  if (connectedMembers.length === 0) {
+    await interaction.editReply(`No hay miembros conectados en <#${voiceChannel.id}>.`);
+    return;
+  }
+
+  const guildName =
+    interaction.options.getString("guild_name")?.trim() || guild.name.trim() || "UNKNOWN";
+  const splitRole = "AUTO";
+  const estValue = interaction.options.getInteger("est_value", true);
+  const bags = interaction.options.getInteger("bolsas", true);
+  const repairCost = interaction.options.getInteger("repair_cost", true);
+  const taxPercent = interaction.options.getInteger("tax", true);
+
+  const participantCountForSplit = connectedMembers.length;
+  const [users, members] = await Promise.all([repository.getUsers(), repository.getMembers()]);
+  const usersByDiscordId = new Map(
+    users
+      .filter((entry) => Boolean(entry.discordId))
+      .map((entry) => [entry.discordId as string, entry])
+  );
+  const memberByUserId = new Map(members.map((member) => [member.userId, member]));
+
+  const eligiblePayouts: Array<{
+    memberId: string;
+    userId: string;
+    playerName: string;
+  }> = [];
+  const unresolvedByReason: Array<{ playerName: string; reason: string }> = [];
+  const detectedParticipantNames: string[] = [];
+
+  for (const discordMember of connectedMembers) {
+    const linkedUser = usersByDiscordId.get(discordMember.user.id);
+    const participantName =
+      linkedUser?.albionName?.trim() || discordMember.displayName || discordMember.user.username;
+    detectedParticipantNames.push(participantName);
+
+    if (!linkedUser) {
+      unresolvedByReason.push({ playerName: participantName, reason: "sin usuario enlazado en web" });
+      continue;
+    }
+
+    const member = memberByUserId.get(linkedUser.id);
+    if (!member) {
+      unresolvedByReason.push({ playerName: participantName, reason: "sin miembro de guild" });
+      continue;
+    }
+    if (member.status === "REJECTED") {
+      unresolvedByReason.push({ playerName: participantName, reason: "miembro rechazado" });
+      continue;
+    }
+
+    eligiblePayouts.push({
+      memberId: member.id,
+      userId: linkedUser.id,
+      playerName: participantName
+    });
+  }
+
+  const grossTotal = estValue + bags;
+  const netAfterRep = grossTotal - repairCost;
+  const taxAmount = Math.floor((netAfterRep * taxPercent) / 100);
+  const finalPool = netAfterRep - taxAmount;
+
+  if (eligiblePayouts.length === 0) {
+    await interaction.editReply(
+      `No hay participantes elegibles. Detectados en voz: ${participantCountForSplit}.`
+    );
+    return;
+  }
+  if (finalPool <= 0) {
+    await interaction.editReply("El pool final es <= 0. Revisa est_value, bolsas, repair_cost y tax.");
+    return;
+  }
+
+  const perPerson = Math.floor(finalPool / participantCountForSplit);
+  if (perPerson <= 0) {
+    await interaction.editReply("El reparto por persona da 0. Ajusta valores.");
+    return;
+  }
+
+  const actorUserId = await resolveActorUserId(interaction);
+  if (!actorUserId) {
+    await interaction.editReply("Tu usuario Discord no esta enlazado en web.");
+    return;
+  }
+
+  const idempotencyKey = buildLootSplitIdempotencyKey({
+    battleIds: [`voice:${voiceChannel.id}`],
+    guildName,
+    splitRole,
+    estValue,
+    bags,
+    repairCost,
+    taxPercent,
+    participantUserIds: eligiblePayouts.map((entry) => entry.userId),
+    participantNames: detectedParticipantNames
+  });
+
+  const payoutResult = await repository.createLootSplitPayout({
+    createdBy: actorUserId,
+    battleLink: `voice:${voiceChannel.id}`,
+    battleIds: [`voice:${voiceChannel.id}`],
+    guildName,
+    splitRole,
+    estValue,
+    bags,
+    repairCost,
+    taxPercent,
+    grossTotal,
+    netAfterRep,
+    taxAmount,
+    finalPool,
+    participantCount: participantCountForSplit,
+    perPerson,
+    payouts: eligiblePayouts.map((entry) => ({
+      ...entry,
+      amount: perPerson
+    })),
+    idempotencyKey
+  });
+  const payoutRecord = payoutResult.payout;
+
+  const channelRole = await ensureLootSplitChannelRole(interaction);
+  const paidUsers = payoutResult.alreadyProcessed ? [] : await resolvePaidUsers(eligiblePayouts);
+  const paidMentions = paidUsers.map((entry) => `<@${entry.discordId}>`);
+  let roleAssigned = 0;
+  let roleAssignFailed = 0;
+  if (channelRole && !payoutResult.alreadyProcessed) {
+    const roleAssignment = await assignRoleToPaidUsers(interaction, channelRole.id, paidUsers);
+    roleAssigned = roleAssignment.assigned;
+    roleAssignFailed = roleAssignment.failed;
+  }
+
+  const unresolvedCount = unresolvedByReason.length;
+  const unresolvedPreviewLimit = 12;
+  const unresolvedPreview =
+    unresolvedByReason.length > 0
+      ? unresolvedByReason
+          .slice(0, unresolvedPreviewLimit)
+          .map((entry) => `- ${entry.playerName}: ${entry.reason}`)
+          .join("\n")
+      : "";
+
+  await interaction.editReply(
+    [
+      "📄 **RECIBO DE LOOTSPLIT (SIN PELEA)**",
+      `Fuente: <#${voiceChannel.id}>`,
+      `Guild: ${guildName}`,
+      "",
+      "```",
+      formatReceiptRow("Loot Estimado", formatMoney(estValue)),
+      formatReceiptRow("Bolsas", formatMoney(bags)),
+      formatReceiptDivider(),
+      formatReceiptRow("TOTAL BRUTO", formatMoney(grossTotal)),
+      formatReceiptRow("Coste Repair", `-${formatMoney(repairCost)}`),
+      formatReceiptDivider(),
+      formatReceiptRow("Neto (post repair)", formatMoney(netAfterRep)),
+      formatReceiptRow(`Impuesto (${taxPercent}%)`, `-${formatMoney(taxAmount)}`),
+      formatReceiptDivider(),
+      formatReceiptRow("POOL FINAL", formatMoney(finalPool)),
+      formatReceiptRow("Particip. total", String(participantCountForSplit)),
+      formatReceiptRow("Pagados auto", String(eligiblePayouts.length)),
+      formatReceiptRow("Pend. manuales", String(unresolvedCount)),
+      formatReceiptRow("POR PERSONA", formatMoney(perPerson)),
+      "```",
+      payoutResult.alreadyProcessed
+        ? `ℹ️ Reintento detectado: payout ya procesado (sin pagos duplicados).`
+        : `✅ Pagados automáticos: ${eligiblePayouts.length}/${participantCountForSplit}`,
+      `⚠️ Pendientes manuales: ${unresolvedCount}`,
+      `Payout ID: ${payoutRecord.id}`,
+      channelRole ? `Rol CTA: <@&${channelRole.id}>` : "",
+      channelRole && !payoutResult.alreadyProcessed
+        ? `Rol asignado: ${roleAssigned} | Fallidos: ${roleAssignFailed}`
+        : "",
+      paidMentions.length > 0 ? "" : payoutResult.alreadyProcessed ? "" : "Sin menciones disponibles.",
+      paidMentions.length > 0 ? `Pagado a: ${paidMentions.join(", ")}` : "",
+      unresolvedPreview
+        ? `No encontrados (muestra ${Math.min(unresolvedPreviewLimit, unresolvedByReason.length)}/${unresolvedByReason.length}):`
+        : "",
+      unresolvedPreview ? unresolvedPreview : ""
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+
+  await sendEconomyAuditLog({
+    action: "pagarsinpelea",
+    interaction,
+    summary: payoutResult.alreadyProcessed
+      ? `Reintento detectado para payout ${payoutRecord.id}. Sin cambios de balance.`
+      : `Lootsplit sin pelea procesado para ${participantCountForSplit} participantes (${eligiblePayouts.length} pagos automáticos).`,
+    details: [
+      `Payout ID: ${payoutRecord.id}`,
+      `Fuente: canal de voz ${voiceChannel.name}`,
+      `Guild: ${guildName}`,
+      `Pool final: ${formatMoney(finalPool)}`,
+      `Por persona: ${formatMoney(perPerson)}`,
+      `Participantes totales: ${participantCountForSplit}`,
+      `Pagados automáticos: ${eligiblePayouts.length}`,
+      `Pendientes manuales: ${unresolvedCount}`
     ],
     color: payoutResult.alreadyProcessed ? 0x94a3b8 : 0x22c55e
   });
@@ -2175,6 +2468,7 @@ function buildLootSplitIdempotencyKey(input: {
   repairCost: number;
   taxPercent: number;
   participantUserIds: string[];
+  participantNames: string[];
 }): string {
   const payload = JSON.stringify({
     battleIds: [...new Set(input.battleIds)].sort(),
@@ -2184,7 +2478,8 @@ function buildLootSplitIdempotencyKey(input: {
     bags: input.bags,
     repairCost: input.repairCost,
     taxPercent: input.taxPercent,
-    participantUserIds: [...new Set(input.participantUserIds)].sort()
+    participantUserIds: [...new Set(input.participantUserIds)].sort(),
+    participantNames: [...new Set(input.participantNames.map((name) => normalizeAlbionNameForMatch(name)))].sort()
   });
 
   return createHash("sha256").update(payload).digest("hex");

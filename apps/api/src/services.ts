@@ -254,6 +254,7 @@ export interface ApiServices {
       lastSeenAt: string;
     }>;
     updatedAt: string;
+    publishConfigured: boolean;
   }>;
   previewBottledEnergyImport(
     actor: User,
@@ -491,6 +492,7 @@ export function createApiServices(
   }
 ): ApiServices {
   const compRoleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
+  const bottledEnergyRoleId = "1484999230186721391";
   const requireStaffAccess = async (actor: User) => {
     const actorMember = await repository.getMemberByUserId(actor.id);
     if (actorMember?.discordRoleStatus === "COUNCIL" && !actorMember.kickedAt) {
@@ -538,6 +540,60 @@ export function createApiServices(
     }
 
     throw new DomainError("Staff o Caller role required");
+  };
+  const isDiscordPublishConfigured = () =>
+    Boolean(
+      options.discordGuildId?.trim() &&
+        options.discordBotToken?.trim() &&
+        options.discordBottledEnergyChannelId?.trim()
+    );
+  const filterBottledEnergyBalancesByDiscordRole = async <
+    T extends { discordId: string }
+  >(
+    balances: T[]
+  ): Promise<T[]> => {
+    const guildId = options.discordGuildId?.trim();
+    const botToken = options.discordBotToken?.trim();
+    if (!guildId || !botToken) {
+      return balances;
+    }
+
+    const cache = new Map<string, boolean>();
+    const checks = await Promise.all(
+      balances.map(async (entry) => {
+        const discordId = entry.discordId?.trim();
+        if (!discordId) {
+          return false;
+        }
+        const cached = cache.get(discordId);
+        if (typeof cached === "boolean") {
+          return cached;
+        }
+        try {
+          const response = await fetch(
+            `https://discord.com/api/v10/guilds/${guildId}/members/${discordId}`,
+            {
+              headers: {
+                authorization: `Bot ${botToken}`
+              }
+            }
+          );
+          if (!response.ok) {
+            cache.set(discordId, false);
+            return false;
+          }
+          const payload = (await response.json()) as { roles?: string[] };
+          const hasRole = (payload.roles ?? []).includes(bottledEnergyRoleId);
+          cache.set(discordId, hasRole);
+          return hasRole;
+        } catch {
+          cache.set(discordId, false);
+          return false;
+        }
+      })
+    );
+
+    return balances.filter((_, index) => checks[index]);
   };
 
   return {
@@ -1287,14 +1343,16 @@ export function createApiServices(
 
     async getBottledEnergyBalances(actor) {
       await requireStaffAccess(actor);
-      const [balances, unmatched] = await Promise.all([
+      const [allBalances, unmatched] = await Promise.all([
         repository.listBottledEnergyBalances(),
         repository.listBottledEnergyUnmatchedBalances()
       ]);
+      const balances = await filterBottledEnergyBalancesByDiscordRole(allBalances);
       return {
         balances,
         unmatched,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        publishConfigured: isDiscordPublishConfigured()
       };
     },
 
@@ -1384,9 +1442,9 @@ export function createApiServices(
       }
 
       const balances = await repository.listBottledEnergyBalances();
-      const eligible = balances.filter((entry) => entry.discordId?.trim().length > 0);
+      const eligible = await filterBottledEnergyBalancesByDiscordRole(balances);
       if (eligible.length === 0) {
-        throw new DomainError("No hay miembros con Discord ID para mencionar.");
+        throw new DomainError("No hay miembros elegibles con el rol configurado para mencionar.");
       }
 
       const header = "📦 **Balance embotelladas actualizado**";

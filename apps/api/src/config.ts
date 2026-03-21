@@ -52,7 +52,7 @@ export function loadApiConfig(): ApiConfig {
       process.env.ALBION_BATTLES_SOURCE === "albionbb" ? "albionbb" : "official",
     albionBattlesGuildId: process.env.ALBION_BATTLES_GUILD_ID ?? "",
     albionBattlesGuildName: process.env.ALBION_BATTLES_GUILD_NAME ?? "The Hundred",
-    albionBattlesMinGuildPlayers: Number(process.env.ALBION_BATTLES_MIN_GUILD_PLAYERS ?? 20),
+    albionBattlesMinGuildPlayers: Number(process.env.ALBION_BATTLES_MIN_GUILD_PLAYERS ?? 10),
     albionBattlesLimit: Number(process.env.ALBION_BATTLES_LIMIT ?? 12),
     launchCountdownEnabled: process.env.LAUNCH_COUNTDOWN_ENABLED !== "0",
     launchAtIso: process.env.LAUNCH_AT_ISO ?? "2026-03-23T12:00:00+01:00",

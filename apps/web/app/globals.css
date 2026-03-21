@@ -5471,9 +5471,21 @@ li {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.embotelladas-head span:last-child {
+.embotelladas-head > :last-child {
   justify-self: end;
   text-align: right;
+}
+
+.embotelladas-sort-button {
+  justify-self: end;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  padding: 0;
 }
 
 .embotelladas-row {

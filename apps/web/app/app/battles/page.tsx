@@ -53,7 +53,7 @@ export default async function BattlesPage() {
         </div>
         <p className="lede">
           Batallas de {guildLabel} donde almenos hubo{" "}
-          {battles?.minGuildPlayers ?? 20} jugadores. <br />
+          {battles?.minGuildPlayers ?? 10} jugadores. <br />
           Únicamente trackea content ZvZ, para lo demás AlbionBB.
         </p>
       </article>

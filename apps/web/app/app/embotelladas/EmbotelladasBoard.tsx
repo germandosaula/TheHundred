@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { BottledEnergyData } from "../../lib";
 
 interface EmbotelladasBoardProps {
@@ -54,6 +54,7 @@ function formatDate(value: string) {
 
 export function EmbotelladasBoard({ initialData }: EmbotelladasBoardProps) {
   const [data, setData] = useState(initialData);
+  const [balanceSortDirection, setBalanceSortDirection] = useState<"asc" | "desc">("asc");
   const [raw, setRaw] = useState("");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -71,6 +72,16 @@ export function EmbotelladasBoard({ initialData }: EmbotelladasBoardProps) {
     }
     return "balance-neutral";
   }
+
+  const sortedBalances = useMemo(() => {
+    const factor = balanceSortDirection === "asc" ? 1 : -1;
+    return [...data.balances].sort((left, right) => {
+      if (left.balance !== right.balance) {
+        return (left.balance - right.balance) * factor;
+      }
+      return left.displayName.localeCompare(right.displayName, "es");
+    });
+  }, [balanceSortDirection, data.balances]);
 
   async function refreshBalances() {
     const response = await fetch("/council/bottled-energy", { method: "GET" });
@@ -242,11 +253,15 @@ export function EmbotelladasBoard({ initialData }: EmbotelladasBoardProps) {
           </button>
           <button
             className="button discord-action"
-            disabled={busy !== null}
+            disabled={busy !== null || !data.publishConfigured}
             onClick={() => void handlePublish()}
             type="button"
           >
-            {busy === "publish" ? "Publicando..." : "Publicar en Discord"}
+            {busy === "publish"
+              ? "Publicando..."
+              : data.publishConfigured
+                ? "Publicar en Discord"
+                : "Discord no configurado"}
           </button>
           <button
             className="button danger-outline"
@@ -258,6 +273,9 @@ export function EmbotelladasBoard({ initialData }: EmbotelladasBoardProps) {
           </button>
         </div>
         {error ? <p className="status-text error">{error}</p> : null}
+        {!data.publishConfigured ? (
+          <p className="status-text">Publicación en Discord no disponible por configuración.</p>
+        ) : null}
         {preview ? (
           <div className="embotelladas-summary">
             <strong>Preview</strong>
@@ -310,9 +328,17 @@ export function EmbotelladasBoard({ initialData }: EmbotelladasBoardProps) {
           <div className="embotelladas-head">
             <span>Discord</span>
             <span>Albion</span>
-            <span>Balance</span>
+            <button
+              className="embotelladas-sort-button"
+              onClick={() =>
+                setBalanceSortDirection((current) => (current === "asc" ? "desc" : "asc"))
+              }
+              type="button"
+            >
+              Balance {balanceSortDirection === "asc" ? "↑" : "↓"}
+            </button>
           </div>
-          {data.balances.map((entry) => (
+          {sortedBalances.map((entry) => (
             <div className="embotelladas-row" key={entry.userId}>
               <span>{entry.displayName}</span>
               <span>{entry.albionName ?? "Sin albion_name"}</span>
