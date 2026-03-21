@@ -131,19 +131,6 @@ const payoutLootCommand = new SlashCommandBuilder()
 const payoutNoBattleCommand = new SlashCommandBuilder()
   .setName("pagarsinpelea")
   .setDescription("Procesa un lootsplit sin battle link usando conectados de voz.")
-  .addChannelOption((option) =>
-    option
-      .setName("canal_voz")
-      .setDescription("Canal de voz a usar (si no, usa el canal fijo configurado)")
-      .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
-      .setRequired(false)
-  )
-  .addStringOption((option) =>
-    option
-      .setName("guild_name")
-      .setDescription("Nombre de la guild para el recibo/auditoria")
-      .setRequired(false)
-  )
   .addIntegerOption((option) =>
     option.setName("est_value").setDescription("Loot estimado").setRequired(true).setMinValue(0)
   )
@@ -159,6 +146,19 @@ const payoutNoBattleCommand = new SlashCommandBuilder()
   )
   .addIntegerOption((option) =>
     option.setName("tax").setDescription("Tax %").setRequired(true).setMinValue(0).setMaxValue(100)
+  )
+  .addChannelOption((option) =>
+    option
+      .setName("canal_voz")
+      .setDescription("Canal de voz a usar (si no, usa el canal fijo configurado)")
+      .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
+      .setRequired(false)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("guild_name")
+      .setDescription("Nombre de la guild para el recibo/auditoria")
+      .setRequired(false)
   );
 
 const balanceCommand = new SlashCommandBuilder()

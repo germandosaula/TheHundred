@@ -547,6 +547,49 @@ export function createApiServices(
         options.discordBotToken?.trim() &&
         options.discordBottledEnergyChannelId?.trim()
     );
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  const fetchDiscordMemberRoles = async (
+    guildId: string,
+    discordId: string,
+    botToken: string
+  ): Promise<string[] | null> => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const response = await fetch(
+          `https://discord.com/api/v10/guilds/${guildId}/members/${discordId}`,
+          {
+            headers: {
+              authorization: `Bot ${botToken}`
+            }
+          }
+        );
+
+        if (response.status === 429) {
+          const payload = (await response.json().catch(() => null)) as { retry_after?: number } | null;
+          const retryAfterMs = Math.max(250, Math.ceil((payload?.retry_after ?? 1) * 1000));
+          await wait(retryAfterMs);
+          continue;
+        }
+
+        if (!response.ok) {
+          return null;
+        }
+
+        const payload = (await response.json()) as { roles?: string[] };
+        return payload.roles ?? [];
+      } catch {
+        if (attempt === 3) {
+          return null;
+        }
+        await wait(400);
+      }
+    }
+
+    return null;
+  };
   const filterBottledEnergyBalancesByDiscordRole = async <
     T extends { discordId: string }
   >(
@@ -559,41 +602,30 @@ export function createApiServices(
     }
 
     const cache = new Map<string, boolean>();
-    const checks = await Promise.all(
-      balances.map(async (entry) => {
-        const discordId = entry.discordId?.trim();
-        if (!discordId) {
-          return false;
-        }
-        const cached = cache.get(discordId);
-        if (typeof cached === "boolean") {
-          return cached;
-        }
-        try {
-          const response = await fetch(
-            `https://discord.com/api/v10/guilds/${guildId}/members/${discordId}`,
-            {
-              headers: {
-                authorization: `Bot ${botToken}`
-              }
-            }
-          );
-          if (!response.ok) {
-            cache.set(discordId, false);
-            return false;
-          }
-          const payload = (await response.json()) as { roles?: string[] };
-          const hasRole = (payload.roles ?? []).includes(bottledEnergyRoleId);
-          cache.set(discordId, hasRole);
-          return hasRole;
-        } catch {
-          cache.set(discordId, false);
-          return false;
-        }
-      })
-    );
+    const filtered: T[] = [];
+    for (const entry of balances) {
+      const discordId = entry.discordId?.trim();
+      if (!discordId) {
+        continue;
+      }
 
-    return balances.filter((_, index) => checks[index]);
+      const cached = cache.get(discordId);
+      if (typeof cached === "boolean") {
+        if (cached) {
+          filtered.push(entry);
+        }
+        continue;
+      }
+
+      const roles = await fetchDiscordMemberRoles(guildId, discordId, botToken);
+      const hasRole = Boolean(roles?.includes(bottledEnergyRoleId));
+      cache.set(discordId, hasRole);
+      if (hasRole) {
+        filtered.push(entry);
+      }
+    }
+
+    return filtered;
   };
 
   return {
