@@ -36,7 +36,8 @@ const services = createApiServices(repository, killboard, {
   discordGuildId: config.discordGuildId,
   discordBotToken: config.discordBotToken,
   discordCallerRoleIds: config.discordCallerRoleIds,
-  discordBottledEnergyChannelId: config.discordBottledEnergyChannelId
+  discordBottledEnergyChannelId: config.discordBottledEnergyChannelId,
+  discordCtaChannelId: config.discordCtaChannelId
 });
 const auth = createAuthServices(repository, config);
 

@@ -301,9 +301,8 @@ const ctaSlotEmojiPool = [
 ] as const;
 
 const ctaReminderThresholds = [
-  { label: "2h", ms: 2 * 60 * 60 * 1000 },
   { label: "1h", ms: 60 * 60 * 1000 },
-  { label: "30m", ms: 30 * 60 * 1000 }
+  { label: "15m", ms: 15 * 60 * 1000 }
 ] as const;
 const ctaReminderToleranceMs = 60 * 1000;
 const ctaReminderChannelId = "1479151829832171731";

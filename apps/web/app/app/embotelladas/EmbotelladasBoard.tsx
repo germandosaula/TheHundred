@@ -82,6 +82,10 @@ export function EmbotelladasBoard({ initialData }: EmbotelladasBoardProps) {
       return left.displayName.localeCompare(right.displayName, "es");
     });
   }, [balanceSortDirection, data.balances]);
+  const totalBalance = useMemo(
+    () => data.balances.reduce((sum, entry) => sum + entry.balance, 0),
+    [data.balances]
+  );
 
   async function refreshBalances() {
     const response = await fetch("/council/bottled-energy", { method: "GET" });
@@ -321,7 +325,7 @@ export function EmbotelladasBoard({ initialData }: EmbotelladasBoardProps) {
         <div className="section-row compact">
           <h3>Balance por miembro</h3>
           <span className="status-text">
-            Actualizado: {formatDate(data.updatedAt)}
+            Total balance: {totalBalance} · Actualizado: {formatDate(data.updatedAt)}
           </span>
         </div>
         <div className="embotelladas-table">

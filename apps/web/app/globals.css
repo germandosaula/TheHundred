@@ -4701,6 +4701,26 @@ li {
   gap: 6px;
 }
 
+.cta-fill-remove-button {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #ff6b6b;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.cta-fill-remove-button:hover {
+  color: #ff8a8a;
+}
+
+.cta-fill-remove-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .user-self-badge {
   background: rgba(255, 206, 84, 0.18);
   color: var(--accent);

@@ -231,6 +231,13 @@ export async function routeRequest(
     return json(await services.signupForFill(currentUser, { ctaId, roles: payload.roles }));
   }
 
+  if (method === "DELETE" && url.pathname.match(/^\/ctas\/[^/]+\/signup$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    return json(await services.removeOwnCtaSignup(currentUser, { ctaId }));
+  }
+
   if (method === "GET" && url.pathname === "/members") {
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);

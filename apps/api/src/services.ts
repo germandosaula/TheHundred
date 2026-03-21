@@ -340,6 +340,13 @@ export interface ApiServices {
       preferredRoles: string[];
     };
   }>;
+  removeOwnCtaSignup(
+    actor: User,
+    input: { ctaId: string }
+  ): Promise<{
+    ok: true;
+    removed: boolean;
+  }>;
   getRanking(input?: { month?: string }): Promise<{
     selectedMonth: string;
     selectedMonthLabel: string;
@@ -489,6 +496,7 @@ export function createApiServices(
     discordBotToken: string;
     discordCallerRoleIds: string[];
     discordBottledEnergyChannelId: string;
+    discordCtaChannelId: string;
   }
 ): ApiServices {
   const compRoleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
@@ -626,6 +634,166 @@ export function createApiServices(
     }
 
     return filtered;
+  };
+  const buildCtaWebUrl = (ctaId: string) =>
+    `${options.appBaseUrl.replace(/\/$/, "")}/app/ctas/${ctaId}`;
+  const formatCtaUtcDateTime = (value: string) =>
+    `${new Date(value).toLocaleString("es-ES", {
+      timeZone: "UTC",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    })} UTC`;
+  const buildCtaRoleSummary = (comp: Awaited<ReturnType<DatabaseRepository["getCompById"]>>) => {
+    const totalByRole = new Map<string, number>();
+    if (!comp) {
+      return totalByRole;
+    }
+    for (const party of comp.parties) {
+      for (const slot of party.slots) {
+        totalByRole.set(slot.role, (totalByRole.get(slot.role) ?? 0) + 1);
+      }
+    }
+    return totalByRole;
+  };
+  const buildCtaAssignedSummary = (signups: Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>) => {
+    const byRole = new Map<string, string[]>();
+    for (const signup of signups) {
+      if (signup.isFill || signup.slotKey === "__FILL__") {
+        continue;
+      }
+      const current = byRole.get(signup.role) ?? [];
+      current.push(signup.playerName);
+      byRole.set(signup.role, current);
+    }
+    return byRole;
+  };
+  const buildCtaFillSummary = (signups: Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>) =>
+    signups
+      .filter((entry) => entry.isFill || entry.slotKey === "__FILL__")
+      .map((entry) => {
+        const preferred = (entry.preferredRoles ?? []).filter(Boolean).join(" · ");
+        return `• ${entry.playerName}${preferred ? ` · ${preferred}` : ""}`;
+      });
+  const publishOrUpdateCtaDiscordMessage = async (
+    ctaId: string,
+    input?: { announceEveryone?: boolean }
+  ): Promise<void> => {
+    const channelId = options.discordCtaChannelId?.trim();
+    const botToken = options.discordBotToken?.trim();
+    if (!channelId || !botToken) {
+      return;
+    }
+
+    const cta = await repository.getCtaById(ctaId);
+    if (!cta) {
+      return;
+    }
+
+    const [comp, signups] = await Promise.all([
+      cta.compId ? repository.getCompById(cta.compId) : Promise.resolve(null),
+      repository.getCtaSignups(cta.id)
+    ]);
+
+    const totalByRole = buildCtaRoleSummary(comp);
+    const assignedByRole = buildCtaAssignedSummary(signups);
+    const fillLines = buildCtaFillSummary(signups);
+    const roleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
+    const roleLines = roleOrder
+      .filter((role) => totalByRole.has(role))
+      .map((role) => {
+        const assigned = assignedByRole.get(role)?.length ?? 0;
+        const total = totalByRole.get(role) ?? 0;
+        return `• ${role}: ${assigned}/${total}`;
+      });
+    const assignedLines = roleOrder.flatMap((role) => {
+      const players = assignedByRole.get(role) ?? [];
+      if (players.length === 0) {
+        return [];
+      }
+      return [`**${role}**`, ...players.map((name) => `• ${name}`)];
+    });
+
+    const ctaUrl = buildCtaWebUrl(cta.id);
+    const embed = {
+      color: 0x4f46e5,
+      title: `CTA · ${cta.title}`,
+      description: [
+        `Comp: ${comp?.name ?? "Sin comp asignada"}`,
+        `Hora: ${formatCtaUtcDateTime(cta.datetimeUtc)}`,
+        `Estado: ${cta.status}`,
+        `Link: ${ctaUrl}`
+      ].join("\n"),
+      fields: [
+        {
+          name: "Roles disponibles",
+          value: roleLines.length > 0 ? roleLines.join("\n").slice(0, 1024) : "Sin comp asignada.",
+          inline: true
+        },
+        {
+          name: "Apuntados por rol",
+          value: assignedLines.length > 0 ? assignedLines.join("\n").slice(0, 1024) : "Sin apuntados todavía.",
+          inline: true
+        },
+        {
+          name: "Fill",
+          value: fillLines.length > 0 ? fillLines.join("\n").slice(0, 1024) : "Sin apuntados para fillear.",
+          inline: false
+        }
+      ],
+      footer: {
+        text: "Signup visual en Discord. La gestión de apuntado se realiza desde la web."
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    const payload = {
+      content: input?.announceEveryone ? "@everyone" : undefined,
+      embeds: [embed],
+      allowed_mentions: input?.announceEveryone ? { parse: ["everyone"] } : { parse: [] }
+    };
+
+    const targetChannelId = cta.signupChannelId?.trim() || channelId;
+    const messageId = cta.signupMessageId?.trim();
+    if (messageId && targetChannelId) {
+      const patchResponse = await fetch(
+        `https://discord.com/api/v10/channels/${targetChannelId}/messages/${messageId}`,
+        {
+          method: "PATCH",
+          headers: {
+            authorization: `Bot ${botToken}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+      if (patchResponse.ok) {
+        return;
+      }
+    }
+
+    const createResponse = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: {
+        authorization: `Bot ${botToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!createResponse.ok) {
+      const body = await createResponse.text().catch(() => "");
+      throw new DomainError(`No se pudo publicar CTA en Discord (${createResponse.status}): ${body}`);
+    }
+    const created = (await createResponse.json()) as { id?: string; channel_id?: string };
+    if (created.id && created.channel_id) {
+      await repository.attachCtaSignupMessage(cta.id, {
+        signupChannelId: created.channel_id,
+        signupMessageId: created.id
+      });
+    }
   };
 
   return {
@@ -1678,6 +1846,11 @@ export function createApiServices(
         decision: "YES",
         state: "ABSENT"
       });
+      try {
+        await publishOrUpdateCtaDiscordMessage(cta.id);
+      } catch (error) {
+        console.error("CTA Discord signup refresh failed", error);
+      }
 
       return {
         ok: true,
@@ -1690,54 +1863,79 @@ export function createApiServices(
       };
     },
 
-    async getRanking(input) {
-      await syncLatestBattlePerformanceSnapshots({
-        repository,
-        killboard,
-        guildId: options.albionBattlesGuildId?.trim() || undefined,
-        guildName: options.albionBattlesGuildName?.trim() || undefined,
-        minGuildPlayers: options.albionBattlesMinGuildPlayers,
-        limit: options.albionBattlesLimit
-      });
+    async removeOwnCtaSignup(actor, input) {
+      await this.requirePrivateAccess(actor);
+      const member = await repository.getMemberByUserId(actor.id);
+      if (!member) {
+        throw new DomainError("Member not found");
+      }
 
-      const [members, users, snapshots, attendances] = await Promise.all([
+      const cta = await repository.getCtaById(input.ctaId);
+      if (!cta || (cta.status !== "OPEN" && cta.status !== "CREATED")) {
+        throw new DomainError("CTA not found or not available for signup");
+      }
+
+      const signups = await repository.getCtaSignups(cta.id);
+      const existing = signups.find((entry) => entry.memberId === member.id);
+      if (!existing) {
+        return { ok: true, removed: false };
+      }
+
+      await repository.deleteCtaSignup(cta.id, member.id);
+      await repository.deleteAttendance(cta.id, member.id);
+      try {
+        await publishOrUpdateCtaDiscordMessage(cta.id);
+      } catch (error) {
+        console.error("CTA Discord remove signup refresh failed", error);
+      }
+
+      return { ok: true, removed: true };
+    },
+
+    async getRanking(input) {
+      const [members, users, ctas, attendances] = await Promise.all([
         repository.getMembers(),
         repository.getUsers(),
-        repository.getBattlePerformanceSnapshots(),
-        repository.getBattleMemberAttendances()
+        repository.getCtas(),
+        repository.getAttendances()
       ]);
       const selectedMonth = resolveSelectedMonth(input?.month);
       const selectedMonthLabel = formatSelectedMonthLabel(selectedMonth);
       const monthRange = getMonthRange(selectedMonth);
 
       const usersById = new Map(users.map((user) => [user.id, user]));
-      const attendanceCountByMemberId = new Map<string, number>();
-      const snapshotIdsInMonth = new Set(
-        snapshots
-          .filter((snapshot) => {
-            const time = new Date(snapshot.startTime).getTime();
-            return time >= monthRange.start.getTime() && time < monthRange.end.getTime();
-          })
-          .map((snapshot) => snapshot.battleId)
-      );
+      const ctasInMonth = ctas.filter((cta) => {
+        if (cta.status === "CANCELED") {
+          return false;
+        }
+        const time = new Date(cta.datetimeUtc).getTime();
+        return time >= monthRange.start.getTime() && time < monthRange.end.getTime();
+      });
+      const ctaById = new Map(ctasInMonth.map((cta) => [cta.id, cta]));
+      const timerKeys = new Set(ctasInMonth.map((cta) => formatCtaTimerKey(cta.datetimeUtc)));
+      const attendanceByMemberTimer = new Map<string, Set<string>>();
 
       for (const attendance of attendances) {
-        if (!snapshotIdsInMonth.has(attendance.battleId)) {
+        if (attendance.decision !== "YES") {
           continue;
         }
-        attendanceCountByMemberId.set(
-          attendance.memberId,
-          (attendanceCountByMemberId.get(attendance.memberId) ?? 0) + 1
-        );
+        const cta = ctaById.get(attendance.ctaId);
+        if (!cta) {
+          continue;
+        }
+        const timerKey = formatCtaTimerKey(cta.datetimeUtc);
+        const current = attendanceByMemberTimer.get(attendance.memberId) ?? new Set<string>();
+        current.add(timerKey);
+        attendanceByMemberTimer.set(attendance.memberId, current);
       }
 
-      const totalBattles = snapshotIdsInMonth.size;
+      const totalTimers = timerKeys.size;
 
       const entries = members
         .filter((member) => !member.kickedAt)
         .map((member) => {
-          const attendanceCount = attendanceCountByMemberId.get(member.id) ?? 0;
-          const attendancePercent = totalBattles > 0 ? (attendanceCount / totalBattles) * 100 : 0;
+          const attendanceCount = attendanceByMemberTimer.get(member.id)?.size ?? 0;
+          const attendancePercent = totalTimers > 0 ? (attendanceCount / totalTimers) * 100 : 0;
           const user = usersById.get(member.userId);
           const displayName = user?.displayName ?? member.userId;
 
@@ -1891,6 +2089,11 @@ export function createApiServices(
       if (!updated) {
         throw new Error("CTA not found after creation");
       }
+      try {
+        await publishOrUpdateCtaDiscordMessage(updated.id, { announceEveryone: true });
+      } catch (error) {
+        console.error("CTA Discord publish on creation failed", error);
+      }
 
       return updated;
     },
@@ -1914,6 +2117,11 @@ export function createApiServices(
       const updated = await repository.updateCtaStatus(cta.id, nextStatus);
       if (!updated) {
         throw new Error("CTA not found during finalization");
+      }
+      try {
+        await publishOrUpdateCtaDiscordMessage(updated.id);
+      } catch (error) {
+        console.error("CTA Discord finalize refresh failed", error);
       }
 
       const generatedPoints = await repository.regenerateAttendancePointsForCta(cta.id);
@@ -1952,6 +2160,11 @@ export function createApiServices(
       const updated = await repository.updateCtaStatus(cta.id, nextStatus);
       if (!updated) {
         throw new Error("CTA not found during cancelation");
+      }
+      try {
+        await publishOrUpdateCtaDiscordMessage(updated.id);
+      } catch (error) {
+        console.error("CTA Discord cancel refresh failed", error);
       }
 
       return { cta: updated, canceledSignups: signups.length };
@@ -2108,13 +2321,20 @@ export function createApiServices(
       const existingSlotSignup = signups.find((signup) => signup.slotKey === input.slotKey);
       if (existingSlotSignup) {
         if (!input.playerUserId) {
-          const preferredRoles = Array.from(
-            new Set(
-              [existingSlotSignup.weaponName, existingSlotSignup.role, targetSlot.weaponName, targetSlot.role]
-                .map((entry) => entry?.trim())
-                .filter((entry): entry is string => Boolean(entry))
-            )
-          ).slice(0, 4);
+          const preferredRolesFromSignup = (existingSlotSignup.preferredRoles ?? [])
+            .map((entry) => entry?.trim())
+            .filter((entry): entry is string => Boolean(entry))
+            .slice(0, 4);
+          const preferredRoles =
+            preferredRolesFromSignup.length > 0
+              ? preferredRolesFromSignup
+              : Array.from(
+                  new Set(
+                    [existingSlotSignup.weaponName, existingSlotSignup.role, targetSlot.weaponName, targetSlot.role]
+                      .map((entry) => entry?.trim())
+                      .filter((entry): entry is string => Boolean(entry))
+                  )
+                ).slice(0, 4);
 
           await repository.upsertCtaSignup({
             ctaId: cta.id,
@@ -2140,6 +2360,11 @@ export function createApiServices(
       }
 
       if (!input.playerUserId) {
+        try {
+          await publishOrUpdateCtaDiscordMessage(cta.id);
+        } catch (error) {
+          console.error("CTA Discord slot clear refresh failed", error);
+        }
         return { ok: true };
       }
 
@@ -2167,7 +2392,10 @@ export function createApiServices(
         slotLabel: targetSlot.label,
         weaponName: targetSlot.weaponName,
         playerName: getCtaSignupPlayerName(user),
-        preferredRoles: [],
+        preferredRoles: (existingMemberSignup?.preferredRoles ?? [])
+          .map((entry) => entry?.trim())
+          .filter((entry): entry is string => Boolean(entry))
+          .slice(0, 4),
         isFill: false
       });
       await repository.upsertAttendance({
@@ -2176,6 +2404,11 @@ export function createApiServices(
         decision: "YES",
         state: "ABSENT"
       });
+      try {
+        await publishOrUpdateCtaDiscordMessage(cta.id);
+      } catch (error) {
+        console.error("CTA Discord slot assign refresh failed", error);
+      }
 
       return { ok: true };
     },
@@ -2217,6 +2450,19 @@ function formatUtcDayKey(value: string, forcedDay?: number): string {
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   const year = date.getUTCFullYear();
   return `${year}-${month}-${day}`;
+}
+
+function formatCtaTimerKey(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
 function resolveSelectedMonth(value?: string): string {

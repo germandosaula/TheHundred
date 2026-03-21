@@ -79,11 +79,20 @@ export function CtaBoard({
   const [ctaStatus, setCtaStatus] = useState(cta.status);
   const [parties, setParties] = useState(cta.signupParties);
   const [fillers, setFillers] = useState(cta.signupFillers ?? []);
+  const [preferredRolesMemory, setPreferredRolesMemory] = useState<Record<string, string[]>>(() =>
+    (cta.signupFillers ?? []).reduce<Record<string, string[]>>((acc, entry) => {
+      if (entry.playerUserId) {
+        acc[entry.playerUserId] = entry.preferredRoles ?? [];
+      }
+      return acc;
+    }, {})
+  );
   const [activePartyKey, setActivePartyKey] = useState(parties[0]?.partyKey);
   const [savingSlotKey, setSavingSlotKey] = useState<string | null>(null);
   const [viewerBuildId, setViewerBuildId] = useState<string | null>(null);
-  const [signupNotes, setSignupNotes] = useState<string[]>(["", "", "", ""]);
+  const [signupSelections, setSignupSelections] = useState<string[]>(["", "", "", ""]);
   const [signupBusy, setSignupBusy] = useState(false);
+  const [removeOwnBusy, setRemoveOwnBusy] = useState(false);
   const [draggingFillPlayerUserId, setDraggingFillPlayerUserId] = useState<string | null>(null);
   const [movingToFill, setMovingToFill] = useState(false);
 
@@ -112,6 +121,22 @@ export function CtaBoard({
     return fillers.some((entry) => entry.playerUserId === currentUserId);
   }, [currentUserId, fillers, parties]);
   const viewerBuild = viewerBuildId ? builds.find((entry) => entry.id === viewerBuildId) ?? null : null;
+  const fillWeaponOptions = useMemo(() => {
+    const byKey = new Map<string, string>();
+    for (const party of parties) {
+      for (const slot of party.slots) {
+        const weaponName = slot.weaponName?.trim();
+        if (!weaponName) {
+          continue;
+        }
+        const key = weaponName.toLowerCase();
+        if (!byKey.has(key)) {
+          byKey.set(key, weaponName);
+        }
+      }
+    }
+    return [...byKey.values()].sort((left, right) => left.localeCompare(right, "es"));
+  }, [parties]);
   const buildPrimaryIconById = useMemo(() => {
     const map = new Map<string, string>();
     for (const build of builds) {
@@ -223,7 +248,16 @@ export function CtaBoard({
       }))
     );
     if (nextValue.playerUserId) {
-      setFillers((current) => current.filter((entry) => entry.playerUserId !== nextValue.playerUserId));
+      setFillers((current) => {
+        const matched = current.find((entry) => entry.playerUserId === nextValue.playerUserId);
+        if (matched?.playerUserId && matched.preferredRoles.length > 0) {
+          setPreferredRolesMemory((previous) => ({
+            ...previous,
+            [matched.playerUserId as string]: matched.preferredRoles
+          }));
+        }
+        return current.filter((entry) => entry.playerUserId !== nextValue.playerUserId);
+      });
     }
   }
 
@@ -236,11 +270,16 @@ export function CtaBoard({
       return;
     }
 
+    const rememberedRoles =
+      (slotToMove.playerUserId ? preferredRolesMemory[slotToMove.playerUserId] : undefined) ?? [];
     const moved = {
       memberId: slotToMove.playerUserId ?? slotToMove.slotKey,
       playerName: slotToMove.playerName!,
       playerUserId: slotToMove.playerUserId,
-      preferredRoles: [slotToMove.weaponName, slotToMove.role].filter(Boolean)
+      preferredRoles:
+        rememberedRoles.length > 0
+          ? rememberedRoles
+          : [slotToMove.weaponName, slotToMove.role].filter(Boolean)
     };
 
     setParties((current) =>
@@ -289,10 +328,10 @@ export function CtaBoard({
     if (signupBusy || alreadySignedByCurrentUser) {
       return;
     }
-    const notes = signupNotes.map((entry) => entry.trim()).filter(Boolean);
-    const uniqueNotes = Array.from(new Set(notes));
-    if (uniqueNotes.length < 2 || uniqueNotes.length > 4) {
-      window.alert("Debes completar al menos 2 campos (máximo 4).");
+    const selectedWeapons = signupSelections.map((entry) => entry.trim()).filter(Boolean);
+    const uniqueSelections = Array.from(new Set(selectedWeapons));
+    if (uniqueSelections.length < 2 || uniqueSelections.length > 4) {
+      window.alert("Debes seleccionar al menos 2 armas (máximo 4).");
       return;
     }
 
@@ -302,7 +341,7 @@ export function CtaBoard({
       headers: {
         "content-type": "application/json"
       },
-      body: JSON.stringify({ roles: uniqueNotes })
+      body: JSON.stringify({ roles: uniqueSelections })
     });
 
     if (!response.ok) {
@@ -330,8 +369,55 @@ export function CtaBoard({
       const withoutCurrent = current.filter((entry) => entry.memberId !== payload.filler.memberId);
       return [...withoutCurrent, payload.filler];
     });
-    setSignupNotes(["", "", "", ""]);
+    setPreferredRolesMemory((current) => ({
+      ...current,
+      [payload.filler.playerUserId]: payload.filler.preferredRoles
+    }));
+    setSignupSelections(["", "", "", ""]);
     setSignupBusy(false);
+  }
+
+  async function removeOwnSignup() {
+    if (!currentUserId || removeOwnBusy) {
+      return;
+    }
+
+    const previousParties = parties;
+    const previousFillers = fillers;
+    setRemoveOwnBusy(true);
+    setParties((current) =>
+      current.map((party) => ({
+        ...party,
+        slots: party.slots.map((slot) =>
+          slot.playerUserId === currentUserId
+            ? {
+                ...slot,
+                playerName: undefined,
+                playerUserId: undefined
+              }
+            : slot
+        )
+      }))
+    );
+    setFillers((current) => current.filter((entry) => entry.playerUserId !== currentUserId));
+
+    const response = await fetch(`/ctas/signup?ctaId=${encodeURIComponent(cta.id)}`, {
+      method: "DELETE"
+    });
+    if (!response.ok) {
+      setParties(previousParties);
+      setFillers(previousFillers);
+      let reason = "No se pudo eliminar tu signup.";
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload?.error) {
+          reason = payload.error;
+        }
+      } catch {}
+      window.alert(reason);
+    }
+
+    setRemoveOwnBusy(false);
   }
 
   async function cancelCta() {
@@ -553,27 +639,31 @@ export function CtaBoard({
               <strong>{fillers.length}</strong>
             </div>
             <div className="cta-fill-input-grid">
-              {signupNotes.map((value, index) => (
-                <input
+              {signupSelections.map((value, index) => (
+                <select
                   className="input compact"
-                  disabled={alreadySignedByCurrentUser || signupBusy}
+                  disabled={alreadySignedByCurrentUser || signupBusy || fillWeaponOptions.length === 0}
                   key={index}
-                  maxLength={60}
                   onChange={(event) => {
                     const nextValue = event.currentTarget.value;
-                    setSignupNotes((current) =>
+                    setSignupSelections((current) =>
                       current.map((entry, entryIndex) => (entryIndex === index ? nextValue : entry))
                     );
                   }}
-                  placeholder={`Arma / rol ${index + 1}`}
-                  type="text"
                   value={value}
-                />
+                >
+                  <option value="">{`Selecciona arma ${index + 1}`}</option>
+                  {fillWeaponOptions.map((weaponName) => (
+                    <option key={weaponName} value={weaponName}>
+                      {weaponName}
+                    </option>
+                  ))}
+                </select>
               ))}
             </div>
             <button
               className="button primary compact"
-              disabled={signupBusy || alreadySignedByCurrentUser}
+              disabled={signupBusy || alreadySignedByCurrentUser || fillWeaponOptions.length === 0}
               onClick={() => void signupForFill()}
               type="button"
             >
@@ -581,6 +671,9 @@ export function CtaBoard({
             </button>
             {alreadySignedByCurrentUser ? (
               <p className="cta-fill-hint">Ya estas apuntado en esta CTA.</p>
+            ) : null}
+            {fillWeaponOptions.length === 0 ? (
+              <p className="cta-fill-hint">No hay armas disponibles en la comp de esta CTA.</p>
             ) : null}
             <div className="cta-fill-list">
               <div
@@ -626,6 +719,17 @@ export function CtaBoard({
                       <span className="status-badge user-self-badge">TU</span>
                     ) : null}
                     <strong>{entry.playerName}</strong>
+                    {currentUserId && entry.playerUserId === currentUserId ? (
+                      <button
+                        className="cta-fill-remove-button"
+                        disabled={removeOwnBusy}
+                        onClick={() => void removeOwnSignup()}
+                        title="Quitarme de esta CTA"
+                        type="button"
+                      >
+                        ✕
+                      </button>
+                    ) : null}
                   </div>
                   <p>{entry.preferredRoles.join(" · ")}</p>
                 </article>
