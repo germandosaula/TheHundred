@@ -10,9 +10,7 @@ function toIsoUtcFromUtcInput(value: string): string | null {
     return null;
   }
 
-  const match = trimmed.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/
-  );
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
   if (!match) {
     return null;
   }
@@ -53,8 +51,8 @@ export function CtaCreatePanel({ comps }: { comps: CompEntry[] }) {
       body: JSON.stringify({
         title: title.trim(),
         datetimeUtc,
-        compId: compId || undefined
-      })
+        compId: compId || undefined,
+      }),
     });
 
     if (!response.ok) {
@@ -117,11 +115,13 @@ export function CtaCreatePanel({ comps }: { comps: CompEntry[] }) {
             type="datetime-local"
             value={datetimeLocal}
           />
-          <small>
-            El valor introducido se interpreta como UTC (no como hora local).
-          </small>
         </label>
-        <button className="button primary compact cta-create-action" disabled={busy} onClick={() => void createCta()} type="button">
+        <button
+          className="button primary compact cta-create-action"
+          disabled={busy}
+          onClick={() => void createCta()}
+          type="button"
+        >
           {busy ? "Creando..." : "Crear CTA"}
         </button>
       </div>
