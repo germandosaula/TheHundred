@@ -2300,44 +2300,64 @@ export function createApiServices(
 
       const signups = await repository.getCtaSignups(cta.id);
       const existingSlotSignup = signups.find((signup) => signup.slotKey === input.slotKey);
-      if (existingSlotSignup) {
-        if (!input.playerUserId) {
-          const preferredRolesFromSignup = (existingSlotSignup.preferredRoles ?? [])
-            .map((entry) => entry?.trim())
-            .filter((entry): entry is string => Boolean(entry))
-            .slice(0, 4);
-          const preferredRoles =
-            preferredRolesFromSignup.length > 0
-              ? preferredRolesFromSignup
-              : Array.from(
-                  new Set(
-                    [existingSlotSignup.weaponName, existingSlotSignup.role, targetSlot.weaponName, targetSlot.role]
-                      .map((entry) => entry?.trim())
-                      .filter((entry): entry is string => Boolean(entry))
-                  )
-                ).slice(0, 4);
-
-          await repository.upsertCtaSignup({
-            ctaId: cta.id,
-            memberId: existingSlotSignup.memberId,
-            role: preferredRoles[0] || existingSlotSignup.role || targetSlot.role,
-            slotKey: "__FILL__",
-            slotLabel: "Para fillear",
-            weaponName: "",
-            playerName: existingSlotSignup.playerName,
-            preferredRoles,
-            isFill: true
-          });
-          await repository.upsertAttendance({
-            ctaId: cta.id,
-            memberId: existingSlotSignup.memberId,
-            decision: "YES",
-            state: "ABSENT"
-          });
-        } else {
-          await repository.deleteCtaSignup(cta.id, existingSlotSignup.memberId);
-          await repository.deleteAttendance(cta.id, existingSlotSignup.memberId);
+      const slotByKey = new Map(
+        comp.parties.flatMap((party) =>
+          party.slots.map((slot) => {
+            const slotKey = `${party.key}:${slot.position}`;
+            return [
+              slotKey,
+              {
+                slotKey,
+                role: slot.role,
+                label: slot.label,
+                weaponName: slot.weaponName
+              }
+            ] as const;
+          })
+        )
+      );
+      const normalizePreferredRoles = (values: Array<string | undefined>): string[] =>
+        Array.from(
+          new Set(values.map((entry) => entry?.trim()).filter((entry): entry is string => Boolean(entry)))
+        ).slice(0, 4);
+      const buildPreferredRolesFromSignup = (
+        signup: { preferredRoles?: string[]; role?: string; weaponName?: string },
+        fallback: Array<string | undefined> = []
+      ): string[] => {
+        const existing = (signup.preferredRoles ?? [])
+          .map((entry) => entry?.trim())
+          .filter((entry): entry is string => Boolean(entry))
+          .slice(0, 4);
+        if (existing.length > 0) {
+          return existing;
         }
+        const inferred = normalizePreferredRoles([signup.role, signup.weaponName, ...fallback]);
+        return inferred;
+      };
+
+      if (existingSlotSignup && !input.playerUserId) {
+        const preferredRoles = buildPreferredRolesFromSignup(existingSlotSignup, [
+          targetSlot.weaponName,
+          targetSlot.role
+        ]);
+
+        await repository.upsertCtaSignup({
+          ctaId: cta.id,
+          memberId: existingSlotSignup.memberId,
+          role: preferredRoles[0] || existingSlotSignup.role || targetSlot.role,
+          slotKey: "__FILL__",
+          slotLabel: "Para fillear",
+          weaponName: "",
+          playerName: existingSlotSignup.playerName,
+          preferredRoles,
+          isFill: true
+        });
+        await repository.upsertAttendance({
+          ctaId: cta.id,
+          memberId: existingSlotSignup.memberId,
+          decision: "YES",
+          state: "ABSENT"
+        });
       }
 
       if (!input.playerUserId) {
@@ -2360,15 +2380,88 @@ export function createApiServices(
       }
 
       const existingMemberSignup = signups.find((signup) => signup.memberId === member.id);
+      const existingMemberSlotKey = existingMemberSignup?.slotKey;
+      const needsSwapFromOtherSlot =
+        Boolean(existingMemberSlotKey) &&
+        existingMemberSlotKey !== input.slotKey &&
+        existingMemberSlotKey !== "__FILL__";
+      const targetOccupiedByOtherMember =
+        existingSlotSignup && existingSlotSignup.memberId !== member.id ? existingSlotSignup : undefined;
+
+      if (targetOccupiedByOtherMember) {
+        if (needsSwapFromOtherSlot) {
+          const sourceSlot = existingMemberSlotKey ? slotByKey.get(existingMemberSlotKey) : undefined;
+          if (sourceSlot) {
+            await repository.upsertCtaSignup({
+              ctaId: cta.id,
+              memberId: targetOccupiedByOtherMember.memberId,
+              role: targetOccupiedByOtherMember.role || sourceSlot.role,
+              slotKey: sourceSlot.slotKey,
+              slotLabel: sourceSlot.label,
+              weaponName: sourceSlot.weaponName,
+              playerName: targetOccupiedByOtherMember.playerName,
+              preferredRoles: (targetOccupiedByOtherMember.preferredRoles ?? [])
+                .map((entry) => entry?.trim())
+                .filter((entry): entry is string => Boolean(entry))
+                .slice(0, 4),
+              isFill: false
+            });
+          } else {
+            const preferredRoles = buildPreferredRolesFromSignup(targetOccupiedByOtherMember, [
+              targetSlot.weaponName,
+              targetSlot.role
+            ]);
+            await repository.upsertCtaSignup({
+              ctaId: cta.id,
+              memberId: targetOccupiedByOtherMember.memberId,
+              role: preferredRoles[0] || targetOccupiedByOtherMember.role || targetSlot.role,
+              slotKey: "__FILL__",
+              slotLabel: "Para fillear",
+              weaponName: "",
+              playerName: targetOccupiedByOtherMember.playerName,
+              preferredRoles,
+              isFill: true
+            });
+          }
+          await repository.upsertAttendance({
+            ctaId: cta.id,
+            memberId: targetOccupiedByOtherMember.memberId,
+            decision: "YES",
+            state: "ABSENT"
+          });
+        } else {
+          const preferredRoles = buildPreferredRolesFromSignup(targetOccupiedByOtherMember, [
+            targetSlot.weaponName,
+            targetSlot.role
+          ]);
+          await repository.upsertCtaSignup({
+            ctaId: cta.id,
+            memberId: targetOccupiedByOtherMember.memberId,
+            role: preferredRoles[0] || targetOccupiedByOtherMember.role || targetSlot.role,
+            slotKey: "__FILL__",
+            slotLabel: "Para fillear",
+            weaponName: "",
+            playerName: targetOccupiedByOtherMember.playerName,
+            preferredRoles,
+            isFill: true
+          });
+          await repository.upsertAttendance({
+            ctaId: cta.id,
+            memberId: targetOccupiedByOtherMember.memberId,
+            decision: "YES",
+            state: "ABSENT"
+          });
+        }
+      }
+
       if (existingMemberSignup && existingMemberSignup.slotKey !== input.slotKey) {
         await repository.deleteCtaSignup(cta.id, member.id);
-        await repository.deleteAttendance(cta.id, member.id);
       }
 
       await repository.upsertCtaSignup({
         ctaId: cta.id,
         memberId: member.id,
-        role: targetSlot.role,
+        role: existingMemberSignup?.role?.trim() || targetSlot.role,
         slotKey: targetSlot.slotKey,
         slotLabel: targetSlot.label,
         weaponName: targetSlot.weaponName,

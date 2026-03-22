@@ -226,27 +226,47 @@ export function CtaBoard({
     return null;
   }
 
-  function updateSlotLocally(slotKey: string, nextValue: { playerName?: string; playerUserId?: string }) {
+  function updateSlotLocally(
+    slotKey: string,
+    nextValue: { playerName?: string; playerUserId?: string },
+    sourceSlotKey?: string
+  ) {
+    const sourceKey = sourceSlotKey?.trim();
+    const sourceIsDifferentSlot = Boolean(sourceKey) && sourceKey !== slotKey;
+    const targetBefore = parties
+      .flatMap((party) => party.slots)
+      .find((slot) => slot.slotKey === slotKey && slot.playerUserId && slot.playerName);
+
     setParties((current) =>
       current.map((party) => ({
         ...party,
-        slots: party.slots.map((slot) =>
-          slot.slotKey === slotKey
-            ? {
-                ...slot,
-                playerName: nextValue.playerName,
-                playerUserId: nextValue.playerUserId
-              }
-            : slot.playerUserId && nextValue.playerUserId && slot.playerUserId === nextValue.playerUserId
-              ? {
-                  ...slot,
-                  playerName: undefined,
-                  playerUserId: undefined
-                }
-              : slot
-        )
+        slots: party.slots.map((slot) => {
+          if (slot.slotKey === slotKey) {
+            return {
+              ...slot,
+              playerName: nextValue.playerName,
+              playerUserId: nextValue.playerUserId
+            };
+          }
+          if (sourceIsDifferentSlot && sourceKey && slot.slotKey === sourceKey && targetBefore) {
+            return {
+              ...slot,
+              playerName: targetBefore.playerName,
+              playerUserId: targetBefore.playerUserId
+            };
+          }
+          if (slot.playerUserId && nextValue.playerUserId && slot.playerUserId === nextValue.playerUserId) {
+            return {
+              ...slot,
+              playerName: undefined,
+              playerUserId: undefined
+            };
+          }
+          return slot;
+        })
       }))
     );
+
     if (nextValue.playerUserId) {
       setFillers((current) => {
         const matched = current.find((entry) => entry.playerUserId === nextValue.playerUserId);
@@ -256,7 +276,22 @@ export function CtaBoard({
             [matched.playerUserId as string]: matched.preferredRoles
           }));
         }
-        return current.filter((entry) => entry.playerUserId !== nextValue.playerUserId);
+
+        const withoutDragged = current.filter((entry) => entry.playerUserId !== nextValue.playerUserId);
+        if (!sourceIsDifferentSlot && targetBefore?.playerUserId && targetBefore.playerName) {
+          const rememberedRoles = preferredRolesMemory[targetBefore.playerUserId] ?? [];
+          const displaced = {
+            memberId: targetBefore.playerUserId,
+            playerName: targetBefore.playerName,
+            playerUserId: targetBefore.playerUserId,
+            preferredRoles:
+              rememberedRoles.length > 0
+                ? rememberedRoles
+                : [targetBefore.weaponName, targetBefore.role].filter(Boolean)
+          };
+          return [...withoutDragged.filter((entry) => entry.playerUserId !== displaced.playerUserId), displaced];
+        }
+        return withoutDragged;
       });
     }
   }
@@ -557,10 +592,11 @@ export function CtaBoard({
                         }
                         const playerUserId = event.dataTransfer.getData("text/playerUserId").trim();
                         const playerName = event.dataTransfer.getData("text/playerName").trim();
+                        const sourceSlotKey = event.dataTransfer.getData("text/slotKey").trim();
                         if (!playerUserId || !playerName) {
                           return;
                         }
-                        updateSlotLocally(slot.slotKey, { playerName, playerUserId });
+                        updateSlotLocally(slot.slotKey, { playerName, playerUserId }, sourceSlotKey);
                         void assignSlot(slot.slotKey, playerUserId);
                         setDraggingFillPlayerUserId(null);
                       }}
