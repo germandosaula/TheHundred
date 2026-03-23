@@ -647,12 +647,18 @@ export function createApiServices(
       minute: "2-digit",
       hour12: false
     })} UTC`;
-  const buildCtaWeaponLines = (
+  const buildCtaWeaponFields = (
     comp: Awaited<ReturnType<DatabaseRepository["getCompById"]>>,
     signups: Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>
   ) => {
     if (!comp) {
-      return [];
+      return [
+        {
+          name: "Armas / apuntados",
+          value: "Sin comp asignada.",
+          inline: false
+        }
+      ];
     }
     const signupBySlotKey = new Map(
       signups
@@ -660,18 +666,36 @@ export function createApiServices(
         .map((entry) => [entry.slotKey, entry])
     );
 
-    return [...comp.parties]
-      .sort((left, right) => left.position - right.position)
-      .flatMap((party) =>
-        [...party.slots]
-          .sort((left, right) => left.position - right.position)
-          .map((slot) => {
-            const slotKey = `${party.key}:${slot.position}`;
-            const signup = signupBySlotKey.get(slotKey);
-            const assigned = signup?.playerName?.trim() ? `@${signup.playerName.trim()}` : "-";
-            return `• ${slot.weaponName} - ${assigned}`;
-          })
-      );
+    return [...comp.parties].sort((left, right) => left.position - right.position).flatMap((party) => {
+      const lines = [...party.slots]
+        .sort((left, right) => left.position - right.position)
+        .map((slot) => {
+          const slotKey = `${party.key}:${slot.position}`;
+          const signup = signupBySlotKey.get(slotKey);
+          const assigned = signup?.playerName?.trim() ? `@${signup.playerName.trim()}` : "-";
+          return `• ${slot.weaponName} - ${assigned}`;
+        });
+      const leftColumn = lines.slice(0, 10);
+      const rightColumn = lines.slice(10, 20);
+
+      return [
+        {
+          name: party.name || `Party ${party.position}`,
+          value: `Slots: ${lines.length}`,
+          inline: false
+        },
+        {
+          name: "Columna 1",
+          value: (leftColumn.length > 0 ? leftColumn : ["-"]).join("\n").slice(0, 1024),
+          inline: true
+        },
+        {
+          name: "Columna 2",
+          value: (rightColumn.length > 0 ? rightColumn : ["-"]).join("\n").slice(0, 1024),
+          inline: true
+        }
+      ];
+    });
   };
   const buildCtaFillSummary = (signups: Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>) =>
     signups
@@ -700,7 +724,7 @@ export function createApiServices(
       repository.getCtaSignups(cta.id)
     ]);
 
-    const weaponLines = buildCtaWeaponLines(comp, signups);
+    const weaponFields = buildCtaWeaponFields(comp, signups);
     const fillLines = buildCtaFillSummary(signups);
 
     const ctaUrl = buildCtaWebUrl(cta.id);
@@ -714,11 +738,7 @@ export function createApiServices(
         `Link: ${ctaUrl}`
       ].join("\n"),
       fields: [
-        {
-          name: "Armas / apuntados",
-          value: weaponLines.length > 0 ? weaponLines.join("\n").slice(0, 1024) : "Sin comp asignada.",
-          inline: true
-        },
+        ...weaponFields,
         {
           name: "Fill",
           value: fillLines.length > 0 ? fillLines.join("\n").slice(0, 1024) : "Sin apuntados para fillear.",
