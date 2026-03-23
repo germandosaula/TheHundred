@@ -101,14 +101,8 @@ const payoutLootCommand = new SlashCommandBuilder()
   .setDescription("Procesa un reparto de lootsplit y acredita el monedero.")
   .addStringOption((option) =>
     option
-      .setName("battle_link")
-      .setDescription("Link multi de AlbionBB con ids")
-      .setRequired(true)
-  )
-  .addStringOption((option) =>
-    option
-      .setName("guild_name")
-      .setDescription("Nombre exacto de la guild a filtrar")
+      .setName("cta_id")
+      .setDescription("ID de la CTA a usar para elegibles (solo slots asignados)")
       .setRequired(true)
   )
   .addIntegerOption((option) =>
@@ -1232,86 +1226,77 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
 
   await interaction.deferReply();
 
-  const battleLink = interaction.options.getString("battle_link", true).trim();
-  const guildName = interaction.options.getString("guild_name", true).trim();
+  const ctaId = interaction.options.getString("cta_id", true).trim();
   const splitRole = "AUTO";
   const estValue = interaction.options.getInteger("est_value", true);
   const bags = interaction.options.getInteger("bolsas", true);
   const repairCost = interaction.options.getInteger("repair_cost", true);
   const taxPercent = interaction.options.getInteger("tax", true);
 
-  if (!guildName) {
-    await interaction.editReply("`guild_name` es obligatorio.");
+  if (!ctaId) {
+    await interaction.editReply("`cta_id` es obligatorio.");
     return;
   }
 
-  const mockNames = extractMockNamesFromLink(battleLink);
-  const battleIds = extractBattleIdsFromLink(battleLink);
-  if (mockNames.length > 0 && !allowMockLootSplit) {
-    await interaction.editReply("`mock:` está desactivado en este entorno.");
+  const cta = await repository.getCtaById(ctaId);
+  if (!cta) {
+    await interaction.editReply("No se encontró la CTA indicada en `cta_id`.");
     return;
   }
-  if (mockNames.length === 0 && battleIds.length === 0) {
-    await interaction.editReply(
-      "No se pudieron extraer battle ids del `battle_link` (usa `battles/multi?ids=...`, `battles/<id>` o `mock:Nombre1,Nombre2`)."
-    );
+  if (!cta.compId) {
+    await interaction.editReply("La CTA no tiene comp vinculada.");
     return;
   }
 
-  const memberNames =
-    mockNames.length > 0
-      ? new Set(mockNames)
-      : await collectUniqueGuildPlayersFromBattles(battleIds, guildName);
-  if (memberNames.size === 0) {
-    await interaction.editReply("No se encontraron jugadores de esa guild en las batallas indicadas.");
+  const [ctaSignups, users, members] = await Promise.all([
+    repository.getCtaSignups(cta.id),
+    repository.getUsers(),
+    repository.getMembers()
+  ]);
+
+  const slottedSignups = ctaSignups.filter((entry) => !entry.isFill && entry.slotKey !== "__FILL__");
+  const participantCountForSplit = slottedSignups.length;
+  if (participantCountForSplit === 0) {
+    await interaction.editReply("No hay jugadores colocados en slots de la CTA.");
     return;
   }
-  const participantCountForSplit = memberNames.size;
+  const guildName = interaction.guild?.name?.trim() || "UNKNOWN";
+  const battleLink = `cta:${cta.id}`;
+  const battleIds = [`cta:${cta.id}`];
 
-  const [users, members] = await Promise.all([repository.getUsers(), repository.getMembers()]);
-  const usersByAlbionLower = new Map<string, Array<(typeof users)[number]>>();
-  for (const user of users) {
-    const albion = normalizeAlbionNameForMatch(user.albionName);
-    if (albion) {
-      const list = usersByAlbionLower.get(albion) ?? [];
-      list.push(user);
-      usersByAlbionLower.set(albion, list);
-    }
-  }
-  const memberByUserId = new Map(members.map((member) => [member.userId, member]));
-
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const membersById = new Map(members.map((member) => [member.id, member]));
   const eligiblePayouts: Array<{
     memberId: string;
     userId: string;
     playerName: string;
   }> = [];
   const unresolvedByReason: Array<{ playerName: string; reason: string }> = [];
+  const participantNames = new Set<string>();
 
-  for (const playerName of [...memberNames]) {
-    const candidates = usersByAlbionLower.get(normalizeAlbionNameForMatch(playerName)) ?? [];
-    if (candidates.length === 0) {
-      unresolvedByReason.push({ playerName, reason: "sin usuario enlazado en web" });
+  for (const signup of slottedSignups) {
+    const fallbackName = signup.playerName?.trim() || signup.memberId;
+    participantNames.add(fallbackName);
+    const member = membersById.get(signup.memberId);
+    if (!member) {
+      unresolvedByReason.push({ playerName: fallbackName, reason: "sin miembro de guild" });
       continue;
     }
-    const user =
-      candidates.find((entry) => {
-        const member = memberByUserId.get(entry.id);
-        return Boolean(member && member.status !== "REJECTED");
-      }) ?? candidates[0];
 
-    const member = memberByUserId.get(user.id);
-    if (!member) {
-      unresolvedByReason.push({ playerName, reason: "sin miembro de guild" });
+    const user = usersById.get(member.userId);
+    if (!user) {
+      unresolvedByReason.push({ playerName: fallbackName, reason: "sin usuario enlazado en web" });
       continue;
     }
     if (member.status === "REJECTED") {
-      unresolvedByReason.push({ playerName, reason: "miembro rechazado" });
+      unresolvedByReason.push({ playerName: fallbackName, reason: "miembro rechazado" });
       continue;
     }
+
     eligiblePayouts.push({
       memberId: member.id,
       userId: user.id,
-      playerName
+      playerName: user.albionName?.trim() || signup.playerName || user.displayName
     });
   }
 
@@ -1322,7 +1307,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
 
   if (eligiblePayouts.length === 0) {
     await interaction.editReply(
-      `No hay participantes elegibles. Detectados en link: ${memberNames.size}.`
+      `No hay participantes elegibles. Colocados en slots CTA: ${participantCountForSplit}.`
     );
     return;
   }
@@ -1344,7 +1329,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
   }
 
   const idempotencyKey = buildLootSplitIdempotencyKey({
-    battleIds: battleIds.length > 0 ? battleIds : ["mock"],
+    battleIds,
     guildName,
     splitRole,
     estValue,
@@ -1352,13 +1337,13 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
     repairCost,
     taxPercent,
     participantUserIds: eligiblePayouts.map((entry) => entry.userId),
-    participantNames: [...memberNames]
+    participantNames: [...participantNames]
   });
 
   const payoutResult = await repository.createLootSplitPayout({
     createdBy: actorUserId,
     battleLink,
-    battleIds: battleIds.length > 0 ? battleIds : ["mock"],
+    battleIds,
     guildName,
     splitRole,
     estValue,
@@ -1403,7 +1388,8 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
   await interaction.editReply(
     [
       "📄 **RECIBO DE LOOTSPLIT**",
-      `Batallas: ${battleIds.join(", ") || "mock"}`,
+      `CTA: ${cta.title} (${cta.id})`,
+      `Fuente: slots CTA (${cta.id})`,
       `Guild: ${guildName}`,
       "",
       "```",
@@ -1451,6 +1437,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
       : `Lootsplit procesado para ${participantCountForSplit} participantes (${eligiblePayouts.length} pagos automáticos).`,
     details: [
       `Payout ID: ${payoutRecord.id}`,
+      `CTA: ${cta.title} (${cta.id})`,
       `Guild: ${guildName}`,
       `Pool final: ${formatMoney(finalPool)}`,
       `Por persona: ${formatMoney(perPerson)}`,
