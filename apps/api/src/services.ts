@@ -497,6 +497,8 @@ export function createApiServices(
     discordCallerRoleIds: string[];
     discordBottledEnergyChannelId: string;
     discordCtaChannelId: string;
+    bottledEnergyExcludedDiscordIds: string[];
+    bottledEnergyExcludedAlbionNames: string[];
   }
 ): ApiServices {
   const compRoleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
@@ -635,6 +637,44 @@ export function createApiServices(
 
     return filtered;
   };
+  const normalizedExcludedDiscordIds = new Set(
+    (options.bottledEnergyExcludedDiscordIds ?? [])
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  );
+  const normalizedExcludedAlbionNames = new Set(
+    (options.bottledEnergyExcludedAlbionNames ?? [])
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const shouldExcludeBottledEnergyMember = (entry: {
+    discordId?: string;
+    albionName?: string;
+  }): boolean => {
+    const discordId = entry.discordId?.trim();
+    const albionName = entry.albionName?.trim().toLowerCase();
+    return (
+      Boolean(discordId && normalizedExcludedDiscordIds.has(discordId)) ||
+      Boolean(albionName && normalizedExcludedAlbionNames.has(albionName))
+    );
+  };
+  const filterBottledEnergyExcludedBalances = <
+    T extends { discordId?: string; albionName?: string }
+  >(
+    balances: T[]
+  ): T[] => balances.filter((entry) => !shouldExcludeBottledEnergyMember(entry));
+  const filterBottledEnergyExcludedUnmatched = <
+    T extends { albionName?: string }
+  >(
+    balances: T[]
+  ): T[] =>
+    balances.filter((entry) => {
+      const albionName = entry.albionName?.trim().toLowerCase();
+      if (!albionName) {
+        return true;
+      }
+      return !normalizedExcludedAlbionNames.has(albionName);
+    });
   const buildCtaWebUrl = (ctaId: string) =>
     `${options.appBaseUrl.replace(/\/$/, "")}/app/ctas/${ctaId}`;
   const formatCtaUtcDateTime = (value: string) =>
@@ -1548,10 +1588,12 @@ export function createApiServices(
         repository.listBottledEnergyBalances(),
         repository.listBottledEnergyUnmatchedBalances()
       ]);
-      const balances = await filterBottledEnergyBalancesByDiscordRole(allBalances);
+      const balancesByRole = await filterBottledEnergyBalancesByDiscordRole(allBalances);
+      const balances = filterBottledEnergyExcludedBalances(balancesByRole);
+      const unmatchedFiltered = filterBottledEnergyExcludedUnmatched(unmatched);
       return {
         balances,
-        unmatched,
+        unmatched: unmatchedFiltered,
         updatedAt: new Date().toISOString(),
         publishConfigured: isDiscordPublishConfigured()
       };
@@ -1643,7 +1685,8 @@ export function createApiServices(
       }
 
       const balances = await repository.listBottledEnergyBalances();
-      const eligible = await filterBottledEnergyBalancesByDiscordRole(balances);
+      const eligibleByRole = await filterBottledEnergyBalancesByDiscordRole(balances);
+      const eligible = filterBottledEnergyExcludedBalances(eligibleByRole);
       if (eligible.length === 0) {
         throw new DomainError("No hay miembros elegibles con el rol configurado para mencionar.");
       }

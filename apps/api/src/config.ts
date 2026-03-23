@@ -24,6 +24,8 @@ export interface ApiConfig {
   discordCallerRoleIds: string[];
   discordBottledEnergyChannelId: string;
   discordCtaChannelId: string;
+  bottledEnergyExcludedDiscordIds: string[];
+  bottledEnergyExcludedAlbionNames: string[];
 }
 
 export function loadApiConfig(): ApiConfig {
@@ -66,7 +68,15 @@ export function loadApiConfig(): ApiConfig {
     discordBottledEnergyChannelId:
       process.env.DISCORD_BOTTLED_ENERGY_CHANNEL_ID ?? "1480132173305614437",
     discordCtaChannelId:
-      process.env.DISCORD_CTA_CHANNEL_ID ?? "1479171967788515491"
+      process.env.DISCORD_CTA_CHANNEL_ID ?? "1479171967788515491",
+    bottledEnergyExcludedDiscordIds: (process.env.BOTTLED_ENERGY_EXCLUDED_DISCORD_IDS ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    bottledEnergyExcludedAlbionNames: (process.env.BOTTLED_ENERGY_EXCLUDED_ALBION_NAMES ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
   };
 }
 
