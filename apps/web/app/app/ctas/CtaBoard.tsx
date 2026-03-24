@@ -90,6 +90,7 @@ export function CtaBoard({
   const [activePartyKey, setActivePartyKey] = useState(parties[0]?.partyKey);
   const [savingSlotKey, setSavingSlotKey] = useState<string | null>(null);
   const [viewerBuildId, setViewerBuildId] = useState<string | null>(null);
+  const [viewerSlotNotes, setViewerSlotNotes] = useState<string>("");
   const [signupSelections, setSignupSelections] = useState<string[]>(["", "", "", ""]);
   const [signupBusy, setSignupBusy] = useState(false);
   const [removeOwnBusy, setRemoveOwnBusy] = useState(false);
@@ -136,6 +137,23 @@ export function CtaBoard({
       }
     }
     return [...byKey.values()].sort((left, right) => left.localeCompare(right, "es"));
+  }, [parties]);
+  const roleByWeaponName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const party of parties) {
+      for (const slot of party.slots) {
+        const weaponName = slot.weaponName?.trim();
+        const role = slot.role?.trim();
+        if (!weaponName || !role) {
+          continue;
+        }
+        const key = weaponName.toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, role);
+        }
+      }
+    }
+    return map;
   }, [parties]);
   const buildPrimaryIconById = useMemo(() => {
     const map = new Map<string, string>();
@@ -224,6 +242,18 @@ export function CtaBoard({
     }
 
     return null;
+  }
+
+  function resolveRoleForPreferredEntry(value: string): string | null {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    if (["tank", "healer", "support", "pierce", "melee", "ranged", "battlemount"].includes(normalized)) {
+      return normalized;
+    }
+    const mappedRole = roleByWeaponName.get(normalized);
+    return mappedRole ? mappedRole.toLowerCase() : null;
   }
 
   function updateSlotLocally(
@@ -610,6 +640,7 @@ export function CtaBoard({
                               if (!nextBuild) {
                                 return;
                               }
+                              setViewerSlotNotes(slot.notes ?? "");
                               setViewerBuildId(nextBuild.id);
                             }}
                             type="button"
@@ -767,7 +798,19 @@ export function CtaBoard({
                       </button>
                     ) : null}
                   </div>
-                  <p>{entry.preferredRoles.join(" · ")}</p>
+                  <p className="cta-fill-preferred-roles">
+                    {entry.preferredRoles.map((preferred, index) => {
+                      const resolvedRole = resolveRoleForPreferredEntry(preferred);
+                      return (
+                        <span
+                          className={`cta-fill-preferred-pill${resolvedRole ? ` role-${resolvedRole}` : ""}`}
+                          key={`${entry.memberId}-${preferred}-${index}`}
+                        >
+                          {preferred}
+                        </span>
+                      );
+                    })}
+                  </p>
                 </article>
               ))}
               {fillers.length === 0 ? <p className="empty">Sin apuntados para fillear.</p> : null}
@@ -810,6 +853,10 @@ export function CtaBoard({
                   </article>
                 );
               })}
+            </div>
+            <div className="comp-build-notes">
+              <span className="card-label">Notas del slot</span>
+              <p>{viewerSlotNotes.trim() || "Sin notas para este slot."}</p>
             </div>
             {viewerBuild.role === "Battlemount" ? (
               <div className="comp-build-extra-row">

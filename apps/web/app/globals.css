@@ -4412,7 +4412,7 @@ li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
 }
 
@@ -4625,11 +4625,14 @@ li {
 
 .cta-fill-column {
   display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: 10px;
   padding: 12px;
   position: sticky;
   top: 88px;
   min-width: 0;
+  height: calc(100vh - 124px);
+  max-height: 900px;
 }
 
 .cta-fill-head {
@@ -4651,9 +4654,28 @@ li {
 .cta-fill-list {
   display: grid;
   gap: 8px;
-  max-height: 300px;
+  max-height: none;
+  min-height: 520px;
   overflow: auto;
-  padding-right: 2px;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(143, 163, 208, 0.52) rgba(255, 255, 255, 0.06);
+}
+
+.cta-fill-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cta-fill-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.cta-fill-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background: linear-gradient(180deg, rgba(128, 157, 219, 0.85), rgba(95, 126, 198, 0.72));
 }
 
 .cta-fill-dropzone {
@@ -4693,6 +4715,65 @@ li {
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.cta-fill-preferred-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cta-fill-preferred-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 168, 210, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  line-height: 1.1;
+}
+
+.cta-fill-preferred-pill.role-tank {
+  color: #78a9ff;
+  border-color: rgba(120, 169, 255, 0.45);
+  background: rgba(88, 143, 255, 0.14);
+}
+
+.cta-fill-preferred-pill.role-healer {
+  color: #6ed6aa;
+  border-color: rgba(80, 200, 160, 0.45);
+  background: rgba(80, 200, 160, 0.14);
+}
+
+.cta-fill-preferred-pill.role-support {
+  color: #f0c85a;
+  border-color: rgba(240, 200, 90, 0.48);
+  background: rgba(240, 200, 90, 0.14);
+}
+
+.cta-fill-preferred-pill.role-pierce {
+  color: #c29aff;
+  border-color: rgba(183, 125, 255, 0.45);
+  background: rgba(183, 125, 255, 0.14);
+}
+
+.cta-fill-preferred-pill.role-melee {
+  color: #ff9d9d;
+  border-color: rgba(224, 92, 92, 0.45);
+  background: rgba(224, 92, 92, 0.14);
+}
+
+.cta-fill-preferred-pill.role-ranged {
+  color: #ffc686;
+  border-color: rgba(255, 179, 107, 0.48);
+  background: rgba(255, 179, 107, 0.14);
+}
+
+.cta-fill-preferred-pill.role-battlemount {
+  color: #e8eeff;
+  border-color: rgba(232, 238, 255, 0.45);
+  background: rgba(232, 238, 255, 0.14);
 }
 
 .cta-fill-name {
@@ -4952,6 +5033,8 @@ li {
   .cta-fill-column {
     position: static;
     top: auto;
+    height: auto;
+    max-height: none;
   }
 
   .comp-list-head {

@@ -203,6 +203,7 @@ export interface CtaEntry {
       weaponId: string;
       weaponName: string;
       buildId?: string;
+      notes?: string;
       playerName?: string;
       playerUserId?: string;
     }>;

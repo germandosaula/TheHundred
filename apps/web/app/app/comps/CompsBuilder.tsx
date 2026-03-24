@@ -323,6 +323,7 @@ export function CompsBuilder({
   );
   const [buildSnapshot, setBuildSnapshot] = useState<string | null>(null);
   const [viewerBuildId, setViewerBuildId] = useState<string | null>(null);
+  const [viewerSlotNotes, setViewerSlotNotes] = useState<string>("");
 
   const activeParty =
     comp.parties.find((party) => party.key === activePartyKey) ??
@@ -335,6 +336,11 @@ export function CompsBuilder({
     : null;
   const viewerBuild = viewerBuildId
     ? builds.find((entry) => entry.id === viewerBuildId) ?? null
+    : null;
+  const editorSlot = editorContext
+    ? comp.parties
+        .find((party) => party.key === editorContext.partyKey)
+        ?.slots.find((slot) => slot.id === editorContext.slotId) ?? null
     : null;
   const activeEditorPrimarySlot = editorBuild
     ? getPrimaryBuildSlot(editorBuild.role)
@@ -1131,6 +1137,7 @@ export function CompsBuilder({
 
                                 const selectedBuild = resolveBuildForSlot(slot);
                                 if (selectedBuild) {
+                                  setViewerSlotNotes(slot.notes ?? "");
                                   setViewerBuildId(selectedBuild.id);
                                 }
                               }}
@@ -1311,6 +1318,27 @@ export function CompsBuilder({
                   }
                 />
               </label>
+              <label className="field">
+                <span>Notas del slot</span>
+                <textarea
+                  onChange={(event) => {
+                    if (!editorContext) {
+                      return;
+                    }
+                    updateSlotInParty(
+                      editorContext.partyKey,
+                      editorContext.slotId,
+                      (slot) => ({
+                        ...slot,
+                        notes: event.target.value,
+                      }),
+                    );
+                  }}
+                  placeholder="Notas visibles para los players (shotcaller, rotaciones, foco...)"
+                  rows={3}
+                  value={editorSlot?.notes ?? ""}
+                />
+              </label>
             </div>
             <div className="comp-build-layout">
               <div className="comp-build-slot-grid">
@@ -1451,6 +1479,10 @@ export function CompsBuilder({
                   </article>
                 );
               })}
+            </div>
+            <div className="comp-build-notes">
+              <span className="card-label">Notas del slot</span>
+              <p>{viewerSlotNotes.trim() || "Sin notas para este slot."}</p>
             </div>
           </article>
         </div>

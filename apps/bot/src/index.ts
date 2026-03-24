@@ -1255,6 +1255,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
   ]);
 
   const slottedSignups = ctaSignups.filter((entry) => !entry.isFill && entry.slotKey !== "__FILL__");
+  const fillOnlySignups = ctaSignups.filter((entry) => entry.isFill || entry.slotKey === "__FILL__");
   const participantCountForSplit = slottedSignups.length;
   if (participantCountForSplit === 0) {
     await interaction.editReply("No hay jugadores colocados en slots de la CTA.");
@@ -1376,6 +1377,18 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
     roleAssignFailed = roleAssignment.failed;
   }
   const unresolvedCount = unresolvedByReason.length;
+  const nonEligibleNoSpotCount = fillOnlySignups.length;
+  const nonEligibleNoSpotPreviewLimit = 12;
+  const nonEligibleNoSpotPreview =
+    fillOnlySignups.length > 0
+      ? fillOnlySignups
+          .slice(0, nonEligibleNoSpotPreviewLimit)
+          .map((entry) => {
+            const preferred = (entry.preferredRoles ?? []).filter(Boolean).join(" · ");
+            return preferred ? `- ${entry.playerName}: ${preferred}` : `- ${entry.playerName}`;
+          })
+          .join("\n")
+      : "";
   const unresolvedPreviewLimit = 12;
   const unresolvedPreview =
     unresolvedByReason.length > 0
@@ -1405,6 +1418,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
       formatReceiptRow("POOL FINAL", formatMoney(finalPool)),
       formatReceiptRow("Particip. total", String(participantCountForSplit)),
       formatReceiptRow("Pagados auto", String(eligiblePayouts.length)),
+      formatReceiptRow("Sin spot (no eleg.)", String(nonEligibleNoSpotCount)),
       formatReceiptRow("Pend. manuales", String(unresolvedCount)),
       formatReceiptRow("POR PERSONA", formatMoney(perPerson)),
       "```",
@@ -1419,6 +1433,10 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
         : "",
       paidMentions.length > 0 ? "" : payoutResult.alreadyProcessed ? "" : "Sin menciones disponibles.",
       paidMentions.length > 0 ? `Pagado a: ${paidMentions.join(", ")}` : "",
+      nonEligibleNoSpotPreview
+        ? `ℹ️ Apuntados sin spot asignado (no elegibles) (${Math.min(nonEligibleNoSpotPreviewLimit, nonEligibleNoSpotCount)}/${nonEligibleNoSpotCount}):`
+        : "",
+      nonEligibleNoSpotPreview ? nonEligibleNoSpotPreview : "",
       unresolvedPreview ? "" : "",
       unresolvedPreview
         ? `No encontrados (muestra ${Math.min(unresolvedPreviewLimit, unresolvedByReason.length)}/${unresolvedByReason.length}):`
@@ -1443,6 +1461,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
       `Por persona: ${formatMoney(perPerson)}`,
       `Participantes totales: ${participantCountForSplit}`,
       `Pagados automáticos: ${eligiblePayouts.length}`,
+      `Apuntados sin spot (no elegibles): ${nonEligibleNoSpotCount}`,
       `Pendientes manuales: ${unresolvedCount}`
     ],
     color: payoutResult.alreadyProcessed ? 0x94a3b8 : 0x22c55e

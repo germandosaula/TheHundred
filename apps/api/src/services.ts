@@ -311,6 +311,8 @@ export interface ApiServices {
             label: string;
             weaponId: string;
             weaponName: string;
+            buildId?: string;
+            notes?: string;
             playerName?: string;
             playerUserId?: string;
           }>;
@@ -715,13 +717,18 @@ export function createApiServices(
           const assigned = signup?.playerName?.trim() ? `@${signup.playerName.trim()}` : "-";
           return `• ${slot.weaponName} - ${assigned}`;
         });
+      const assignedCount = [...party.slots].reduce((total, slot) => {
+        const slotKey = `${party.key}:${slot.position}`;
+        const signup = signupBySlotKey.get(slotKey);
+        return total + (signup?.playerName?.trim() ? 1 : 0);
+      }, 0);
       const leftColumn = lines.slice(0, 10);
       const rightColumn = lines.slice(10, 20);
 
       return [
         {
-          name: party.name || `Party ${party.position}`,
-          value: `Slots: ${lines.length}`,
+          name: `${party.name || `Party ${party.position}`}: ${assignedCount}/${party.slots.length}`,
+          value: `Inscritos: ${assignedCount} · Total slots: ${party.slots.length}`,
           inline: false
         },
         {
@@ -766,6 +773,7 @@ export function createApiServices(
 
     const weaponFields = buildCtaWeaponFields(comp, signups);
     const fillLines = buildCtaFillSummary(signups);
+    const fillCount = signups.filter((entry) => entry.isFill || entry.slotKey === "__FILL__").length;
 
     const ctaUrl = buildCtaWebUrl(cta.id);
     const embed = {
@@ -780,7 +788,7 @@ export function createApiServices(
       fields: [
         ...weaponFields,
         {
-          name: "Fill",
+          name: `Fill: ${fillCount} jugadores`,
           value: fillLines.length > 0 ? fillLines.join("\n").slice(0, 1024) : "Sin apuntados para fillear.",
           inline: false
         }
@@ -1797,6 +1805,7 @@ export function createApiServices(
                   weaponId: slot.weaponId,
                   weaponName: slot.weaponName,
                   buildId: slot.buildId,
+                  notes: slot.notes ?? "",
                   playerName: signup?.playerName,
                   playerUserId: signup ? membersById.get(signup.memberId)?.userId : undefined
                 };
