@@ -802,11 +802,11 @@ export function CtaBoard({
                     {entry.preferredRoles.map((preferred, index) => {
                       const resolvedRole = resolveRoleForPreferredEntry(preferred);
                       return (
-                        <span
-                          className={`cta-fill-preferred-pill${resolvedRole ? ` role-${resolvedRole}` : ""}`}
-                          key={`${entry.memberId}-${preferred}-${index}`}
-                        >
-                          {preferred}
+                        <span key={`${entry.memberId}-${preferred}-${index}`}>
+                          <span className={`cta-fill-preferred-pill${resolvedRole ? ` role-${resolvedRole}` : ""}`}>
+                            {preferred}
+                          </span>
+                          {index < entry.preferredRoles.length - 1 ? " · " : ""}
                         </span>
                       );
                     })}

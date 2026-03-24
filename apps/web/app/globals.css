@@ -4631,8 +4631,9 @@ li {
   position: sticky;
   top: 88px;
   min-width: 0;
-  height: calc(100vh - 124px);
-  max-height: 900px;
+  height: min(calc(100vh - 124px), 820px);
+  max-height: min(calc(100vh - 124px), 820px);
+  overflow: hidden;
 }
 
 .cta-fill-head {
@@ -4655,7 +4656,7 @@ li {
   display: grid;
   gap: 8px;
   max-height: none;
-  min-height: 520px;
+  min-height: 0;
   overflow: auto;
   padding-right: 6px;
   scrollbar-width: thin;
@@ -4718,20 +4719,17 @@ li {
 }
 
 .cta-fill-preferred-roles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: block;
+  line-height: 1.5;
 }
 
 .cta-fill-preferred-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 168, 210, 0.28);
-  background: rgba(255, 255, 255, 0.04);
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
   color: var(--muted);
-  line-height: 1.1;
 }
 
 .cta-fill-preferred-pill.role-tank {
@@ -4772,8 +4770,6 @@ li {
 
 .cta-fill-preferred-pill.role-battlemount {
   color: #e8eeff;
-  border-color: rgba(232, 238, 255, 0.45);
-  background: rgba(232, 238, 255, 0.14);
 }
 
 .cta-fill-name {
