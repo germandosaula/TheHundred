@@ -100,7 +100,6 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "frost-staff", name: "Frost Staff", role: "Ranged" , iconName: "T8_MAIN_FROSTSTAFF"},
   { id: "great-frost-staff", name: "Great Frost Staff", role: "Ranged" , iconName: "T8_2H_FROSTSTAFF"},
   { id: "hoarfrost-staff", name: "Hoarfrost Staff", role: "Ranged" , iconName: "T8_MAIN_FROSTSTAFF_KEEPER"},
-  { id: "icicle-staff", name: "Icicle Staff", role: "Support" , iconName: "T8_2H_ICEGAUNTLETS_HELL"},
   { id: "glacial-staff", name: "Glacial Staff", role: "Ranged" , iconName: "T8_2H_GLACIALSTAFF"},
   { id: "permafrost-prism", name: "Permafrost Prism", role: "Ranged", iconName: "T8_2H_ICECRYSTAL_UNDEAD", aliases: ["icecrystal-undead", "2h-icecrystal-undead"] },
   { id: "chillhowl", name: "Chillhowl", role: "Ranged" , iconName: "T8_MAIN_FROSTSTAFF_AVALON"},
@@ -109,6 +108,14 @@ export const albionWeaponCatalog: AlbionWeaponOption[] = [
   { id: "great-hammer", name: "Great Hammer", role: "Tank" , iconName: "T8_2H_HAMMER"},
   { id: "tombhammer", name: "Tombhammer", role: "Tank" , iconName: "T8_2H_HAMMER_UNDEAD"},
   { id: "forge-hammers", name: "Forge Hammers", role: "Tank" , iconName: "T8_2H_DUALHAMMER_HELL"},
+  {
+    id: "icicle",
+    name: "Icicle",
+    role: "Tank",
+    iconName: "T8_2H_ICEGAUNTLETS_HELL",
+    iconUrl: "https://render.albiononline.com/v1/item/Elder%27s%20Icicle%20Staff@0.png?locale=en",
+    aliases: ["icicle-staff", "2h-icegauntlets-hell"]
+  },
   {
     id: "hallowfall",
     name: "Hallowfall",
