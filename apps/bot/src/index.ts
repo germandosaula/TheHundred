@@ -2762,25 +2762,45 @@ type FeedbackThreadLike = {
   send?: (input: unknown) => Promise<unknown>;
   delete?: (reason?: string) => Promise<unknown>;
   setArchived?: (value: boolean) => Promise<unknown>;
+  setName?: (value: string) => Promise<unknown>;
   messages?: {
     fetch: (input: { limit: number }) => Promise<Map<string, { content: string }>>;
   };
 };
 
 function getFeedbackMarker(memberId: string): string {
-  return `[mid:${memberId}]`;
+  return `TH_MEMBER_ID:${memberId}`;
 }
 
 function parseFeedbackMarker(value: string): string | null {
-  const match = value.match(/\[mid:([0-9a-f-]+)\]/i);
+  const match = value.match(/TH_MEMBER_ID:([0-9a-f-]+)/i) ?? value.match(/\[mid:([0-9a-f-]+)\]/i);
   return match?.[1] ?? null;
 }
 
-function buildFeedbackThreadName(displayName: string, memberId: string): string {
-  const marker = getFeedbackMarker(memberId);
+function buildFeedbackThreadName(displayName: string): string {
   const cleanName = displayName.trim() || "SinNombre";
-  const maxBase = Math.max(1, 100 - marker.length - 3);
-  return `${cleanName.slice(0, maxBase)} · ${marker}`;
+  return cleanName.slice(0, 100);
+}
+
+async function resolveFeedbackMemberId(thread: FeedbackThreadLike): Promise<string | null> {
+  const fromName = parseFeedbackMarker(thread.name);
+  if (fromName) {
+    return fromName;
+  }
+
+  if (!thread.messages?.fetch) {
+    return null;
+  }
+
+  const recent = await thread.messages.fetch({ limit: 20 }).catch(() => new Map<string, { content: string }>());
+  for (const message of recent.values()) {
+    const fromContent = parseFeedbackMarker(message.content);
+    if (fromContent) {
+      return fromContent;
+    }
+  }
+
+  return null;
 }
 
 function getForumThreadManager(channel: unknown) {
@@ -2818,7 +2838,7 @@ async function loadFeedbackThreadsByMemberId() {
   try {
     const active = (await manager.fetchActive()) as { threads?: Map<string, FeedbackThreadLike> };
     for (const thread of active.threads?.values() ?? []) {
-      const memberId = parseFeedbackMarker((thread as { name: string }).name);
+      const memberId = await resolveFeedbackMemberId(thread);
       if (memberId) {
         map.set(memberId, thread);
       }
@@ -2830,7 +2850,7 @@ async function loadFeedbackThreadsByMemberId() {
   try {
     const archived = (await manager.fetchArchived()) as { threads?: Map<string, FeedbackThreadLike> };
     for (const thread of archived.threads?.values() ?? []) {
-      const memberId = parseFeedbackMarker((thread as { name: string }).name);
+      const memberId = await resolveFeedbackMemberId(thread);
       if (memberId && !map.has(memberId)) {
         map.set(memberId, thread);
       }
@@ -2852,7 +2872,7 @@ async function createFeedbackThread(member: { id: string }, user: { displayName:
     return;
   }
 
-  const title = buildFeedbackThreadName(user.displayName, member.id);
+  const title = buildFeedbackThreadName(user.displayName);
   const body = [
     `Jugador: **${user.displayName}**`,
     user.albionName?.trim() ? `Albion: **${user.albionName.trim()}**` : null,
@@ -2863,6 +2883,8 @@ async function createFeedbackThread(member: { id: string }, user: { displayName:
     "• Comunicación / disciplina",
     "• Actitud / mejora",
     "",
+    "Este hilo debe usarse sin fines tóxicos, seamos adultos.",
+    "",
     "_Este hilo es interno para CORE/STAFF._"
   ]
     .filter(Boolean)
@@ -2870,7 +2892,7 @@ async function createFeedbackThread(member: { id: string }, user: { displayName:
 
   await (manager as { create: (input: unknown) => Promise<unknown> }).create({
     name: title,
-    message: { content: body }
+    message: { content: `${body}\n\n||${getFeedbackMarker(member.id)}||` }
   });
 }
 
@@ -2914,8 +2936,11 @@ async function reconcileTrialFeedbackForum() {
       }
 
       if (member.status === "TRIAL") {
-        if (!threadsByMemberId.has(member.id)) {
+        const existingThread = threadsByMemberId.get(member.id);
+        if (!existingThread) {
           await createFeedbackThread(member, user);
+        } else if (existingThread.name.includes("[mid:") && existingThread.setName) {
+          await existingThread.setName(buildFeedbackThreadName(user.displayName)).catch(() => undefined);
         }
         continue;
       }
