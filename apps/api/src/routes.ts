@@ -5,6 +5,7 @@ import type { AuthServices } from "./auth.ts";
 import { createRequestContext, requireAuthenticatedUser } from "./request-context.ts";
 import {
   requireCreateCtaPayload,
+  requireUpdateCtaCompPayload,
   requireCtaFillSignupPayload,
   requireAssignCtaSlotPayload,
   requireMemberAlbionNamePayload,
@@ -21,6 +22,7 @@ import {
   requireSaveBuildPayload,
   requireSaveCompPayload,
   type CreateCtaPayload,
+  type UpdateCtaCompPayload,
   type RegisterPayload,
   type SaveCompPayload,
   type UpdateMemberBombGroupPayload,
@@ -478,6 +480,14 @@ export async function routeRequest(
     const ctaId = url.pathname.split("/")[2];
     const payload = requireAssignCtaSlotPayload(await parseBody(request));
     return json(await services.assignCtaSlot(currentUser, { ctaId, ...payload }));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/comp$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    const payload = requireUpdateCtaCompPayload(await parseBody<UpdateCtaCompPayload>(request));
+    return json(await services.updateCtaComp(currentUser, ctaId, payload.compId));
   }
 
   if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/status$/)) {

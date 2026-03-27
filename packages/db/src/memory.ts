@@ -285,6 +285,16 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     return cta;
   }
 
+  async updateCtaComp(ctaId: string, compId?: string): Promise<CTA | null> {
+    const cta = this.state.ctas.find((item) => item.id === ctaId) ?? null;
+    if (!cta) {
+      return null;
+    }
+
+    cta.compId = compId;
+    return cta;
+  }
+
   async attachCtaSignupMessage(
     ctaId: string,
     input: { signupChannelId: string; signupMessageId: string }

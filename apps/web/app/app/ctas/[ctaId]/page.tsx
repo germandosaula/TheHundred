@@ -14,6 +14,7 @@ export default async function CtaDetailPage({ params }: CtaDetailPageProps) {
   const {
     me,
     ctas,
+    comps,
     assignablePlayers,
     builds,
     canEditCompsAndCtas,
@@ -66,6 +67,7 @@ export default async function CtaDetailPage({ params }: CtaDetailPageProps) {
         builds={builds}
         canCancel={canCancelCta}
         canEdit={canEditCompsAndCtas}
+        comps={comps}
         currentUserId={me.id}
         cta={cta}
       />

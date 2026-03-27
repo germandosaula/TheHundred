@@ -417,6 +417,47 @@ export interface ApiServices {
     }>;
   }>;
   createCta(actor: User, title: string, datetimeUtc: string, compId?: string): Promise<CTA>;
+  updateCtaComp(
+    actor: User,
+    ctaId: string,
+    compId?: string
+  ): Promise<
+    | (CTA & {
+        compName?: string;
+        signupFillers: Array<{
+          memberId: string;
+          playerName: string;
+          playerUserId?: string;
+          preferredRoles: string[];
+        }>;
+        signupParties: Array<{
+          partyKey: string;
+          partyName: string;
+          slots: Array<{
+            slotKey: string;
+            role: string;
+            label: string;
+            weaponId: string;
+            weaponName: string;
+            buildId?: string;
+            notes?: string;
+            playerName?: string;
+            playerUserId?: string;
+          }>;
+        }>;
+        signupCategories: Array<{
+          role: string;
+          slots: Array<{
+            slotKey: string;
+            label: string;
+            weaponName: string;
+            reactionEmoji?: string;
+            playerName?: string;
+          }>;
+        }>;
+      })
+    | null
+  >;
   finalizeCta(
     actor: User,
     ctaId: string
@@ -2149,6 +2190,77 @@ export function createApiServices(
       }
 
       return updated;
+    },
+
+    async updateCtaComp(actor, ctaId, compId) {
+      await requireCtaManager(actor);
+      const cta = await repository.getCtaById(ctaId);
+      if (!cta) {
+        throw new DomainError("CTA not found");
+      }
+
+      if (cta.status === "FINALIZED" || cta.status === "CANCELED") {
+        throw new DomainError("Solo se puede cambiar la composición en CTAs activas");
+      }
+
+      let resolvedCompId: string | undefined;
+      if (compId) {
+        const comp = await repository.getCompById(compId);
+        if (!comp) {
+          throw new DomainError("Comp not found");
+        }
+        resolvedCompId = comp.id;
+      }
+
+      if ((cta.compId ?? undefined) === resolvedCompId) {
+        return (await this.listCtas()).find((entry) => entry.id === cta.id) ?? null;
+      }
+
+      const updated = await repository.updateCtaComp(cta.id, resolvedCompId);
+      if (!updated) {
+        throw new DomainError("CTA not found");
+      }
+
+      const signups = await repository.getCtaSignups(cta.id);
+      const normalizePreferredRoles = (values: Array<string | undefined>): string[] =>
+        Array.from(
+          new Set(values.map((entry) => entry?.trim()).filter((entry): entry is string => Boolean(entry)))
+        ).slice(0, 4);
+
+      for (const signup of signups) {
+        const preferredRoles = normalizePreferredRoles([
+          ...(signup.preferredRoles ?? []),
+          signup.weaponName,
+          signup.role
+        ]);
+
+        await repository.upsertCtaSignup({
+          ctaId: cta.id,
+          memberId: signup.memberId,
+          role: preferredRoles[0] || signup.role || "Fill",
+          slotKey: "__FILL__",
+          slotLabel: "Para fillear",
+          weaponName: "",
+          playerName: signup.playerName,
+          preferredRoles,
+          isFill: true
+        });
+        await repository.upsertAttendance({
+          ctaId: cta.id,
+          memberId: signup.memberId,
+          decision: "YES",
+          state: "ABSENT"
+        });
+      }
+
+      try {
+        await publishOrUpdateCtaDiscordMessage(updated.id);
+      } catch (error) {
+        console.error("CTA Discord comp change refresh failed", error);
+      }
+
+      const hydrated = (await this.listCtas()).find((entry) => entry.id === updated.id) ?? null;
+      return hydrated;
     },
 
     async finalizeCta(actor, ctaId) {

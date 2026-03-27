@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { AssignableCompPlayerEntry, BuildTemplateEntry, CtaEntry } from "../../lib";
+import type { AssignableCompPlayerEntry, BuildTemplateEntry, CompEntry, CtaEntry } from "../../lib";
 import { canonicalWeaponVariantKey, getItemIconUrl, getResolvedWeaponIconName } from "../comps/catalog";
 
 interface CtaBoardProps {
@@ -9,6 +9,7 @@ interface CtaBoardProps {
   builds: BuildTemplateEntry[];
   canCancel: boolean;
   canEdit: boolean;
+  comps: CompEntry[];
   currentUserId?: string;
   cta: CtaEntry;
 }
@@ -73,10 +74,13 @@ export function CtaBoard({
   builds,
   canCancel,
   canEdit,
+  comps,
   currentUserId,
   cta
 }: CtaBoardProps) {
   const [ctaStatus, setCtaStatus] = useState(cta.status);
+  const [ctaCompId, setCtaCompId] = useState(cta.compId ?? "");
+  const [ctaCompName, setCtaCompName] = useState(cta.compName ?? "");
   const [parties, setParties] = useState(cta.signupParties);
   const [fillers, setFillers] = useState(cta.signupFillers ?? []);
   const [preferredRolesMemory, setPreferredRolesMemory] = useState<Record<string, string[]>>(() =>
@@ -96,6 +100,8 @@ export function CtaBoard({
   const [removeOwnBusy, setRemoveOwnBusy] = useState(false);
   const [draggingFillPlayerUserId, setDraggingFillPlayerUserId] = useState<string | null>(null);
   const [movingToFill, setMovingToFill] = useState(false);
+  const [nextCompId, setNextCompId] = useState(cta.compId ?? "");
+  const [changingComp, setChangingComp] = useState(false);
 
   const activeParty = useMemo(
     () => parties.find((party) => party.partyKey === activePartyKey) ?? parties[0],
@@ -107,6 +113,7 @@ export function CtaBoard({
     0
   );
   const totalSlots = parties.reduce((total, party) => total + party.slots.length, 0);
+  const canChangeComp = canEdit && (ctaStatus === "OPEN" || ctaStatus === "CREATED");
   const leftColumnSlots = activeParty?.slots.filter((_, index) => index < 10) ?? [];
   const rightColumnSlots = activeParty?.slots.filter((_, index) => index >= 10) ?? [];
   const alreadySignedByCurrentUser = useMemo(() => {
@@ -540,6 +547,85 @@ export function CtaBoard({
     setMovingToFill(false);
   }
 
+  function hydrateBoardFromCta(nextCta: CtaEntry) {
+    setCtaCompId(nextCta.compId ?? "");
+    setCtaCompName(nextCta.compName ?? "");
+    setNextCompId(nextCta.compId ?? "");
+    setParties(nextCta.signupParties ?? []);
+    setFillers(nextCta.signupFillers ?? []);
+    setActivePartyKey(nextCta.signupParties?.[0]?.partyKey);
+    setPreferredRolesMemory(
+      (nextCta.signupFillers ?? []).reduce<Record<string, string[]>>((acc, entry) => {
+        if (entry.playerUserId) {
+          acc[entry.playerUserId] = entry.preferredRoles ?? [];
+        }
+        return acc;
+      }, {})
+    );
+    setSignupSelections(["", "", "", ""]);
+  }
+
+  async function changeComp() {
+    if (!canEdit || changingComp) {
+      return;
+    }
+    if (nextCompId === ctaCompId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Cambiar la composición quita todas las asignaciones de slot, pero mantiene a los apuntados en Fill. ¿Continuar?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setChangingComp(true);
+    const response = await fetch(`/ctas/comp?ctaId=${encodeURIComponent(cta.id)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        compId: nextCompId || undefined
+      })
+    });
+
+    if (!response.ok) {
+      let reason = "No se pudo cambiar la composición de la CTA.";
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload?.error) {
+          reason = payload.error;
+        }
+      } catch {}
+      window.alert(reason);
+      setChangingComp(false);
+      return;
+    }
+
+    try {
+      const payload = (await response.json()) as CtaEntry | null;
+      if (payload?.id) {
+        hydrateBoardFromCta(payload);
+      } else {
+        setCtaCompId(nextCompId);
+        const selected = comps.find((entry) => entry.id === nextCompId);
+        setCtaCompName(selected?.name ?? "");
+        setParties([]);
+        setFillers([]);
+      }
+    } catch {
+      setCtaCompId(nextCompId);
+      const selected = comps.find((entry) => entry.id === nextCompId);
+      setCtaCompName(selected?.name ?? "");
+      setParties([]);
+      setFillers([]);
+    }
+
+    setChangingComp(false);
+  }
+
   if (ctaStatus === "CANCELED") {
     return null;
   }
@@ -558,7 +644,7 @@ export function CtaBoard({
           <span className={`status-badge cta-status ${ctaStatus.toLowerCase()}`}>
             {formatCtaStatus(ctaStatus)}
           </span>
-          {cta.compName ? <span className="status-badge">{cta.compName}</span> : null}
+          {ctaCompName ? <span className="status-badge">{ctaCompName}</span> : null}
           <span className="status-badge">
             {signedCount}/{totalSlots}
           </span>
@@ -574,6 +660,38 @@ export function CtaBoard({
           ) : null}
         </div>
       </div>
+
+      {canChangeComp ? (
+        <div className="section-row">
+          <div>
+            <span className="card-label">Composición activa</span>
+            <h3>{ctaCompName || "Sin composición"}</h3>
+          </div>
+          <div className="actions">
+            <select
+              className="input compact"
+              disabled={changingComp}
+              onChange={(event) => setNextCompId(event.currentTarget.value)}
+              value={nextCompId}
+            >
+              <option value="">Sin composición</option>
+              {comps.map((comp) => (
+                <option key={comp.id} value={comp.id}>
+                  {comp.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="button ghost compact"
+              disabled={changingComp || nextCompId === ctaCompId}
+              onClick={() => void changeComp()}
+              type="button"
+            >
+              {changingComp ? "Cambiando..." : "Cambiar composición"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {parties.length > 1 ? (
         <div className="cta-party-tabs">

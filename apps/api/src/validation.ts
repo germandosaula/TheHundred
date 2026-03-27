@@ -18,6 +18,10 @@ export interface CreateCtaPayload {
   compId?: string;
 }
 
+export interface UpdateCtaCompPayload {
+  compId?: string;
+}
+
 export interface UpdateMemberStatusPayload {
   status: MemberStatus;
 }
@@ -167,6 +171,14 @@ export function requireCreateCtaPayload(payload: CreateCtaPayload | null): Creat
     title: payload.title.trim(),
     datetimeUtc: payload.datetimeUtc,
     compId: payload.compId?.trim() || undefined
+  };
+}
+
+export function requireUpdateCtaCompPayload(
+  payload: UpdateCtaCompPayload | null
+): UpdateCtaCompPayload {
+  return {
+    compId: payload?.compId?.trim() || undefined
   };
 }
 
