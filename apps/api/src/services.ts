@@ -1848,7 +1848,8 @@ export function createApiServices(
                   buildId: slot.buildId,
                   notes: slot.notes ?? "",
                   playerName: signup?.playerName,
-                  playerUserId: signup ? membersById.get(signup.memberId)?.userId : undefined
+                  playerUserId: signup ? membersById.get(signup.memberId)?.userId : undefined,
+                  preferredRoles: signup?.preferredRoles ?? []
                 };
               })
             }))

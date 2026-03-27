@@ -206,6 +206,7 @@ export interface CtaEntry {
       notes?: string;
       playerName?: string;
       playerUserId?: string;
+      preferredRoles: string[];
     }>;
   }>;
   signupCategories: Array<{

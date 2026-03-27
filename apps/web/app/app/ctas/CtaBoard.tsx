@@ -78,6 +78,7 @@ export function CtaBoard({
   currentUserId,
   cta
 }: CtaBoardProps) {
+  const knownRoleKeys = new Set(["tank", "healer", "support", "pierce", "melee", "ranged", "battlemount"]);
   const [ctaStatus, setCtaStatus] = useState(cta.status);
   const [ctaCompId, setCtaCompId] = useState(cta.compId ?? "");
   const [ctaCompName, setCtaCompName] = useState(cta.compName ?? "");
@@ -261,6 +262,18 @@ export function CtaBoard({
     }
     const mappedRole = roleByWeaponName.get(normalized);
     return mappedRole ? mappedRole.toLowerCase() : null;
+  }
+
+  function getSlotTooltipWeapons(slot: CtaEntry["signupParties"][number]["slots"][number]): string[] {
+    const normalized = (slot.preferredRoles ?? [])
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .filter((entry) => !knownRoleKeys.has(entry.toLowerCase()));
+    const unique = Array.from(new Set(normalized));
+    if (unique.length > 0) {
+      return unique;
+    }
+    return [slot.weaponName].filter(Boolean);
   }
 
   function updateSlotLocally(
@@ -661,54 +674,54 @@ export function CtaBoard({
         </div>
       </div>
 
-      {canChangeComp ? (
-        <div className="section-row">
-          <div>
-            <span className="card-label">Composición activa</span>
-            <h3>{ctaCompName || "Sin composición"}</h3>
-          </div>
-          <div className="actions">
-            <select
-              className="input compact"
-              disabled={changingComp}
-              onChange={(event) => setNextCompId(event.currentTarget.value)}
-              value={nextCompId}
-            >
-              <option value="">Sin composición</option>
-              {comps.map((comp) => (
-                <option key={comp.id} value={comp.id}>
-                  {comp.name}
-                </option>
-              ))}
-            </select>
-            <button
-              className="button ghost compact"
-              disabled={changingComp || nextCompId === ctaCompId}
-              onClick={() => void changeComp()}
-              type="button"
-            >
-              {changingComp ? "Cambiando..." : "Cambiar composición"}
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {parties.length > 1 || canChangeComp ? (
+        <div className="cta-party-tabs-shell">
+          {parties.length > 1 ? (
+            <div className="cta-party-tabs">
+              {parties.map((party) => {
+                const partySignedCount = party.slots.filter((slot) => slot.playerName).length;
 
-      {parties.length > 1 ? (
-        <div className="cta-party-tabs">
-          {parties.map((party) => {
-            const partySignedCount = party.slots.filter((slot) => slot.playerName).length;
-
-            return (
+                return (
+                  <button
+                    className={`comp-tab ${party.partyKey === activeParty?.partyKey ? "active" : ""}`}
+                    key={party.partyKey}
+                    onClick={() => setActivePartyKey(party.partyKey)}
+                    type="button"
+                  >
+                    {party.partyName} {partySignedCount}/{party.slots.length}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div />
+          )}
+          {canChangeComp ? (
+            <div className="cta-comp-switch">
+              <span className="card-label">Comp</span>
+              <select
+                className="input compact"
+                disabled={changingComp}
+                onChange={(event) => setNextCompId(event.currentTarget.value)}
+                value={nextCompId}
+              >
+                <option value="">Sin composición</option>
+                {comps.map((comp) => (
+                  <option key={comp.id} value={comp.id}>
+                    {comp.name}
+                  </option>
+                ))}
+              </select>
               <button
-                className={`comp-tab ${party.partyKey === activeParty?.partyKey ? "active" : ""}`}
-                key={party.partyKey}
-                onClick={() => setActivePartyKey(party.partyKey)}
+                className="button ghost compact"
+                disabled={changingComp || nextCompId === ctaCompId}
+                onClick={() => void changeComp()}
                 type="button"
               >
-                {party.partyName} {partySignedCount}/{party.slots.length}
+                {changingComp ? "..." : "Aplicar"}
               </button>
-            );
-          })}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -807,6 +820,12 @@ export function CtaBoard({
                             >
                               {slot.playerName}
                             </span>
+                            {getSlotTooltipWeapons(slot).length > 0 ? (
+                              <div className="cta-slot-tooltip" role="note">
+                                <strong>Armas de signup</strong>
+                                <p>{getSlotTooltipWeapons(slot).join(" · ")}</p>
+                              </div>
+                            ) : null}
                           </>
                         ) : (
                           <span>Sin asignar</span>
