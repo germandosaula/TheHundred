@@ -69,10 +69,16 @@ const economyAuditChannelId =
 const pagarSinPeleaVoiceChannelId =
   process.env.DISCORD_PAGAR_SIN_PELEA_VOICE_CHANNEL_ID ?? "1477634488673505315";
 const albionBbBaseUrl = process.env.ALBION_BB_API_BASE_URL ?? "https://api.albionbb.com/eu";
+const trialFeedbackForumId =
+  process.env.DISCORD_TRIAL_FEEDBACK_FORUM_ID ?? "1486722409628303361";
+const promotionVoteRoleId = process.env.DISCORD_PROMOTION_VOTE_ROLE_ID ?? activeRoleIds.CORE ?? "";
+const promotionVoteTimezone = process.env.DISCORD_PROMOTION_VOTE_TIMEZONE ?? "Europe/Madrid";
+const feedbackSyncIntervalMs = Number(process.env.DISCORD_FEEDBACK_SYNC_INTERVAL_MS ?? "300000");
 const killboardClient = createKillboardClient({
   source: "albionbb",
   baseUrl: albionBbBaseUrl
 });
+let lastFeedbackForumSyncAt = 0;
 
 const slotsCommand = new SlashCommandBuilder()
   .setName("slots")
@@ -678,12 +684,16 @@ client.once("clientReady", async () => {
   if (guildId) {
     void ensureRecruitmentTickets();
     void reconcileGuildRoleSync();
+    void reconcileTrialFeedbackForum();
     void ensureCtaReminders();
+    void ensurePromotionVotes();
     void ensureScheduledEventsReminder(true);
     setInterval(() => {
       void ensureRecruitmentTickets();
       void reconcileGuildRoleSync();
+      void reconcileTrialFeedbackForum();
       void ensureCtaReminders();
+      void ensurePromotionVotes();
       void ensureScheduledEventsReminder();
     }, syncIntervalMs);
   }
@@ -964,6 +974,8 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
 
       try {
         await syncDiscordGuildRole(discordId, updatedMember);
+        lastFeedbackForumSyncAt = 0;
+        await reconcileTrialFeedbackForum();
         await interaction.reply(
           `Recruitment approved for ${user.displayName}. Status: ${updatedMember.status}.`
         );
@@ -989,6 +1001,8 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
   const member = await repository.createMember(user.id, "TRIAL");
   try {
     await syncDiscordGuildRole(discordId, member);
+    lastFeedbackForumSyncAt = 0;
+    await reconcileTrialFeedbackForum();
     await interaction.reply(`Recruitment approved for ${user.displayName}. Status: ${member.status}.`);
   } catch (error) {
     await interaction.reply({
@@ -2743,6 +2757,259 @@ async function reconcileGuildRoleSync() {
   }
 }
 
+type FeedbackThreadLike = {
+  name: string;
+  send?: (input: unknown) => Promise<unknown>;
+  delete?: (reason?: string) => Promise<unknown>;
+  setArchived?: (value: boolean) => Promise<unknown>;
+  messages?: {
+    fetch: (input: { limit: number }) => Promise<Map<string, { content: string }>>;
+  };
+};
+
+function getFeedbackMarker(memberId: string): string {
+  return `[mid:${memberId}]`;
+}
+
+function parseFeedbackMarker(value: string): string | null {
+  const match = value.match(/\[mid:([0-9a-f-]+)\]/i);
+  return match?.[1] ?? null;
+}
+
+function buildFeedbackThreadName(displayName: string, memberId: string): string {
+  const marker = getFeedbackMarker(memberId);
+  const cleanName = displayName.trim() || "SinNombre";
+  const maxBase = Math.max(1, 100 - marker.length - 3);
+  return `${cleanName.slice(0, maxBase)} · ${marker}`;
+}
+
+function getForumThreadManager(channel: unknown) {
+  return (channel as { threads?: { fetchActive: () => Promise<unknown>; fetchArchived: () => Promise<unknown> } })
+    .threads;
+}
+
+async function fetchFeedbackForumChannel() {
+  if (!guildId || !trialFeedbackForumId) {
+    return null;
+  }
+  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  if (!guild) {
+    return null;
+  }
+  const channel = await guild.channels.fetch(trialFeedbackForumId).catch(() => null);
+  if (!channel || channel.type !== ChannelType.GuildForum) {
+    return null;
+  }
+  return channel;
+}
+
+async function loadFeedbackThreadsByMemberId() {
+  const forum = await fetchFeedbackForumChannel();
+  if (!forum) {
+    return new Map<string, FeedbackThreadLike>();
+  }
+
+  const manager = getForumThreadManager(forum);
+  if (!manager) {
+    return new Map<string, FeedbackThreadLike>();
+  }
+
+  const map = new Map<string, FeedbackThreadLike>();
+  try {
+    const active = (await manager.fetchActive()) as { threads?: Map<string, FeedbackThreadLike> };
+    for (const thread of active.threads?.values() ?? []) {
+      const memberId = parseFeedbackMarker((thread as { name: string }).name);
+      if (memberId) {
+        map.set(memberId, thread);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to fetch active feedback threads", error);
+  }
+
+  try {
+    const archived = (await manager.fetchArchived()) as { threads?: Map<string, FeedbackThreadLike> };
+    for (const thread of archived.threads?.values() ?? []) {
+      const memberId = parseFeedbackMarker((thread as { name: string }).name);
+      if (memberId && !map.has(memberId)) {
+        map.set(memberId, thread);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to fetch archived feedback threads", error);
+  }
+
+  return map;
+}
+
+async function createFeedbackThread(member: { id: string }, user: { displayName: string; albionName?: string }) {
+  const forum = await fetchFeedbackForumChannel();
+  if (!forum) {
+    return;
+  }
+  const manager = getForumThreadManager(forum);
+  if (!manager || !("create" in manager)) {
+    return;
+  }
+
+  const title = buildFeedbackThreadName(user.displayName, member.id);
+  const body = [
+    `Jugador: **${user.displayName}**`,
+    user.albionName?.trim() ? `Albion: **${user.albionName.trim()}**` : null,
+    "",
+    "Plantilla feedback:",
+    "• Macro / posicionamiento",
+    "• Rotación / ejecución",
+    "• Comunicación / disciplina",
+    "• Actitud / mejora",
+    "",
+    "_Este hilo es interno para CORE/STAFF._"
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  await (manager as { create: (input: unknown) => Promise<unknown> }).create({
+    name: title,
+    message: { content: body }
+  });
+}
+
+async function deleteFeedbackThread(thread: unknown) {
+  const typed = thread as {
+    delete?: (reason?: string) => Promise<unknown>;
+    setArchived?: (v: boolean) => Promise<unknown>;
+  };
+  if (typed.delete) {
+    await typed.delete("Member promoted to CORE");
+    return;
+  }
+  if (typed.setArchived) {
+    await typed.setArchived(true);
+  }
+}
+
+async function reconcileTrialFeedbackForum() {
+  if (!guildId || !trialFeedbackForumId || !Number.isFinite(feedbackSyncIntervalMs)) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastFeedbackForumSyncAt < feedbackSyncIntervalMs) {
+    return;
+  }
+  lastFeedbackForumSyncAt = now;
+
+  try {
+    const [members, users] = await Promise.all([repository.getMembers(), repository.getUsers()]);
+    const usersById = new Map(users.map((entry) => [entry.id, entry]));
+    const threadsByMemberId = await loadFeedbackThreadsByMemberId();
+
+    for (const member of members) {
+      if (member.kickedAt) {
+        continue;
+      }
+      const user = usersById.get(member.userId);
+      if (!user) {
+        continue;
+      }
+
+      if (member.status === "TRIAL") {
+        if (!threadsByMemberId.has(member.id)) {
+          await createFeedbackThread(member, user);
+        }
+        continue;
+      }
+
+      if (member.status === "CORE") {
+        const thread = threadsByMemberId.get(member.id);
+        if (thread) {
+          try {
+            await deleteFeedbackThread(thread);
+          } catch (error) {
+            console.error(`Failed to delete feedback thread for member ${member.id}`, error);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Feedback forum reconcile failed", error);
+  }
+}
+
+function getDatePartsInTimeZone(date: Date, timeZone: string): { year: string; month: string; day: string } {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  const parts = formatter.formatToParts(date);
+  const value = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return {
+    year: value("year"),
+    month: value("month"),
+    day: value("day")
+  };
+}
+
+async function ensurePromotionVotes() {
+  if (!guildId || !trialFeedbackForumId || !promotionVoteRoleId) {
+    return;
+  }
+
+  const now = new Date();
+  const { year, month, day } = getDatePartsInTimeZone(now, promotionVoteTimezone);
+  const dayNumber = Number(day);
+  if (dayNumber !== 15 && dayNumber !== 30) {
+    return;
+  }
+
+  const voteKey = `${year}-${month}-${day}`;
+  try {
+    const [members, users, threadsByMemberId] = await Promise.all([
+      repository.getMembers(),
+      repository.getUsers(),
+      loadFeedbackThreadsByMemberId()
+    ]);
+    const usersById = new Map(users.map((entry) => [entry.id, entry]));
+
+    for (const member of members) {
+      if (member.kickedAt || member.status !== "TRIAL") {
+        continue;
+      }
+      const thread = threadsByMemberId.get(member.id);
+      if (!thread?.send || !thread.messages?.fetch) {
+        continue;
+      }
+
+      const recent = await thread.messages.fetch({ limit: 50 }).catch(() => new Map<string, { content: string }>());
+      const alreadyPosted = [...recent.values()].some((message) =>
+        message.content.includes(`PROMO_VOTE:${voteKey}`)
+      );
+      if (alreadyPosted) {
+        continue;
+      }
+
+      const user = usersById.get(member.userId);
+      const playerLabel = user?.albionName?.trim() || user?.displayName || "Jugador";
+      await thread.send({
+        content: [
+          `PROMO_VOTE:${voteKey}`,
+          `<@&${promotionVoteRoleId}>`,
+          `Votación promoción (${voteKey}) para **${playerLabel}**`,
+          "Reaccionad con:",
+          "✅ Promocionar",
+          "⏳ Mantener Trial",
+          "❌ No promocionar"
+        ].join("\n"),
+        allowedMentions: { roles: [promotionVoteRoleId] }
+      });
+    }
+  } catch (error) {
+    console.error("Promotion vote automation failed", error);
+  }
+}
+
 async function syncWebStatusFromDiscordMember(guildMember: GuildMember) {
   const user = await repository.getUserByDiscordId(guildMember.user.id);
   if (!user) {
@@ -2759,6 +3026,8 @@ async function syncWebStatusFromDiscordMember(guildMember: GuildMember) {
     if (application) {
       await repository.updateRecruitmentApplicationStatus(application.id, "APPROVED");
     }
+    lastFeedbackForumSyncAt = 0;
+    await reconcileTrialFeedbackForum();
     return;
   }
 
@@ -2781,6 +3050,8 @@ async function syncWebStatusFromDiscordMember(guildMember: GuildMember) {
 
   if (member.status !== nextStatus) {
     await repository.updateMemberStatus(member.id, nextStatus);
+    lastFeedbackForumSyncAt = 0;
+    await reconcileTrialFeedbackForum();
   }
 
   await repository.setMemberDiscordRoleStatus(member.id, nextStatus);
