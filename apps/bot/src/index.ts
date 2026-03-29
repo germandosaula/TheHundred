@@ -5,6 +5,7 @@ import {
   Client,
   EmbedBuilder,
   GatewayIntentBits,
+  MessageFlags,
   OverwriteType,
   Partials,
   PermissionFlagsBits,
@@ -948,15 +949,13 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
   ) {
     return;
   }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const discordUser = interaction.options.getUser("usuario", true);
   const discordId = discordUser.id;
   const user = await repository.getUserByDiscordId(discordId);
   if (!user) {
-    await interaction.reply({
-      content: "No linked web user found for that Discord id.",
-      ephemeral: true
-    });
+    await interaction.editReply("No linked web user found for that Discord id.");
     return;
   }
 
@@ -965,10 +964,7 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
     if (existingMember.status === "PENDING" || existingMember.status === "REJECTED") {
       const updatedMember = await repository.updateMemberStatus(existingMember.id, "TRIAL");
       if (!updatedMember) {
-        await interaction.reply({
-          content: "Could not promote the member in the database.",
-          ephemeral: true
-        });
+        await interaction.editReply("Could not promote the member in the database.");
         return;
       }
 
@@ -976,25 +972,20 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
         await syncDiscordGuildRole(discordId, updatedMember);
         lastFeedbackForumSyncAt = 0;
         await reconcileTrialFeedbackForum();
-        await interaction.reply(
+        await interaction.editReply(
           `Recruitment approved for ${user.displayName}. Status: ${updatedMember.status}.`
         );
       } catch (error) {
-        await interaction.reply({
-          content:
-            error instanceof Error
-              ? `Member promoted in web, but Discord sync failed: ${error.message}`
-              : "Member promoted in web, but Discord sync failed.",
-          ephemeral: true
-        });
+        await interaction.editReply(
+          error instanceof Error
+            ? `Member promoted in web, but Discord sync failed: ${error.message}`
+            : "Member promoted in web, but Discord sync failed."
+        );
       }
       return;
     }
 
-    await interaction.reply({
-      content: `User already has guild status ${existingMember.status}.`,
-      ephemeral: true
-    });
+    await interaction.editReply(`User already has guild status ${existingMember.status}.`);
     return;
   }
 
@@ -1003,15 +994,13 @@ async function handleRecruitCommand(interaction: ChatInputCommandInteraction): P
     await syncDiscordGuildRole(discordId, member);
     lastFeedbackForumSyncAt = 0;
     await reconcileTrialFeedbackForum();
-    await interaction.reply(`Recruitment approved for ${user.displayName}. Status: ${member.status}.`);
+    await interaction.editReply(`Recruitment approved for ${user.displayName}. Status: ${member.status}.`);
   } catch (error) {
-    await interaction.reply({
-      content:
-        error instanceof Error
-          ? `Member created in web, but Discord sync failed: ${error.message}`
-          : "Member created in web, but Discord sync failed.",
-      ephemeral: true
-    });
+    await interaction.editReply(
+      error instanceof Error
+        ? `Member created in web, but Discord sync failed: ${error.message}`
+        : "Member created in web, but Discord sync failed."
+    );
   }
 }
 
