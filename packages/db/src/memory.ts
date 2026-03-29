@@ -295,6 +295,24 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     return cta;
   }
 
+  async updateCtaDetails(
+    ctaId: string,
+    input: { title?: string; datetimeUtc?: string }
+  ): Promise<CTA | null> {
+    const cta = this.state.ctas.find((item) => item.id === ctaId) ?? null;
+    if (!cta) {
+      return null;
+    }
+
+    if (typeof input.title === "string") {
+      cta.title = input.title;
+    }
+    if (typeof input.datetimeUtc === "string") {
+      cta.datetimeUtc = input.datetimeUtc;
+    }
+    return cta;
+  }
+
   async attachCtaSignupMessage(
     ctaId: string,
     input: { signupChannelId: string; signupMessageId: string }

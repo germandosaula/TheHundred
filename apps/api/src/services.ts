@@ -301,6 +301,7 @@ export interface ApiServices {
           playerName: string;
           playerUserId?: string;
           preferredRoles: string[];
+          preferredWeapons: string[];
         }>;
         signupParties: Array<{
           partyKey: string;
@@ -315,6 +316,8 @@ export interface ApiServices {
             notes?: string;
             playerName?: string;
             playerUserId?: string;
+            preferredRoles: string[];
+            preferredWeapons: string[];
           }>;
         }>;
         signupCategories: Array<{
@@ -417,10 +420,10 @@ export interface ApiServices {
     }>;
   }>;
   createCta(actor: User, title: string, datetimeUtc: string, compId?: string): Promise<CTA>;
-  updateCtaComp(
+  updateCtaDetails(
     actor: User,
     ctaId: string,
-    compId?: string
+    input: { title?: string; datetimeUtc?: string }
   ): Promise<
     | (CTA & {
         compName?: string;
@@ -429,6 +432,7 @@ export interface ApiServices {
           playerName: string;
           playerUserId?: string;
           preferredRoles: string[];
+          preferredWeapons: string[];
         }>;
         signupParties: Array<{
           partyKey: string;
@@ -443,6 +447,52 @@ export interface ApiServices {
             notes?: string;
             playerName?: string;
             playerUserId?: string;
+            preferredRoles: string[];
+            preferredWeapons: string[];
+          }>;
+        }>;
+        signupCategories: Array<{
+          role: string;
+          slots: Array<{
+            slotKey: string;
+            label: string;
+            weaponName: string;
+            reactionEmoji?: string;
+            playerName?: string;
+          }>;
+        }>;
+      })
+    | null
+  >;
+  updateCtaComp(
+    actor: User,
+    ctaId: string,
+    compId?: string
+  ): Promise<
+    | (CTA & {
+        compName?: string;
+        signupFillers: Array<{
+          memberId: string;
+          playerName: string;
+          playerUserId?: string;
+          preferredRoles: string[];
+          preferredWeapons: string[];
+        }>;
+        signupParties: Array<{
+          partyKey: string;
+          partyName: string;
+          slots: Array<{
+            slotKey: string;
+            role: string;
+            label: string;
+            weaponId: string;
+            weaponName: string;
+            buildId?: string;
+            notes?: string;
+            playerName?: string;
+            playerUserId?: string;
+            preferredRoles: string[];
+            preferredWeapons: string[];
           }>;
         }>;
         signupCategories: Array<{
@@ -882,6 +932,39 @@ export function createApiServices(
       await repository.attachCtaSignupMessage(cta.id, {
         signupChannelId: created.channel_id,
         signupMessageId: created.id
+      });
+    }
+  };
+  const moveCtaSignupsToFill = async (ctaId: string) => {
+    const signups = await repository.getCtaSignups(ctaId);
+    const normalizePreferredRoles = (values: Array<string | undefined>): string[] =>
+      Array.from(
+        new Set(values.map((entry) => entry?.trim()).filter((entry): entry is string => Boolean(entry)))
+      ).slice(0, 4);
+
+    for (const signup of signups) {
+      const preferredRoles = normalizePreferredRoles([
+        ...(signup.preferredRoles ?? []),
+        signup.weaponName,
+        signup.role
+      ]);
+
+      await repository.upsertCtaSignup({
+        ctaId,
+        memberId: signup.memberId,
+        role: preferredRoles[0] || signup.role || "Fill",
+        slotKey: "__FILL__",
+        slotLabel: "Para fillear",
+        weaponName: "",
+        playerName: signup.playerName,
+        preferredRoles,
+        isFill: true
+      });
+      await repository.upsertAttendance({
+        ctaId,
+        memberId: signup.memberId,
+        decision: "YES",
+        state: "ABSENT"
       });
     }
   };
@@ -1812,6 +1895,27 @@ export function createApiServices(
     },
 
     async listCtas() {
+      const roleValueSet = new Set(
+        ["tank", "healer", "support", "pierce", "melee", "ranged", "battlemount"].map((entry) =>
+          entry.toLowerCase()
+        )
+      );
+      const extractPreferredWeapons = (
+        preferredRoles: string[] | undefined,
+        fallbackWeaponName?: string
+      ): string[] => {
+        const normalized = (preferredRoles ?? [])
+          .map((entry) => entry?.trim())
+          .filter((entry): entry is string => Boolean(entry))
+          .filter((entry) => !roleValueSet.has(entry.toLowerCase()));
+        const unique = Array.from(new Set(normalized));
+        if (unique.length > 0) {
+          return unique;
+        }
+        const fallback = fallbackWeaponName?.trim();
+        return fallback ? [fallback] : [];
+      };
+
       const ctas = await repository.getCtas();
       const [comps, signups, members] = await Promise.all([
         repository.getComps(),
@@ -1849,7 +1953,8 @@ export function createApiServices(
                   notes: slot.notes ?? "",
                   playerName: signup?.playerName,
                   playerUserId: signup ? membersById.get(signup.memberId)?.userId : undefined,
-                  preferredRoles: signup?.preferredRoles ?? []
+                  preferredRoles: signup?.preferredRoles ?? [],
+                  preferredWeapons: extractPreferredWeapons(signup?.preferredRoles, signup?.weaponName)
                 };
               })
             }))
@@ -1893,7 +1998,8 @@ export function createApiServices(
             memberId: entry.memberId,
             playerName: entry.playerName,
             playerUserId: membersById.get(entry.memberId)?.userId,
-            preferredRoles: entry.preferredRoles ?? []
+            preferredRoles: entry.preferredRoles ?? [],
+            preferredWeapons: extractPreferredWeapons(entry.preferredRoles, entry.weaponName)
           })),
           signupParties,
           signupCategories
@@ -2193,6 +2299,42 @@ export function createApiServices(
       return updated;
     },
 
+    async updateCtaDetails(actor, ctaId, input) {
+      await requireCtaManager(actor);
+      const cta = await repository.getCtaById(ctaId);
+      if (!cta) {
+        throw new DomainError("CTA not found");
+      }
+
+      if (cta.status === "FINALIZED" || cta.status === "CANCELED") {
+        throw new DomainError("Solo se puede editar título/hora en CTAs activas");
+      }
+
+      const nextTitle = input.title ?? cta.title;
+      const nextDatetimeUtc = input.datetimeUtc ?? cta.datetimeUtc;
+      if (nextTitle === cta.title && nextDatetimeUtc === cta.datetimeUtc) {
+        return (await this.listCtas()).find((entry) => entry.id === cta.id) ?? null;
+      }
+
+      const updated = await repository.updateCtaDetails(cta.id, {
+        title: input.title,
+        datetimeUtc: input.datetimeUtc
+      });
+      if (!updated) {
+        throw new DomainError("CTA not found");
+      }
+
+      await moveCtaSignupsToFill(cta.id);
+
+      try {
+        await publishOrUpdateCtaDiscordMessage(updated.id);
+      } catch (error) {
+        console.error("CTA Discord title/time update refresh failed", error);
+      }
+
+      return (await this.listCtas()).find((entry) => entry.id === updated.id) ?? null;
+    },
+
     async updateCtaComp(actor, ctaId, compId) {
       await requireCtaManager(actor);
       const cta = await repository.getCtaById(ctaId);
@@ -2222,37 +2364,7 @@ export function createApiServices(
         throw new DomainError("CTA not found");
       }
 
-      const signups = await repository.getCtaSignups(cta.id);
-      const normalizePreferredRoles = (values: Array<string | undefined>): string[] =>
-        Array.from(
-          new Set(values.map((entry) => entry?.trim()).filter((entry): entry is string => Boolean(entry)))
-        ).slice(0, 4);
-
-      for (const signup of signups) {
-        const preferredRoles = normalizePreferredRoles([
-          ...(signup.preferredRoles ?? []),
-          signup.weaponName,
-          signup.role
-        ]);
-
-        await repository.upsertCtaSignup({
-          ctaId: cta.id,
-          memberId: signup.memberId,
-          role: preferredRoles[0] || signup.role || "Fill",
-          slotKey: "__FILL__",
-          slotLabel: "Para fillear",
-          weaponName: "",
-          playerName: signup.playerName,
-          preferredRoles,
-          isFill: true
-        });
-        await repository.upsertAttendance({
-          ctaId: cta.id,
-          memberId: signup.memberId,
-          decision: "YES",
-          state: "ABSENT"
-        });
-      }
+      await moveCtaSignupsToFill(cta.id);
 
       try {
         await publishOrUpdateCtaDiscordMessage(updated.id);

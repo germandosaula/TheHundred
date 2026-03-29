@@ -22,6 +22,11 @@ export interface UpdateCtaCompPayload {
   compId?: string;
 }
 
+export interface UpdateCtaDetailsPayload {
+  title?: string;
+  datetimeUtc?: string;
+}
+
 export interface UpdateMemberStatusPayload {
   status: MemberStatus;
 }
@@ -179,6 +184,26 @@ export function requireUpdateCtaCompPayload(
 ): UpdateCtaCompPayload {
   return {
     compId: payload?.compId?.trim() || undefined
+  };
+}
+
+export function requireUpdateCtaDetailsPayload(
+  payload: UpdateCtaDetailsPayload | null
+): UpdateCtaDetailsPayload {
+  const title = payload?.title?.trim();
+  const datetimeUtc = payload?.datetimeUtc?.trim();
+
+  if (!title && !datetimeUtc) {
+    throw new DomainError("title or datetimeUtc is required");
+  }
+
+  if (datetimeUtc && Number.isNaN(Date.parse(datetimeUtc))) {
+    throw new DomainError("datetimeUtc must be a valid ISO date");
+  }
+
+  return {
+    title: title || undefined,
+    datetimeUtc: datetimeUtc || undefined
   };
 }
 

@@ -108,7 +108,7 @@ const payoutLootCommand = new SlashCommandBuilder()
   .addStringOption((option) =>
     option
       .setName("cta_id")
-      .setDescription("ID de la CTA a usar para elegibles (solo slots asignados)")
+      .setDescription("ID o link de la CTA a usar para elegibles (solo slots asignados)")
       .setRequired(true)
   )
   .addIntegerOption((option) =>
@@ -1227,6 +1227,38 @@ async function handleRolesAuditCommand(interaction: ChatInputCommandInteraction)
   }
 }
 
+function parseCtaIdInput(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+  const direct = trimmed.match(uuidPattern)?.[0];
+  if (direct) {
+    return direct;
+  }
+
+  if (trimmed.startsWith("cta:")) {
+    const fromPrefix = trimmed.slice(4).match(uuidPattern)?.[0];
+    if (fromPrefix) {
+      return fromPrefix;
+    }
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const fromPath = parsed.pathname.match(uuidPattern)?.[0];
+    if (fromPath) {
+      return fromPath;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 async function handlePagarLootCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   if (
     !(await requireDiscordRoles(
@@ -1240,7 +1272,8 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
 
   await interaction.deferReply();
 
-  const ctaId = interaction.options.getString("cta_id", true).trim();
+  const ctaInput = interaction.options.getString("cta_id", true).trim();
+  const ctaId = parseCtaIdInput(ctaInput);
   const splitRole = "AUTO";
   const estValue = interaction.options.getInteger("est_value", true);
   const bags = interaction.options.getInteger("bolsas", true);
@@ -1248,7 +1281,7 @@ async function handlePagarLootCommand(interaction: ChatInputCommandInteraction):
   const taxPercent = interaction.options.getInteger("tax", true);
 
   if (!ctaId) {
-    await interaction.editReply("`cta_id` es obligatorio.");
+    await interaction.editReply("`cta_id` debe ser un UUID válido o un link de CTA válido.");
     return;
   }
 

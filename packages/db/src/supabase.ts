@@ -672,6 +672,31 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     return data ? mapCta(data) : null;
   }
 
+  async updateCtaDetails(
+    ctaId: string,
+    input: { title?: string; datetimeUtc?: string }
+  ): Promise<CTA | null> {
+    const updates: { title?: string; datetime_utc?: string } = {};
+    if (typeof input.title === "string") {
+      updates.title = input.title;
+    }
+    if (typeof input.datetimeUtc === "string") {
+      updates.datetime_utc = input.datetimeUtc;
+    }
+
+    const { data, error } = await this.client
+      .from("ctas")
+      .update(updates)
+      .eq("id", ctaId)
+      .select("id, title, datetime_utc, status, created_by, comp_id, signup_channel_id, signup_message_id")
+      .maybeSingle<CtaRow>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to update CTA details in Supabase", error);
+    }
+
+    return data ? mapCta(data) : null;
+  }
+
   async attachCtaSignupMessage(
     ctaId: string,
     input: { signupChannelId: string; signupMessageId: string }

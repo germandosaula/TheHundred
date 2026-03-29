@@ -396,6 +396,10 @@ export interface DatabaseRepository {
   createCta(input: CreateCtaInput): Promise<CTA>;
   updateCtaStatus(ctaId: string, status: CTAStatus): Promise<CTA | null>;
   updateCtaComp(ctaId: string, compId?: string): Promise<CTA | null>;
+  updateCtaDetails(
+    ctaId: string,
+    input: { title?: string; datetimeUtc?: string }
+  ): Promise<CTA | null>;
   attachCtaSignupMessage(
     ctaId: string,
     input: { signupChannelId: string; signupMessageId: string }

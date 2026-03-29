@@ -192,6 +192,7 @@ export interface CtaEntry {
     playerName: string;
     playerUserId?: string;
     preferredRoles: string[];
+    preferredWeapons: string[];
   }>;
   signupParties: Array<{
     partyKey: string;
@@ -207,6 +208,7 @@ export interface CtaEntry {
       playerName?: string;
       playerUserId?: string;
       preferredRoles: string[];
+      preferredWeapons: string[];
     }>;
   }>;
   signupCategories: Array<{

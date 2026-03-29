@@ -6,6 +6,7 @@ import { createRequestContext, requireAuthenticatedUser } from "./request-contex
 import {
   requireCreateCtaPayload,
   requireUpdateCtaCompPayload,
+  requireUpdateCtaDetailsPayload,
   requireCtaFillSignupPayload,
   requireAssignCtaSlotPayload,
   requireMemberAlbionNamePayload,
@@ -23,6 +24,7 @@ import {
   requireSaveCompPayload,
   type CreateCtaPayload,
   type UpdateCtaCompPayload,
+  type UpdateCtaDetailsPayload,
   type RegisterPayload,
   type SaveCompPayload,
   type UpdateMemberBombGroupPayload,
@@ -216,6 +218,21 @@ export async function routeRequest(
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
     return json(await services.listCtas());
+  }
+
+  if (
+    method === "GET" &&
+    url.pathname.match(/^\/ctas\/[^/]+$/) &&
+    url.pathname !== "/ctas/manage-access"
+  ) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    const cta = (await services.listCtas()).find((entry) => entry.id === ctaId) ?? null;
+    if (!cta) {
+      return json({ error: "CTA not found" }, 404);
+    }
+    return json(cta);
   }
 
   if (method === "GET" && url.pathname === "/ctas/manage-access") {
@@ -488,6 +505,14 @@ export async function routeRequest(
     const ctaId = url.pathname.split("/")[2];
     const payload = requireUpdateCtaCompPayload(await parseBody<UpdateCtaCompPayload>(request));
     return json(await services.updateCtaComp(currentUser, ctaId, payload.compId));
+  }
+
+  if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/details$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    const payload = requireUpdateCtaDetailsPayload(await parseBody<UpdateCtaDetailsPayload>(request));
+    return json(await services.updateCtaDetails(currentUser, ctaId, payload));
   }
 
   if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/status$/)) {

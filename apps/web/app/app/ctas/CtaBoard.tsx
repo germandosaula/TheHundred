@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AssignableCompPlayerEntry, BuildTemplateEntry, CompEntry, CtaEntry } from "../../lib";
 import { canonicalWeaponVariantKey, getItemIconUrl, getResolvedWeaponIconName } from "../comps/catalog";
 
@@ -69,6 +69,43 @@ function roleClassName(role: string): string {
   return `role-${role.toLowerCase().replace(/\s+/g, "-")}`;
 }
 
+function toIsoUtcFromUtcInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  if (Number.isNaN(utcDate.getTime())) {
+    return null;
+  }
+
+  return utcDate.toISOString();
+}
+
+function toUtcInputFromIso(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const min = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
 export function CtaBoard({
   assignablePlayers: _assignablePlayers,
   builds,
@@ -79,15 +116,36 @@ export function CtaBoard({
   cta
 }: CtaBoardProps) {
   const knownRoleKeys = new Set(["tank", "healer", "support", "pierce", "melee", "ranged", "battlemount"]);
+  const normalizePreferredWeapons = (values: string[] | undefined, fallbackWeapon?: string): string[] => {
+    const normalized = (values ?? [])
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .filter((entry) => !knownRoleKeys.has(entry.toLowerCase()));
+    const unique = Array.from(new Set(normalized));
+    if (unique.length > 0) {
+      return unique;
+    }
+    const fallback = fallbackWeapon?.trim();
+    return fallback ? [fallback] : [];
+  };
+  const normalizeFillerEntry = (entry: CtaEntry["signupFillers"][number]) => ({
+    ...entry,
+    preferredWeapons: normalizePreferredWeapons(entry.preferredWeapons, entry.preferredRoles?.[0])
+  });
   const [ctaStatus, setCtaStatus] = useState(cta.status);
+  const [ctaTitle, setCtaTitle] = useState(cta.title);
+  const [ctaDatetimeUtc, setCtaDatetimeUtc] = useState(cta.datetimeUtc);
   const [ctaCompId, setCtaCompId] = useState(cta.compId ?? "");
   const [ctaCompName, setCtaCompName] = useState(cta.compName ?? "");
   const [parties, setParties] = useState(cta.signupParties);
-  const [fillers, setFillers] = useState(cta.signupFillers ?? []);
+  const [fillers, setFillers] = useState((cta.signupFillers ?? []).map(normalizeFillerEntry));
   const [preferredRolesMemory, setPreferredRolesMemory] = useState<Record<string, string[]>>(() =>
     (cta.signupFillers ?? []).reduce<Record<string, string[]>>((acc, entry) => {
       if (entry.playerUserId) {
-        acc[entry.playerUserId] = entry.preferredRoles ?? [];
+        acc[entry.playerUserId] = normalizePreferredWeapons(
+          entry.preferredWeapons,
+          entry.preferredRoles?.[0]
+        );
       }
       return acc;
     }, {})
@@ -103,6 +161,10 @@ export function CtaBoard({
   const [movingToFill, setMovingToFill] = useState(false);
   const [nextCompId, setNextCompId] = useState(cta.compId ?? "");
   const [changingComp, setChangingComp] = useState(false);
+  const [showEditDetails, setShowEditDetails] = useState(false);
+  const [editTitle, setEditTitle] = useState(cta.title);
+  const [editDatetimeUtcInput, setEditDatetimeUtcInput] = useState(toUtcInputFromIso(cta.datetimeUtc));
+  const [savingDetails, setSavingDetails] = useState(false);
 
   const activeParty = useMemo(
     () => parties.find((party) => party.partyKey === activePartyKey) ?? parties[0],
@@ -265,15 +327,7 @@ export function CtaBoard({
   }
 
   function getSlotTooltipWeapons(slot: CtaEntry["signupParties"][number]["slots"][number]): string[] {
-    const normalized = (slot.preferredRoles ?? [])
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .filter((entry) => !knownRoleKeys.has(entry.toLowerCase()));
-    const unique = Array.from(new Set(normalized));
-    if (unique.length > 0) {
-      return unique;
-    }
-    return [slot.weaponName].filter(Boolean);
+    return normalizePreferredWeapons(slot.preferredWeapons, slot.weaponName);
   }
 
   function updateSlotLocally(
@@ -323,7 +377,10 @@ export function CtaBoard({
         if (matched?.playerUserId && matched.preferredRoles.length > 0) {
           setPreferredRolesMemory((previous) => ({
             ...previous,
-            [matched.playerUserId as string]: matched.preferredRoles
+            [matched.playerUserId as string]: normalizePreferredWeapons(
+              matched.preferredWeapons,
+              matched.preferredRoles?.[0]
+            )
           }));
         }
 
@@ -337,7 +394,11 @@ export function CtaBoard({
             preferredRoles:
               rememberedRoles.length > 0
                 ? rememberedRoles
-                : [targetBefore.weaponName, targetBefore.role].filter(Boolean)
+                : [targetBefore.weaponName, targetBefore.role].filter(Boolean),
+            preferredWeapons:
+              rememberedRoles.length > 0
+                ? rememberedRoles
+                : [targetBefore.weaponName].filter(Boolean)
           };
           return [...withoutDragged.filter((entry) => entry.playerUserId !== displaced.playerUserId), displaced];
         }
@@ -364,7 +425,11 @@ export function CtaBoard({
       preferredRoles:
         rememberedRoles.length > 0
           ? rememberedRoles
-          : [slotToMove.weaponName, slotToMove.role].filter(Boolean)
+          : [slotToMove.weaponName, slotToMove.role].filter(Boolean),
+      preferredWeapons:
+        rememberedRoles.length > 0
+          ? rememberedRoles
+          : [slotToMove.weaponName].filter(Boolean)
     };
 
     setParties((current) =>
@@ -407,6 +472,7 @@ export function CtaBoard({
     }
 
     setSavingSlotKey(null);
+    void refreshCtaBoard();
   }
 
   async function signupForFill() {
@@ -448,18 +514,29 @@ export function CtaBoard({
         playerName: string;
         playerUserId: string;
         preferredRoles: string[];
+        preferredWeapons?: string[];
       };
     };
     setFillers((current) => {
       const withoutCurrent = current.filter((entry) => entry.memberId !== payload.filler.memberId);
-      return [...withoutCurrent, payload.filler];
+      return [
+        ...withoutCurrent,
+        normalizeFillerEntry({
+          ...payload.filler,
+          preferredWeapons: payload.filler.preferredWeapons ?? payload.filler.preferredRoles
+        })
+      ];
     });
     setPreferredRolesMemory((current) => ({
       ...current,
-      [payload.filler.playerUserId]: payload.filler.preferredRoles
+      [payload.filler.playerUserId]: normalizePreferredWeapons(
+        payload.filler.preferredWeapons,
+        payload.filler.preferredRoles?.[0]
+      )
     }));
     setSignupSelections(["", "", "", ""]);
     setSignupBusy(false);
+    void refreshCtaBoard();
   }
 
   async function removeOwnSignup() {
@@ -503,6 +580,7 @@ export function CtaBoard({
     }
 
     setRemoveOwnBusy(false);
+    void refreshCtaBoard();
   }
 
   async function cancelCta() {
@@ -533,6 +611,7 @@ export function CtaBoard({
     }
 
     setSavingSlotKey(null);
+    void refreshCtaBoard();
   }
 
   async function moveAssignedToFill(slotKey: string) {
@@ -558,25 +637,68 @@ export function CtaBoard({
       setFillers(previousFillers);
     }
     setMovingToFill(false);
+    void refreshCtaBoard();
   }
 
   function hydrateBoardFromCta(nextCta: CtaEntry) {
+    setCtaTitle(nextCta.title);
+    setCtaDatetimeUtc(nextCta.datetimeUtc);
     setCtaCompId(nextCta.compId ?? "");
     setCtaCompName(nextCta.compName ?? "");
     setNextCompId(nextCta.compId ?? "");
+    setEditTitle(nextCta.title);
+    setEditDatetimeUtcInput(toUtcInputFromIso(nextCta.datetimeUtc));
     setParties(nextCta.signupParties ?? []);
-    setFillers(nextCta.signupFillers ?? []);
+    setFillers((nextCta.signupFillers ?? []).map(normalizeFillerEntry));
     setActivePartyKey(nextCta.signupParties?.[0]?.partyKey);
     setPreferredRolesMemory(
       (nextCta.signupFillers ?? []).reduce<Record<string, string[]>>((acc, entry) => {
         if (entry.playerUserId) {
-          acc[entry.playerUserId] = entry.preferredRoles ?? [];
+          acc[entry.playerUserId] = normalizePreferredWeapons(
+            entry.preferredWeapons,
+            entry.preferredRoles?.[0]
+          );
         }
         return acc;
       }, {})
     );
     setSignupSelections(["", "", "", ""]);
   }
+
+  async function refreshCtaBoard() {
+    const response = await fetch(`/ctas?ctaId=${encodeURIComponent(cta.id)}`, {
+      method: "GET",
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      return;
+    }
+    const payload = (await response.json()) as CtaEntry | null;
+    if (!payload?.id) {
+      return;
+    }
+    hydrateBoardFromCta(payload);
+  }
+
+  useEffect(() => {
+    void refreshCtaBoard();
+    const interval = window.setInterval(() => {
+      void refreshCtaBoard();
+    }, 8000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshCtaBoard();
+      }
+    };
+    const onFocus = () => void refreshCtaBoard();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [cta.id]);
 
   async function changeComp() {
     if (!canEdit || changingComp) {
@@ -637,6 +759,62 @@ export function CtaBoard({
     }
 
     setChangingComp(false);
+    void refreshCtaBoard();
+  }
+
+  async function saveCtaDetails() {
+    if (!canEdit || savingDetails) {
+      return;
+    }
+    const title = editTitle.trim();
+    const datetimeUtc = toIsoUtcFromUtcInput(editDatetimeUtcInput);
+    if (!title || !datetimeUtc) {
+      window.alert("Título y fecha/hora UTC son obligatorios.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Editar título/hora moverá las asignaciones actuales a Fill, manteniendo apuntados. ¿Continuar?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingDetails(true);
+    const response = await fetch(`/ctas/details?ctaId=${encodeURIComponent(cta.id)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        title,
+        datetimeUtc
+      })
+    });
+
+    if (!response.ok) {
+      let reason = "No se pudo editar la CTA.";
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload?.error) {
+          reason = payload.error;
+        }
+      } catch {}
+      window.alert(reason);
+      setSavingDetails(false);
+      return;
+    }
+
+    try {
+      const payload = (await response.json()) as CtaEntry | null;
+      if (payload?.id) {
+        hydrateBoardFromCta(payload);
+      }
+    } catch {}
+
+    setShowEditDetails(false);
+    setSavingDetails(false);
+    void refreshCtaBoard();
   }
 
   if (ctaStatus === "CANCELED") {
@@ -648,11 +826,11 @@ export function CtaBoard({
       <div className="cta-board-top">
         <div className="cta-board-copy">
           <span className="card-label">CTA</span>
-          <h2>{cta.title}</h2>
+          <h2>{ctaTitle}</h2>
         </div>
         <div className="cta-board-meta">
           <span className="status-badge">
-            {new Date(cta.datetimeUtc).toLocaleString("es-ES", { timeZone: "UTC" })} UTC
+            {new Date(ctaDatetimeUtc).toLocaleString("es-ES", { timeZone: "UTC" })} UTC
           </span>
           <span className={`status-badge cta-status ${ctaStatus.toLowerCase()}`}>
             {formatCtaStatus(ctaStatus)}
@@ -719,6 +897,17 @@ export function CtaBoard({
                 type="button"
               >
                 {changingComp ? "..." : "Aplicar"}
+              </button>
+              <button
+                className="button ghost compact"
+                onClick={() => {
+                  setEditTitle(ctaTitle);
+                  setEditDatetimeUtcInput(toUtcInputFromIso(ctaDatetimeUtc));
+                  setShowEditDetails(true);
+                }}
+                type="button"
+              >
+                Editar
               </button>
             </div>
           ) : null}
@@ -936,17 +1125,19 @@ export function CtaBoard({
                     ) : null}
                   </div>
                   <p className="cta-fill-preferred-roles">
-                    {entry.preferredRoles.map((preferred, index) => {
+                    {normalizePreferredWeapons(entry.preferredWeapons, entry.preferredRoles?.[0]).map(
+                      (preferred, index, list) => {
                       const resolvedRole = resolveRoleForPreferredEntry(preferred);
                       return (
                         <span key={`${entry.memberId}-${preferred}-${index}`}>
                           <span className={`cta-fill-preferred-pill${resolvedRole ? ` role-${resolvedRole}` : ""}`}>
                             {preferred}
                           </span>
-                          {index < entry.preferredRoles.length - 1 ? " · " : ""}
+                          {index < list.length - 1 ? " · " : ""}
                         </span>
                       );
-                    })}
+                      }
+                    )}
                   </p>
                 </article>
               ))}
@@ -1015,6 +1206,64 @@ export function CtaBoard({
                 })()}
               </div>
             ) : null}
+          </article>
+        </div>
+      ) : null}
+      {showEditDetails ? (
+        <div className="comp-modal-overlay" role="dialog" aria-modal="true">
+          <article className="comp-modal cta-build-modal">
+            <div className="section-row">
+              <div>
+                <span className="card-label">Editar CTA</span>
+                <h2>Titulo y hora UTC</h2>
+              </div>
+              <button
+                className="button ghost compact"
+                disabled={savingDetails}
+                onClick={() => setShowEditDetails(false)}
+                type="button"
+              >
+                Cerrar
+              </button>
+            </div>
+            <div className="form-grid">
+              <label>
+                Titulo
+                <input
+                  className="input"
+                  disabled={savingDetails}
+                  onChange={(event) => setEditTitle(event.currentTarget.value)}
+                  placeholder="CTA 18 UTC"
+                  value={editTitle}
+                />
+              </label>
+              <label>
+                Fecha y hora (UTC)
+                <input
+                  className="input"
+                  disabled={savingDetails}
+                  onChange={(event) => setEditDatetimeUtcInput(event.currentTarget.value)}
+                  type="datetime-local"
+                  value={editDatetimeUtcInput}
+                />
+              </label>
+            </div>
+            <p className="empty">
+              Al guardar, los asignados en slots pasan a Fill y se mantienen los apuntados.
+            </p>
+            <div className="actions">
+              <button
+                className="button ghost"
+                disabled={savingDetails}
+                onClick={() => setShowEditDetails(false)}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button className="button primary" disabled={savingDetails} onClick={() => void saveCtaDetails()} type="button">
+                {savingDetails ? "Guardando..." : "Guardar cambios"}
+              </button>
+            </div>
           </article>
         </div>
       ) : null}
