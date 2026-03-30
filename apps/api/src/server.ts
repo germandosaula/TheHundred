@@ -50,7 +50,8 @@ const server = createServer(async (request, response) => {
       await routeRequest(request, services, auth, {
         appBaseUrl: config.appBaseUrl,
         cookieDomain: config.cookieDomain,
-        secureCookies: config.secureCookies
+        secureCookies: config.secureCookies,
+        authSessionVersion: config.authSessionVersion
       })
     );
   } catch (error) {

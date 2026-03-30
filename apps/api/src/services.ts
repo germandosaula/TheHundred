@@ -1447,17 +1447,27 @@ export function createApiServices(
         repository.getCouncilTasks()
       ]);
       const usersById = new Map(users.map((user) => [user.id, user]));
-      const attendanceCountByMemberId = new Map<string, number>();
       const ctaById = new Map(ctas.map((cta) => [cta.id, cta]));
+      const finalizedCtas = ctas.filter((cta) => cta.status === "FINALIZED");
+      const finalizedCtaById = new Map(finalizedCtas.map((cta) => [cta.id, cta]));
+      const totalFinalizedTimers = new Set(finalizedCtas.map((cta) => formatCtaTimerKey(cta.datetimeUtc))).size;
+      const attendanceByMemberTimer = new Map<string, Set<string>>();
       const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
       const exclusionByMemberId = new Map(exclusions.map((exclusion) => [exclusion.memberId, exclusion]));
       const followupTaskByMemberId = new Map<string, string>();
 
-      for (const attendance of battleAttendances) {
-        attendanceCountByMemberId.set(
-          attendance.memberId,
-          (attendanceCountByMemberId.get(attendance.memberId) ?? 0) + 1
-        );
+      for (const attendance of manualAttendances) {
+        if (attendance.decision !== "YES") {
+          continue;
+        }
+        const cta = finalizedCtaById.get(attendance.ctaId);
+        if (!cta) {
+          continue;
+        }
+        const timerKey = formatCtaTimerKey(cta.datetimeUtc);
+        const current = attendanceByMemberTimer.get(attendance.memberId) ?? new Set<string>();
+        current.add(timerKey);
+        attendanceByMemberTimer.set(attendance.memberId, current);
       }
 
       for (const task of tasks) {
@@ -1470,7 +1480,7 @@ export function createApiServices(
 
       return members.filter((member) => !member.kickedAt).map((member) => {
         const user = usersById.get(member.userId);
-        const attendanceCount = attendanceCountByMemberId.get(member.id) ?? 0;
+        const attendanceCount = attendanceByMemberTimer.get(member.id)?.size ?? 0;
         const lastActivityAt = getMemberLastActivityAt({
           memberId: member.id,
           battleAttendances,
@@ -1495,7 +1505,7 @@ export function createApiServices(
           discordId: user?.discordId ?? "unknown",
           avatarUrl: user?.avatarUrl,
           attendanceCount,
-          attendancePercent: snapshots.length > 0 ? (attendanceCount / snapshots.length) * 100 : 0,
+          attendancePercent: totalFinalizedTimers > 0 ? (attendanceCount / totalFinalizedTimers) * 100 : 0,
           lastActivityAt,
           inactiveDays: activity.inactiveDays,
           activityState: activity.state,

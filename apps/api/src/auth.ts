@@ -67,6 +67,9 @@ export function createAuthServices(
     async resolveCurrentUser(request) {
       const sessionToken = getSessionTokenFromRequest(request);
       if (sessionToken) {
+        if (!sessionToken.startsWith(`${config.authSessionVersion}.`)) {
+          return null;
+        }
         const session = sessions.get(sessionToken);
         if (session && session.expiresAt > Date.now()) {
           if (session.userId) {
@@ -80,23 +83,16 @@ export function createAuthServices(
           }
         }
       }
-
-      const cookieDiscordId = getDiscordIdFromRequest(request);
-      if (cookieDiscordId) {
-        const linkedUser = await repository.getUserByDiscordId(cookieDiscordId);
-        if (linkedUser) {
-          return linkedUser;
+      if (isLocalRequest(request)) {
+        const userId = request.headers["x-user-id"];
+        if (typeof userId === "string" && userId.trim()) {
+          return repository.getUserById(userId.trim());
         }
-      }
 
-      const userId = request.headers["x-user-id"];
-      if (typeof userId === "string" && userId.trim()) {
-        return repository.getUserById(userId.trim());
-      }
-
-      const discordId = request.headers["x-discord-id"];
-      if (typeof discordId === "string" && discordId.trim()) {
-        return repository.getUserByDiscordId(discordId.trim());
+        const discordId = request.headers["x-discord-id"];
+        if (typeof discordId === "string" && discordId.trim()) {
+          return repository.getUserByDiscordId(discordId.trim());
+        }
       }
 
       return null;
@@ -124,7 +120,7 @@ export function createAuthServices(
       const discordUser = await fetchDiscordIdentity(tokens.access_token);
       const avatarUrl = getDiscordAvatarUrl(discordUser);
       const linkedUser = await repository.getUserByDiscordId(discordUser.id);
-      const sessionToken = randomUUID();
+      const sessionToken = createSessionToken(config.authSessionVersion);
 
       if (linkedUser) {
         await repository.updateUserAvatar(linkedUser.id, avatarUrl);
@@ -148,7 +144,7 @@ export function createAuthServices(
 
     async createDevSession(discordId) {
       const linkedUser = await repository.getUserByDiscordId(discordId);
-      const sessionToken = randomUUID();
+      const sessionToken = createSessionToken(config.authSessionVersion);
 
       sessions.set(sessionToken, {
         userId: linkedUser?.id,
@@ -191,25 +187,14 @@ function getSessionTokenFromRequest(request: IncomingMessage): string | null {
   return null;
 }
 
-function getDiscordIdFromRequest(request: IncomingMessage): string | null {
-  const headerDiscordId = request.headers["x-discord-id"];
-  if (typeof headerDiscordId === "string" && headerDiscordId.trim()) {
-    return headerDiscordId.trim();
-  }
+function isLocalRequest(request: IncomingMessage): boolean {
+  const hostHeader = request.headers.host?.toLowerCase().trim() ?? "";
+  const host = hostHeader.split(":")[0];
+  return host === "localhost" || host === "127.0.0.1";
+}
 
-  const cookieHeader = request.headers.cookie;
-  if (!cookieHeader) {
-    return null;
-  }
-
-  for (const segment of cookieHeader.split(";")) {
-    const [rawName, rawValue] = segment.split("=");
-    if (rawName?.trim() === "th_discord_id" && rawValue?.trim()) {
-      return rawValue.trim();
-    }
-  }
-
-  return null;
+function createSessionToken(version: string): string {
+  return `${version}.${randomUUID()}`;
 }
 
 async function exchangeDiscordCode(args: {

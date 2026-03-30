@@ -3,6 +3,7 @@ export interface ApiConfig {
   appBaseUrl: string;
   cookieDomain?: string;
   secureCookies: boolean;
+  authSessionVersion: string;
   repositoryProvider: "memory" | "supabase";
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
@@ -36,6 +37,7 @@ export function loadApiConfig(): ApiConfig {
     appBaseUrl,
     cookieDomain: deriveCookieDomain(appBaseUrl),
     secureCookies: usesHttps(appBaseUrl),
+    authSessionVersion: process.env.AUTH_SESSION_VERSION?.trim() || "1",
     repositoryProvider: process.env.REPOSITORY_PROVIDER === "supabase" ? "supabase" : "memory",
     supabaseUrl: process.env.SUPABASE_URL ?? "",
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",

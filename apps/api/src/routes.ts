@@ -47,7 +47,12 @@ export async function routeRequest(
   request: IncomingMessage,
   services: ApiServices,
   auth: AuthServices,
-  options: { appBaseUrl: string; cookieDomain?: string; secureCookies: boolean }
+  options: {
+    appBaseUrl: string;
+    cookieDomain?: string;
+    secureCookies: boolean;
+    authSessionVersion: string;
+  }
 ): Promise<ResponsePayload> {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const method = request.method ?? "GET";
@@ -99,9 +104,14 @@ export async function routeRequest(
       domain: options.cookieDomain,
       secure: options.secureCookies
     });
+    const sessionVersionCookie = createCookie("th_session_v", options.authSessionVersion, {
+      maxAge: 2592000,
+      domain: options.cookieDomain,
+      secure: options.secureCookies
+    });
 
     return redirect(callbackUrl.toString(), {
-      cookies: [sessionCookie, discordIdCookie]
+      cookies: [sessionCookie, discordIdCookie, sessionVersionCookie]
     });
   }
 
@@ -149,8 +159,13 @@ export async function routeRequest(
         domain: options.cookieDomain,
         secure: options.secureCookies
       });
+      const sessionVersionCookie = createCookie("th_session_v", options.authSessionVersion, {
+        maxAge: 2592000,
+        domain: options.cookieDomain,
+        secure: options.secureCookies
+      });
       return redirect(callbackUrl.toString(), {
-        cookies: [sessionCookie, discordIdCookie]
+        cookies: [sessionCookie, discordIdCookie, sessionVersionCookie]
       });
     }
 
