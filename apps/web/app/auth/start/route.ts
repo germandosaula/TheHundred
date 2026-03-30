@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 
 const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const invite = url.searchParams.get("invite")?.trim();
-  const cookieStore = await cookies();
+  const cookieDomain = deriveCookieDomain(apiBaseUrl);
+  const secure = apiBaseUrl.startsWith("https://");
 
+  let inviteCookieHeader: string | null = null;
   if (invite) {
     const inviteValidationResponse = await fetch(
       `${apiBaseUrl}/public/invites/validate?code=${encodeURIComponent(invite)}`,
@@ -22,17 +23,12 @@ export async function GET(request: Request) {
       : null;
 
     if (inviteValidation?.valid) {
-      cookieStore.set("th_invite_code", invite, {
-        path: "/",
-        httpOnly: true,
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 7
+      inviteCookieHeader = buildCookie("th_invite_code", invite, {
+        maxAge: 60 * 60 * 24 * 7,
+        secure
       });
     } else {
-      cookieStore.set("th_invite_code", "", {
-        path: "/",
-        maxAge: 0
-      });
+      inviteCookieHeader = buildExpiredCookie("th_invite_code", secure);
     }
   }
 
@@ -50,5 +46,62 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  return NextResponse.redirect(payload.authorizationUrl);
+  const redirectResponse = NextResponse.redirect(payload.authorizationUrl);
+
+  if (inviteCookieHeader) {
+    redirectResponse.headers.append("Set-Cookie", inviteCookieHeader);
+  }
+
+  for (const cookieName of ["th_session", "th_discord_id", "th_session_v"]) {
+    redirectResponse.headers.append("Set-Cookie", buildExpiredCookie(cookieName, secure));
+    if (cookieDomain) {
+      redirectResponse.headers.append(
+        "Set-Cookie",
+        buildExpiredCookie(cookieName, secure, cookieDomain)
+      );
+    }
+  }
+
+  return redirectResponse;
+}
+
+function buildCookie(
+  name: string,
+  value: string,
+  options: { maxAge: number; secure: boolean; domain?: string }
+): string {
+  const parts = [
+    `${name}=${value}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${options.maxAge}`
+  ];
+  if (options.domain) {
+    parts.push(`Domain=${options.domain}`);
+  }
+  if (options.secure) {
+    parts.push("Secure");
+  }
+  return parts.join("; ");
+}
+
+function buildExpiredCookie(name: string, secure: boolean, domain?: string): string {
+  return buildCookie(name, "", { maxAge: 0, secure, domain });
+}
+
+function deriveCookieDomain(baseUrl: string): string | undefined {
+  try {
+    const { hostname } = new URL(baseUrl);
+    if (hostname === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":")) {
+      return undefined;
+    }
+    const segments = hostname.split(".").filter(Boolean);
+    if (segments.length < 2) {
+      return undefined;
+    }
+    return `.${segments.slice(-2).join(".")}`;
+  } catch {
+    return undefined;
+  }
 }

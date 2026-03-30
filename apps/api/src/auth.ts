@@ -66,6 +66,7 @@ export function createAuthServices(
 
     async resolveCurrentUser(request) {
       const sessionTokens = getSessionTokensFromRequest(request);
+      const validSessions: SessionRecord[] = [];
       for (const sessionToken of sessionTokens) {
         if (!sessionToken.startsWith(`${config.authSessionVersion}.`)) {
           continue;
@@ -74,6 +75,12 @@ export function createAuthServices(
         if (!session || session.expiresAt <= Date.now()) {
           continue;
         }
+        validSessions.push(session);
+      }
+
+      validSessions.sort((left, right) => right.expiresAt - left.expiresAt);
+
+      for (const session of validSessions) {
         if (session.userId) {
           const user = await repository.getUserById(session.userId);
           if (user) {
