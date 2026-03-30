@@ -65,22 +65,27 @@ export function createAuthServices(
     },
 
     async resolveCurrentUser(request) {
-      const sessionToken = getSessionTokenFromRequest(request);
-      if (sessionToken) {
+      const sessionTokens = getSessionTokensFromRequest(request);
+      for (const sessionToken of sessionTokens) {
         if (!sessionToken.startsWith(`${config.authSessionVersion}.`)) {
-          return null;
+          continue;
         }
         const session = sessions.get(sessionToken);
-        if (session && session.expiresAt > Date.now()) {
-          if (session.userId) {
-            return repository.getUserById(session.userId);
+        if (!session || session.expiresAt <= Date.now()) {
+          continue;
+        }
+        if (session.userId) {
+          const user = await repository.getUserById(session.userId);
+          if (user) {
+            return user;
           }
+          continue;
+        }
 
-          const linkedUser = await repository.getUserByDiscordId(session.discordId);
-          if (linkedUser) {
-            session.userId = linkedUser.id;
-            return linkedUser;
-          }
+        const linkedUser = await repository.getUserByDiscordId(session.discordId);
+        if (linkedUser) {
+          session.userId = linkedUser.id;
+          return linkedUser;
         }
       }
       if (isLocalRequest(request)) {
@@ -166,25 +171,24 @@ export function createAuthServices(
   };
 }
 
-function getSessionTokenFromRequest(request: IncomingMessage): string | null {
+function getSessionTokensFromRequest(request: IncomingMessage): string[] {
+  const tokens: string[] = [];
   const headerToken = request.headers["x-session-token"];
   if (typeof headerToken === "string" && headerToken.trim()) {
-    return headerToken.trim();
+    tokens.push(headerToken.trim());
   }
 
   const cookieHeader = request.headers.cookie;
-  if (!cookieHeader) {
-    return null;
-  }
-
-  for (const segment of cookieHeader.split(";")) {
-    const [rawName, rawValue] = segment.split("=");
-    if (rawName?.trim() === "th_session" && rawValue?.trim()) {
-      return rawValue.trim();
+  if (cookieHeader) {
+    for (const segment of cookieHeader.split(";")) {
+      const [rawName, rawValue] = segment.split("=");
+      if (rawName?.trim() === "th_session" && rawValue?.trim()) {
+        tokens.push(rawValue.trim());
+      }
     }
   }
 
-  return null;
+  return Array.from(new Set(tokens));
 }
 
 function isLocalRequest(request: IncomingMessage): boolean {
