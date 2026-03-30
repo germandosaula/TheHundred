@@ -648,9 +648,15 @@ export function CtaBoard({
     setNextCompId(nextCta.compId ?? "");
     setEditTitle(nextCta.title);
     setEditDatetimeUtcInput(toUtcInputFromIso(nextCta.datetimeUtc));
-    setParties(nextCta.signupParties ?? []);
+    const nextParties = nextCta.signupParties ?? [];
+    setParties(nextParties);
     setFillers((nextCta.signupFillers ?? []).map(normalizeFillerEntry));
-    setActivePartyKey(nextCta.signupParties?.[0]?.partyKey);
+    setActivePartyKey((current) => {
+      if (current && nextParties.some((party) => party.partyKey === current)) {
+        return current;
+      }
+      return nextParties[0]?.partyKey;
+    });
     setPreferredRolesMemory(
       (nextCta.signupFillers ?? []).reduce<Record<string, string[]>>((acc, entry) => {
         if (entry.playerUserId) {
