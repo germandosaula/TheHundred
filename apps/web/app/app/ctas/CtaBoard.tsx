@@ -662,7 +662,14 @@ export function CtaBoard({
         return acc;
       }, {})
     );
-    setSignupSelections(["", "", "", ""]);
+    if (currentUserId) {
+      const isCurrentUserSigned = nextCta.signupParties.some((party) =>
+        party.slots.some((slot) => slot.playerUserId === currentUserId)
+      ) || (nextCta.signupFillers ?? []).some((entry) => entry.playerUserId === currentUserId);
+      if (isCurrentUserSigned) {
+        setSignupSelections(["", "", "", ""]);
+      }
+    }
   }
 
   async function refreshCtaBoard() {
