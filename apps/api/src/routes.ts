@@ -78,7 +78,7 @@ export async function routeRequest(
     }
 
     const result = await auth.createDevSession(discordId);
-    const callbackUrl = new URL("/auth/discord/callback", options.appBaseUrl);
+    const callbackUrl = new URL("/auth/discord/complete", options.appBaseUrl);
     callbackUrl.searchParams.set("session_token", result.sessionToken);
     callbackUrl.searchParams.set("discord_id", result.discordUser.id);
     callbackUrl.searchParams.set(
@@ -126,13 +126,13 @@ export async function routeRequest(
     try {
       result = await auth.handleDiscordCallback(code, url.searchParams.get("state"));
     } catch (error) {
-      const callbackUrl = new URL("/auth/discord/callback", options.appBaseUrl);
+      const callbackUrl = new URL("/auth/discord/complete", options.appBaseUrl);
       const message = error instanceof Error ? error.message : "Unknown Discord OAuth error";
       callbackUrl.searchParams.set("error", message);
       return redirect(callbackUrl.toString());
     }
 
-    const callbackUrl = new URL("/auth/discord/callback", options.appBaseUrl);
+    const callbackUrl = new URL("/auth/discord/complete", options.appBaseUrl);
     callbackUrl.searchParams.set("session_token", result.sessionToken);
     callbackUrl.searchParams.set("discord_id", result.discordUser.id);
     callbackUrl.searchParams.set(
