@@ -1828,19 +1828,59 @@ export function createApiServices(
 
       const balances = await repository.listBottledEnergyBalances();
       const eligibleByRole = await filterBottledEnergyBalancesByDiscordRole(balances);
-      const eligible = filterBottledEnergyExcludedBalances(eligibleByRole);
+      const eligible = filterBottledEnergyExcludedBalances(eligibleByRole).sort((left, right) => {
+        if (left.balance !== right.balance) {
+          return right.balance - left.balance;
+        }
+        return left.discordId.localeCompare(right.discordId);
+      });
       if (eligible.length === 0) {
         throw new DomainError("No hay miembros elegibles con el rol configurado para mencionar.");
       }
 
-      const header = "📦 **Balance embotelladas actualizado**";
-      const timestamp = `Actualizado: <t:${Math.floor(Date.now() / 1000)}:f>`;
-      const lines = eligible.map(
-        (entry) => `• <@${entry.discordId}> · ${entry.balance > 0 ? `+${entry.balance}` : entry.balance}`
-      );
-      const messages = buildDiscordMessageChunks([header, timestamp, ...lines], 1800);
+      const nowUnix = Math.floor(Date.now() / 1000);
+      const positives = eligible.filter((entry) => entry.balance > 0).length;
+      const negatives = eligible.filter((entry) => entry.balance < 0).length;
+      const zeros = eligible.length - positives - negatives;
 
-      for (const message of messages) {
+      const lineChunks = chunkArray(
+        eligible.map((entry) => {
+          const marker = entry.balance > 0 ? "🟢" : entry.balance < 0 ? "🔴" : "⚪";
+          const value = entry.balance > 0 ? `+${entry.balance}` : String(entry.balance);
+          return `${marker} <@${entry.discordId}> · **${value}**`;
+        }),
+        20
+      );
+
+      let sentMessages = 0;
+      for (let index = 0; index < lineChunks.length; index += 1) {
+        const chunk = lineChunks[index];
+        const embed = {
+          title: "📦 Balance embotelladas",
+          description: chunk.join("\n"),
+          color: 0x3498db,
+          fields: [
+            {
+              name: "Actualizado",
+              value: `<t:${nowUnix}:f>`,
+              inline: true
+            },
+            {
+              name: "Resumen",
+              value: `🟢 ${positives} · 🔴 ${negatives} · ⚪ ${zeros}`,
+              inline: true
+            },
+            {
+              name: "Total jugadores",
+              value: String(eligible.length),
+              inline: true
+            }
+          ],
+          footer: {
+            text: `Página ${index + 1}/${lineChunks.length}`
+          }
+        };
+
         const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
           method: "POST",
           headers: {
@@ -1848,7 +1888,7 @@ export function createApiServices(
             "content-type": "application/json"
           },
           body: JSON.stringify({
-            content: message,
+            embeds: [embed],
             allowed_mentions: {
               parse: ["users"]
             }
@@ -1858,13 +1898,14 @@ export function createApiServices(
           const body = await response.text().catch(() => "");
           throw new DomainError(`Discord error al publicar embotelladas (${response.status}): ${body}`);
         }
+        sentMessages += 1;
       }
 
       return {
         sent: true,
         channelId,
         mentioned: eligible.length,
-        messages: messages.length
+        messages: sentMessages
       };
     },
 
@@ -3568,37 +3609,15 @@ function parseAlbionClipboardDateToIso(value: string): string | null {
   return date.toISOString();
 }
 
-function buildDiscordMessageChunks(lines: string[], maxLength: number): string[] {
-  const chunks: string[] = [];
-  let current = "";
-
-  for (const line of lines) {
-    if (!line) {
-      continue;
-    }
-    const next = current.length === 0 ? line : `${current}\n${line}`;
-    if (next.length <= maxLength) {
-      current = next;
-      continue;
-    }
-
-    if (current.length > 0) {
-      chunks.push(current);
-    }
-
-    if (line.length <= maxLength) {
-      current = line;
-    } else {
-      chunks.push(line.slice(0, maxLength));
-      current = "";
-    }
+function chunkArray<T>(entries: T[], size: number): T[][] {
+  if (size <= 0) {
+    return [entries];
   }
-
-  if (current.length > 0) {
-    chunks.push(current);
+  const chunks: T[][] = [];
+  for (let index = 0; index < entries.length; index += size) {
+    chunks.push(entries.slice(index, index + size));
   }
-
-  return chunks.length > 0 ? chunks : ["Sin datos"];
+  return chunks.length > 0 ? chunks : [[]];
 }
 
 function assertCouncilTaskInput(input: {
