@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { AssignableCompPlayerEntry, BuildTemplateEntry, CompEntry, CtaEntry } from "../../lib";
 import { canonicalWeaponVariantKey, getItemIconUrl, getResolvedWeaponIconName } from "../comps/catalog";
 
@@ -692,26 +692,6 @@ export function CtaBoard({
     }
     hydrateBoardFromCta(payload);
   }
-
-  useEffect(() => {
-    void refreshCtaBoard();
-    const interval = window.setInterval(() => {
-      void refreshCtaBoard();
-    }, 8000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        void refreshCtaBoard();
-      }
-    };
-    const onFocus = () => void refreshCtaBoard();
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [cta.id]);
 
   async function changeComp() {
     if (!canEdit || changingComp) {
