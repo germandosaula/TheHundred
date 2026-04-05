@@ -224,6 +224,25 @@ export interface CtaSignupRecord {
   reactedAt: string;
 }
 
+export type CtaSignupEventType = "SIGNUP";
+
+export interface CtaSignupEventRecord {
+  id: string;
+  ctaId: string;
+  memberId: string;
+  eventType: CtaSignupEventType;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface SaveCtaSignupEventInput {
+  ctaId: string;
+  memberId: string;
+  eventType: CtaSignupEventType;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+}
+
 export interface SaveCtaSignupInput {
   ctaId: string;
   memberId: string;
@@ -463,6 +482,8 @@ export interface DatabaseRepository {
   getCtaSignups(ctaId: string): Promise<CtaSignupRecord[]>;
   upsertCtaSignup(input: SaveCtaSignupInput): Promise<CtaSignupRecord>;
   deleteCtaSignup(ctaId: string, memberId: string): Promise<boolean>;
+  createCtaSignupEvent(input: SaveCtaSignupEventInput): Promise<CtaSignupEventRecord>;
+  getCtaSignupEvents(): Promise<CtaSignupEventRecord[]>;
   getRecruitmentApplicationByUserId(userId: string): Promise<RecruitmentApplicationRecord | null>;
   saveRecruitmentApplication(
     input: SaveRecruitmentApplicationInput

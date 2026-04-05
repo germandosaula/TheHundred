@@ -28,6 +28,7 @@ import type {
   CouncilTaskCategory,
   CouncilTaskRecord,
   CouncilTaskStatus,
+  CtaSignupEventRecord,
   CtaSignupRecord,
   CompRecord,
   CompPartyRecord,
@@ -46,6 +47,7 @@ import type {
   RegisterMemberInput,
   SaveCompInput,
   SaveBuildTemplateInput,
+  SaveCtaSignupEventInput,
   SaveRecruitmentApplicationInput,
   UpdateCouncilTaskInput,
   WalletAccountRecord,
@@ -225,6 +227,15 @@ type CtaSignupRow = {
   is_fill: boolean | null;
   player_name: string;
   reacted_at: string;
+};
+
+type CtaSignupEventRow = {
+  id: string;
+  cta_id: string;
+  member_id: string;
+  event_type: "SIGNUP";
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 };
 
 type InviteRow = {
@@ -1626,6 +1637,36 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     return (data ?? []).map(mapCtaSignup);
   }
 
+  async createCtaSignupEvent(input: SaveCtaSignupEventInput): Promise<CtaSignupEventRecord> {
+    const { data, error } = await this.client
+      .from("cta_signup_events")
+      .insert({
+        cta_id: input.ctaId,
+        member_id: input.memberId,
+        event_type: input.eventType,
+        metadata: input.metadata ?? {},
+        created_at: input.createdAt ?? new Date().toISOString()
+      })
+      .select("id, cta_id, member_id, event_type, metadata, created_at")
+      .single<CtaSignupEventRow>();
+    if (error || !data) {
+      throw createSupabaseDomainError("Failed to create CTA signup event in Supabase", error);
+    }
+    return mapCtaSignupEvent(data);
+  }
+
+  async getCtaSignupEvents(): Promise<CtaSignupEventRecord[]> {
+    const { data, error } = await this.client
+      .from("cta_signup_events")
+      .select("id, cta_id, member_id, event_type, metadata, created_at")
+      .order("created_at", { ascending: true })
+      .returns<CtaSignupEventRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load CTA signup events from Supabase", error);
+    }
+    return (data ?? []).map(mapCtaSignupEvent);
+  }
+
   async getAttendances(): Promise<Attendance[]> {
     const { data, error } = await this.client
       .from("attendance")
@@ -2366,6 +2407,17 @@ function mapCtaSignup(row: CtaSignupRow): CtaSignupRecord {
     preferredRoles: row.preferred_roles ?? [],
     isFill: row.is_fill ?? false,
     reactedAt: row.reacted_at
+  };
+}
+
+function mapCtaSignupEvent(row: CtaSignupEventRow): CtaSignupEventRecord {
+  return {
+    id: row.id,
+    ctaId: row.cta_id,
+    memberId: row.member_id,
+    eventType: row.event_type,
+    metadata: row.metadata ?? undefined,
+    createdAt: row.created_at
   };
 }
 

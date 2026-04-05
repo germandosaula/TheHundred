@@ -17,6 +17,15 @@ interface MemberRow {
   bombGroupName?: string;
   attendanceCount: number;
   attendancePercent: number;
+  ctaSignupCount: number;
+  ctaSignupUniqueCtas: number;
+  ctaSignupFinalizedCtas: number;
+  ctaSignupCanceledCtas: number;
+  ctaSignupEligibleCtasSinceJoin: number;
+  ctaSignupPercentSinceJoin: number;
+  attendanceTimersSinceJoin: number;
+  attendanceEligibleTimersSinceJoin: number;
+  attendancePercentSinceJoin: number;
   lastActivityAt?: string;
   inactiveDays: number;
   activityState: ActivityState;
@@ -487,6 +496,25 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
                 <strong>{member.attendanceCount}</strong>
                 <span>{formatPercent(member.attendancePercent)}</span>
               </div>
+            </div>
+
+            <div className="member-attendance member-card-attendance">
+              <span className="member-card-label">Signup CTA</span>
+              <strong>{member.ctaSignupCount ?? 0}</strong>
+              <span>
+                {member.ctaSignupUniqueCtas ?? 0} CTAs · {formatPercent(member.ctaSignupPercentSinceJoin ?? 0)} desde ingreso
+              </span>
+              <span>
+                Finalizadas {member.ctaSignupFinalizedCtas ?? 0} · Canceladas {member.ctaSignupCanceledCtas ?? 0}
+              </span>
+            </div>
+
+            <div className="member-attendance member-card-attendance">
+              <span className="member-card-label">Attendance desde ingreso</span>
+              <strong>
+                {member.attendanceTimersSinceJoin ?? 0}/{member.attendanceEligibleTimersSinceJoin ?? 0}
+              </strong>
+              <span>{formatPercent(member.attendancePercentSinceJoin ?? 0)}</span>
             </div>
 
             <div className="member-card-player">

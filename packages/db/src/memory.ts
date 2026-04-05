@@ -24,6 +24,7 @@ import type {
   BattlePerformanceSnapshotRecord,
   CouncilTaskRecord,
   CouncilTaskStatus,
+  CtaSignupEventRecord,
   CtaSignupRecord,
   CompRecord,
   CompSlotRecord,
@@ -42,6 +43,7 @@ import type {
   RecruitmentApplicationStatus,
   RegisterMemberInput,
   SaveCompInput,
+  SaveCtaSignupEventInput,
   UpdateCouncilTaskInput,
   SaveRecruitmentApplicationInput
 } from "./repository.ts";
@@ -52,6 +54,7 @@ export interface RepositoryState {
   ctas: CTA[];
   attendance: Attendance[];
   ctaSignups: CtaSignupRecord[];
+  ctaSignupEvents: CtaSignupEventRecord[];
   pointsHistory: PointsEntry[];
   config: GuildConfig;
   battlePerformanceSnapshots: BattlePerformanceSnapshotRecord[];
@@ -789,6 +792,23 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     return [...this.state.ctaSignups].sort((left, right) => left.reactedAt.localeCompare(right.reactedAt));
   }
 
+  async createCtaSignupEvent(input: SaveCtaSignupEventInput): Promise<CtaSignupEventRecord> {
+    const next: CtaSignupEventRecord = {
+      id: randomUUID(),
+      ctaId: input.ctaId,
+      memberId: input.memberId,
+      eventType: input.eventType,
+      metadata: input.metadata,
+      createdAt: input.createdAt ?? new Date().toISOString()
+    };
+    this.state.ctaSignupEvents.push(next);
+    return next;
+  }
+
+  async getCtaSignupEvents(): Promise<CtaSignupEventRecord[]> {
+    return [...this.state.ctaSignupEvents].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
   async getAttendances(): Promise<Attendance[]> {
     return [...this.state.attendance];
   }
@@ -1234,6 +1254,7 @@ export function createSeedState(): RepositoryState {
       { id: "a3", ctaId: "cta1", memberId: "m3", decision: "JUSTIFIED", state: "ABSENT" }
     ],
     ctaSignups: [],
+    ctaSignupEvents: [],
     pointsHistory: [
       {
         id: "p1",

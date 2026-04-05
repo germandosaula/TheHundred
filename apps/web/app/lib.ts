@@ -234,6 +234,15 @@ export interface MemberEntry {
   bombGroupName?: string;
   attendanceCount: number;
   attendancePercent: number;
+  ctaSignupCount: number;
+  ctaSignupUniqueCtas: number;
+  ctaSignupFinalizedCtas: number;
+  ctaSignupCanceledCtas: number;
+  ctaSignupEligibleCtasSinceJoin: number;
+  ctaSignupPercentSinceJoin: number;
+  attendanceTimersSinceJoin: number;
+  attendanceEligibleTimersSinceJoin: number;
+  attendancePercentSinceJoin: number;
   lastActivityAt?: string;
   inactiveDays: number;
   activityState: "OK" | "RIESGO" | "INACTIVO" | "EXCLUIDO";

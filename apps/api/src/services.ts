@@ -107,6 +107,15 @@ export interface ApiServices {
         discordId: string;
         attendanceCount: number;
         attendancePercent: number;
+        ctaSignupCount: number;
+        ctaSignupUniqueCtas: number;
+        ctaSignupFinalizedCtas: number;
+        ctaSignupCanceledCtas: number;
+        ctaSignupEligibleCtasSinceJoin: number;
+        ctaSignupPercentSinceJoin: number;
+        attendanceTimersSinceJoin: number;
+        attendanceEligibleTimersSinceJoin: number;
+        attendancePercentSinceJoin: number;
         lastActivityAt?: string;
         inactiveDays: number;
         activityState: "OK" | "RIESGO" | "INACTIVO" | "EXCLUIDO";
@@ -1523,7 +1532,7 @@ export function createApiServices(
       });
 
       const now = new Date();
-      const [members, users, snapshots, battleAttendances, ctas, manualAttendances, ctaSignups, exclusions, tasks] = await Promise.all([
+      const [members, users, snapshots, battleAttendances, ctas, manualAttendances, ctaSignups, signupEvents, exclusions, tasks] = await Promise.all([
         repository.getMembers(),
         repository.getUsers(),
         repository.getBattlePerformanceSnapshots(),
@@ -1531,6 +1540,7 @@ export function createApiServices(
         repository.getCtas(),
         repository.getAttendances(),
         repository.getAllCtaSignups(),
+        repository.getCtaSignupEvents(),
         repository.getMemberActivityExclusions(),
         repository.getCouncilTasks()
       ]);
@@ -1540,6 +1550,8 @@ export function createApiServices(
       const finalizedCtaById = new Map(finalizedCtas.map((cta) => [cta.id, cta]));
       const totalFinalizedTimers = new Set(finalizedCtas.map((cta) => formatCtaTimerKey(cta.datetimeUtc))).size;
       const attendanceByMemberTimer = new Map<string, Set<string>>();
+      const attendanceFinalizedEntriesByMember = new Map<string, Array<{ datetimeUtc: string; timerKey: string }>>();
+      const signupEventsByMember = new Map<string, Array<{ ctaId: string; createdAt: string }>>();
       const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
       const exclusionByMemberId = new Map(exclusions.map((exclusion) => [exclusion.memberId, exclusion]));
       const followupTaskByMemberId = new Map<string, string>();
@@ -1556,6 +1568,21 @@ export function createApiServices(
         const current = attendanceByMemberTimer.get(attendance.memberId) ?? new Set<string>();
         current.add(timerKey);
         attendanceByMemberTimer.set(attendance.memberId, current);
+        const attendanceEntries = attendanceFinalizedEntriesByMember.get(attendance.memberId) ?? [];
+        attendanceEntries.push({ datetimeUtc: cta.datetimeUtc, timerKey });
+        attendanceFinalizedEntriesByMember.set(attendance.memberId, attendanceEntries);
+      }
+
+      for (const event of signupEvents) {
+        if (event.eventType !== "SIGNUP") {
+          continue;
+        }
+        const memberEvents = signupEventsByMember.get(event.memberId) ?? [];
+        memberEvents.push({
+          ctaId: event.ctaId,
+          createdAt: event.createdAt
+        });
+        signupEventsByMember.set(event.memberId, memberEvents);
       }
 
       for (const task of tasks) {
@@ -1569,6 +1596,58 @@ export function createApiServices(
       return members.filter((member) => !member.kickedAt).map((member) => {
         const user = usersById.get(member.userId);
         const attendanceCount = attendanceByMemberTimer.get(member.id)?.size ?? 0;
+        const joinedTimestamp = Date.parse(member.joinedAt);
+        const joinedAtTime = Number.isFinite(joinedTimestamp) ? joinedTimestamp : 0;
+        const eligibleSignupCtasSinceJoin = ctas.filter((cta) => {
+          if (cta.status !== "FINALIZED" && cta.status !== "CANCELED") {
+            return false;
+          }
+          const ctaTime = Date.parse(cta.datetimeUtc);
+          return Number.isFinite(ctaTime) && ctaTime >= joinedAtTime && ctaTime <= now.getTime();
+        });
+        const eligibleSignupCtaIdsSinceJoin = new Set(eligibleSignupCtasSinceJoin.map((cta) => cta.id));
+        const memberSignupEvents = signupEventsByMember.get(member.id) ?? [];
+        const signupEventCount = memberSignupEvents.length;
+        const signupUniqueCtaIds = new Set(memberSignupEvents.map((entry) => entry.ctaId));
+        const signupFinalizedCtaIds = new Set<string>();
+        const signupCanceledCtaIds = new Set<string>();
+        const signupEligibleCtaIdsSinceJoin = new Set<string>();
+        for (const entry of memberSignupEvents) {
+          const cta = ctaById.get(entry.ctaId);
+          if (cta?.status === "FINALIZED") {
+            signupFinalizedCtaIds.add(entry.ctaId);
+          } else if (cta?.status === "CANCELED") {
+            signupCanceledCtaIds.add(entry.ctaId);
+          }
+          if (eligibleSignupCtaIdsSinceJoin.has(entry.ctaId)) {
+            signupEligibleCtaIdsSinceJoin.add(entry.ctaId);
+          }
+        }
+        const ctaSignupPercentSinceJoin =
+          eligibleSignupCtaIdsSinceJoin.size > 0
+            ? (signupEligibleCtaIdsSinceJoin.size / eligibleSignupCtaIdsSinceJoin.size) * 100
+            : 0;
+        const attendanceSinceJoinEntries = attendanceFinalizedEntriesByMember.get(member.id) ?? [];
+        const attendanceTimersSinceJoin = new Set(
+          attendanceSinceJoinEntries
+            .filter((entry) => {
+              const ctaTime = Date.parse(entry.datetimeUtc);
+              return Number.isFinite(ctaTime) && ctaTime >= joinedAtTime && ctaTime <= now.getTime();
+            })
+            .map((entry) => entry.timerKey)
+        );
+        const attendanceEligibleTimersSinceJoin = new Set(
+          finalizedCtas
+            .filter((cta) => {
+              const ctaTime = Date.parse(cta.datetimeUtc);
+              return Number.isFinite(ctaTime) && ctaTime >= joinedAtTime && ctaTime <= now.getTime();
+            })
+            .map((cta) => formatCtaTimerKey(cta.datetimeUtc))
+        );
+        const attendancePercentSinceJoin =
+          attendanceEligibleTimersSinceJoin.size > 0
+            ? (attendanceTimersSinceJoin.size / attendanceEligibleTimersSinceJoin.size) * 100
+            : 0;
         const lastActivityAt = getMemberLastActivityAt({
           memberId: member.id,
           battleAttendances,
@@ -1594,6 +1673,15 @@ export function createApiServices(
           avatarUrl: user?.avatarUrl,
           attendanceCount,
           attendancePercent: totalFinalizedTimers > 0 ? (attendanceCount / totalFinalizedTimers) * 100 : 0,
+          ctaSignupCount: signupEventCount,
+          ctaSignupUniqueCtas: signupUniqueCtaIds.size,
+          ctaSignupFinalizedCtas: signupFinalizedCtaIds.size,
+          ctaSignupCanceledCtas: signupCanceledCtaIds.size,
+          ctaSignupEligibleCtasSinceJoin: eligibleSignupCtaIdsSinceJoin.size,
+          ctaSignupPercentSinceJoin,
+          attendanceTimersSinceJoin: attendanceTimersSinceJoin.size,
+          attendanceEligibleTimersSinceJoin: attendanceEligibleTimersSinceJoin.size,
+          attendancePercentSinceJoin,
           lastActivityAt,
           inactiveDays: activity.inactiveDays,
           activityState: activity.state,
@@ -2158,9 +2246,13 @@ export function createApiServices(
         throw new DomainError("CTA not found or not available for signup");
       }
 
-      const normalizedRoles = input.roles.map((role) => role.trim()).filter(Boolean);
-      if (normalizedRoles.length < 2 || normalizedRoles.length > 4) {
-        throw new DomainError("roles must contain between 2 and 4 entries");
+      const normalizedRoles = Array.from(
+        new Set(input.roles.map((role) => role.trim()).filter(Boolean))
+      );
+      const hasFill = normalizedRoles.some((role) => role.toUpperCase() === "FILL");
+      const selectedRoles = hasFill ? ["FILL"] : normalizedRoles;
+      if (!hasFill && (selectedRoles.length < 2 || selectedRoles.length > 4)) {
+        throw new DomainError("roles must contain between 2 and 4 entries, unless FILL is selected");
       }
 
       const existingSignups = await repository.getCtaSignups(cta.id);
@@ -2172,13 +2264,22 @@ export function createApiServices(
       await repository.upsertCtaSignup({
         ctaId: cta.id,
         memberId: member.id,
-        role: normalizedRoles[0],
+        role: selectedRoles[0],
         slotKey: "__FILL__",
         slotLabel: "Para fillear",
         weaponName: "",
         playerName: getCtaSignupPlayerName(actor),
-        preferredRoles: normalizedRoles,
+        preferredRoles: selectedRoles,
         isFill: true
+      });
+      await repository.createCtaSignupEvent({
+        ctaId: cta.id,
+        memberId: member.id,
+        eventType: "SIGNUP",
+        metadata: {
+          source: "fill",
+          preferredRoles: selectedRoles
+        }
       });
       await repository.upsertAttendance({
         ctaId: cta.id,
@@ -2198,7 +2299,7 @@ export function createApiServices(
           memberId: member.id,
           playerName: getCtaSignupPlayerName(actor),
           playerUserId: actor.id,
-          preferredRoles: normalizedRoles
+          preferredRoles: selectedRoles
         }
       };
     },

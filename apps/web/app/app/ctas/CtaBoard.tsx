@@ -208,6 +208,10 @@ export function CtaBoard({
     }
     return [...byKey.values()].sort((left, right) => left.localeCompare(right, "es"));
   }, [parties]);
+  const signupWeaponOptions = useMemo(
+    () => (fillWeaponOptions.length > 0 ? ["FILL", ...fillWeaponOptions] : []),
+    [fillWeaponOptions]
+  );
   const roleByWeaponName = useMemo(() => {
     const map = new Map<string, string>();
     for (const party of parties) {
@@ -481,8 +485,10 @@ export function CtaBoard({
     }
     const selectedWeapons = signupSelections.map((entry) => entry.trim()).filter(Boolean);
     const uniqueSelections = Array.from(new Set(selectedWeapons));
-    if (uniqueSelections.length < 2 || uniqueSelections.length > 4) {
-      window.alert("Debes seleccionar al menos 2 armas (máximo 4).");
+    const hasFill = uniqueSelections.some((entry) => entry.toUpperCase() === "FILL");
+    const normalizedSelections = hasFill ? ["FILL"] : uniqueSelections;
+    if (!hasFill && (normalizedSelections.length < 2 || normalizedSelections.length > 4)) {
+      window.alert("Debes seleccionar al menos 2 armas (máximo 4), o elegir FILL.");
       return;
     }
 
@@ -492,7 +498,7 @@ export function CtaBoard({
       headers: {
         "content-type": "application/json"
       },
-      body: JSON.stringify({ roles: uniqueSelections })
+      body: JSON.stringify({ roles: normalizedSelections })
     });
 
     if (!response.ok) {
@@ -1028,18 +1034,28 @@ export function CtaBoard({
               {signupSelections.map((value, index) => (
                 <select
                   className="input compact"
-                  disabled={alreadySignedByCurrentUser || signupBusy || fillWeaponOptions.length === 0}
+                  disabled={alreadySignedByCurrentUser || signupBusy || signupWeaponOptions.length === 0}
                   key={index}
                   onChange={(event) => {
                     const nextValue = event.currentTarget.value;
-                    setSignupSelections((current) =>
-                      current.map((entry, entryIndex) => (entryIndex === index ? nextValue : entry))
-                    );
+                    setSignupSelections((current) => {
+                      if (nextValue.toUpperCase() === "FILL") {
+                        const next = ["", "", "", ""];
+                        next[index] = "FILL";
+                        return next;
+                      }
+                      return current.map((entry, entryIndex) => {
+                        if (entryIndex === index) {
+                          return nextValue;
+                        }
+                        return entry.toUpperCase() === "FILL" ? "" : entry;
+                      });
+                    });
                   }}
                   value={value}
                 >
                   <option value="">{`Selecciona arma ${index + 1}`}</option>
-                  {fillWeaponOptions.map((weaponName) => (
+                  {signupWeaponOptions.map((weaponName) => (
                     <option key={weaponName} value={weaponName}>
                       {weaponName}
                     </option>
@@ -1049,16 +1065,16 @@ export function CtaBoard({
             </div>
             <button
               className="button primary compact"
-              disabled={signupBusy || alreadySignedByCurrentUser || fillWeaponOptions.length === 0}
+              disabled={signupBusy || alreadySignedByCurrentUser || signupWeaponOptions.length === 0}
               onClick={() => void signupForFill()}
               type="button"
             >
-              {signupBusy ? "Guardando..." : "Apuntarme (mín. 2)"}
+              {signupBusy ? "Guardando..." : "Apuntarme (mín. 2 o FILL)"}
             </button>
             {alreadySignedByCurrentUser ? (
               <p className="cta-fill-hint">Ya estas apuntado en esta CTA.</p>
             ) : null}
-            {fillWeaponOptions.length === 0 ? (
+            {signupWeaponOptions.length === 0 ? (
               <p className="cta-fill-hint">No hay armas disponibles en la comp de esta CTA.</p>
             ) : null}
             <div className="cta-fill-list">

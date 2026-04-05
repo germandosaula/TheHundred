@@ -378,9 +378,12 @@ export function requireCtaFillSignupPayload(payload: CtaFillSignupPayload | null
   if (!payload || !Array.isArray(payload.roles)) {
     throw new DomainError("roles are required");
   }
-  const roles = payload.roles.map((entry) => entry?.trim()).filter(Boolean) as string[];
-  if (roles.length < 2 || roles.length > 4) {
-    throw new DomainError("roles must have between 2 and 4 values");
+  const normalized = payload.roles.map((entry) => entry?.trim()).filter(Boolean) as string[];
+  const uniqueRoles = Array.from(new Set(normalized));
+  const hasFill = uniqueRoles.some((entry) => entry.toUpperCase() === "FILL");
+  const roles = hasFill ? ["FILL"] : uniqueRoles;
+  if (!hasFill && (roles.length < 2 || roles.length > 4)) {
+    throw new DomainError("roles must have between 2 and 4 values, unless FILL is selected");
   }
   if (roles.some((entry) => entry.length > 60)) {
     throw new DomainError("roles entries must be 60 characters or fewer");
