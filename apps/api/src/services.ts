@@ -2096,7 +2096,7 @@ export function createApiServices(
     },
 
     async listAssignableCompPlayers(actor) {
-      await requireStaffAccess(actor);
+      await requireCtaManager(actor);
 
       const [members, users] = await Promise.all([repository.getMembers(), repository.getUsers()]);
       const usersById = new Map(users.map((user) => [user.id, user]));
@@ -2763,7 +2763,7 @@ export function createApiServices(
     },
 
     async saveComp(actor, input) {
-      await requireStaffAccess(actor);
+      await requireCtaManager(actor);
       return repository.saveComp({
         ...input,
         createdBy: input.createdBy || actor.id
@@ -3025,7 +3025,7 @@ export function createApiServices(
     },
 
     async deleteComp(actor, compId) {
-      await requireStaffAccess(actor);
+      await requireCtaManager(actor);
       const deleted = await repository.deleteComp(compId);
 
       if (!deleted) {
