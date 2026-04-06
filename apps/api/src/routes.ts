@@ -42,6 +42,7 @@ import {
 } from "./validation.ts";
 
 const defaultDevDiscordId = "173816196720885760";
+const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export async function routeRequest(
   request: IncomingMessage,
@@ -95,7 +96,7 @@ export async function routeRequest(
     }
 
     const sessionCookie = createCookie("th_session", result.sessionToken, {
-      maxAge: 43200,
+      maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
       domain: options.cookieDomain,
       secure: options.secureCookies
     });
@@ -150,7 +151,7 @@ export async function routeRequest(
 
     if (url.searchParams.get("redirect") !== "0") {
       const sessionCookie = createCookie("th_session", result.sessionToken, {
-        maxAge: 43200,
+        maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
         domain: options.cookieDomain,
         secure: options.secureCookies
       });

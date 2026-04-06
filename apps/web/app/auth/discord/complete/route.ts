@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
+const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
       httpOnly: true,
       sameSite: "lax",
       secure,
-      maxAge: 60 * 60 * 12
+      maxAge: SESSION_COOKIE_MAX_AGE_SECONDS
     });
   }
 

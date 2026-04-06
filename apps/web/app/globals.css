@@ -1357,9 +1357,9 @@ li {
 
 .member-card {
   display: grid;
-  gap: 12px;
-  min-height: 240px;
-  padding: 14px;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background:
@@ -1369,19 +1369,53 @@ li {
 
 .member-card-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: 10px;
+}
+
+.member-card-head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .member-card-player {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .member-card-attendance {
   justify-items: end;
+}
+
+.member-metrics-compact {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.member-metric-chip {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid rgba(136, 156, 196, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.member-metric-chip strong {
+  color: var(--accent-strong);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.member-metric-chip span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.1;
 }
 
 .member-card-statuses,
@@ -1635,12 +1669,12 @@ li {
 
 .member-actions-inline .status-chip {
   width: 100%;
-  min-height: 56px;
+  min-height: 46px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 0 16px;
+  padding: 0 12px;
 }
 
 .member-reject-chip {
@@ -1925,8 +1959,12 @@ li {
     align-items: flex-start;
   }
 
-  .member-card-attendance {
-    justify-items: start;
+  .member-card-head-main {
+    width: 100%;
+  }
+
+  .member-metrics-compact {
+    grid-template-columns: 1fr;
   }
 
   .member-row-list {

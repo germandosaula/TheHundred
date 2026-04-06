@@ -40,6 +40,8 @@ interface SessionRecord {
   expiresAt: number;
 }
 
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+
 export function createAuthServices(
   repository: DatabaseRepository,
   config: ApiConfig
@@ -84,6 +86,7 @@ export function createAuthServices(
         if (session.userId) {
           const user = await repository.getUserById(session.userId);
           if (user) {
+            session.expiresAt = Date.now() + SESSION_TTL_MS;
             return user;
           }
           continue;
@@ -92,6 +95,7 @@ export function createAuthServices(
         const linkedUser = await repository.getUserByDiscordId(session.discordId);
         if (linkedUser) {
           session.userId = linkedUser.id;
+          session.expiresAt = Date.now() + SESSION_TTL_MS;
           return linkedUser;
         }
       }
@@ -141,7 +145,7 @@ export function createAuthServices(
       sessions.set(sessionToken, {
         userId: linkedUser?.id,
         discordId: discordUser.id,
-        expiresAt: Date.now() + 1000 * 60 * 60 * 12
+        expiresAt: Date.now() + SESSION_TTL_MS
       });
 
       return {
@@ -161,7 +165,7 @@ export function createAuthServices(
       sessions.set(sessionToken, {
         userId: linkedUser?.id,
         discordId,
-        expiresAt: Date.now() + 1000 * 60 * 60 * 12
+        expiresAt: Date.now() + SESSION_TTL_MS
       });
 
       return {

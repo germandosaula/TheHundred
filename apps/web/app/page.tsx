@@ -95,6 +95,7 @@ export default async function LandingPage({ searchParams }: LandingPageProps) {
             discordUrl={discordInviteUrl}
             enforceCountdown={enforceLaunchCountdown}
             hasValidInvite={inviteValid}
+            hasActiveSession={hasPrivateAccess}
             loginUrl={authStartUrl}
           />
         </header>

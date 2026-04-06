@@ -7,6 +7,7 @@ interface LandingLaunchControlsProps {
   devLoginUrl: string | null;
   discordUrl: string;
   hasValidInvite: boolean;
+  hasActiveSession: boolean;
   loginUrl?: string;
   enforceCountdown: boolean;
 }
@@ -17,6 +18,7 @@ export function LandingLaunchControls({
   devLoginUrl,
   discordUrl,
   hasValidInvite,
+  hasActiveSession,
   loginUrl,
   enforceCountdown
 }: LandingLaunchControlsProps) {
@@ -42,8 +44,9 @@ export function LandingLaunchControls({
   const hasLaunched = remainingMs <= 0;
   const countdownText = useMemo(() => formatCountdown(remainingMs), [remainingMs]);
   const shouldLockLogin = enforceCountdown && !hasLaunched && !hasValidInvite;
-  const canLogin = !shouldLockLogin && Boolean(loginUrl);
-  const loginLabel = "Login";
+  const canLogin = hasActiveSession || (!shouldLockLogin && Boolean(loginUrl));
+  const loginLabel = hasActiveSession ? "Entrar" : "Login";
+  const loginHref = hasActiveSession ? "/app" : (loginUrl ?? "#");
 
   return (
     <>
@@ -71,7 +74,7 @@ export function LandingLaunchControls({
         <a
           aria-disabled={!canLogin}
           className={`button primary ${!canLogin ? "is-disabled" : ""}`}
-          href={canLogin ? loginUrl : "#"}
+          href={canLogin ? loginHref : "#"}
         >
           {loginLabel}
         </a>

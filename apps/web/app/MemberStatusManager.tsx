@@ -488,47 +488,49 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
         {filteredMembers.map((member) => (
           <li className="member-card" key={member.id}>
             <div className="member-card-head">
-              <span className="status-badge member-index-badge">
-                #{String(memberPositionById.get(member.id) ?? 0).padStart(2, "0")}
-              </span>
-              <div className="member-attendance member-card-attendance">
+              <div className="member-card-head-main">
+                <span className="status-badge member-index-badge">
+                  #{String(memberPositionById.get(member.id) ?? 0).padStart(2, "0")}
+                </span>
+                <div className="member-card-player">
+                  {member.avatarUrl ? (
+                    <img alt={member.displayName} className="user-avatar member-avatar" src={member.avatarUrl} />
+                  ) : (
+                    <div className="member-avatar-fallback">{member.displayName.slice(0, 1).toUpperCase()}</div>
+                  )}
+                  <div className="member-identity">
+                    <strong>{member.displayName}</strong>
+                    <span className="member-meta">{member.discordId}</span>
+                    <span className="member-meta">
+                      Albion: {member.albionName?.trim() ? member.albionName : "Sin definir"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="member-metrics-compact">
+              <div className="member-metric-chip">
                 <span className="member-card-label">Attendance</span>
                 <strong>{member.attendanceCount}</strong>
                 <span>{formatPercent(member.attendancePercent)}</span>
               </div>
-            </div>
-
-            <div className="member-attendance member-card-attendance">
-              <span className="member-card-label">Signup CTA</span>
-              <strong>{member.ctaSignupCount ?? 0}</strong>
-              <span>
-                {member.ctaSignupUniqueCtas ?? 0} CTAs · {formatPercent(member.ctaSignupPercentSinceJoin ?? 0)} desde ingreso
-              </span>
-              <span>
-                Finalizadas {member.ctaSignupFinalizedCtas ?? 0} · Canceladas {member.ctaSignupCanceledCtas ?? 0}
-              </span>
-            </div>
-
-            <div className="member-attendance member-card-attendance">
-              <span className="member-card-label">Attendance desde ingreso</span>
-              <strong>
-                {member.attendanceTimersSinceJoin ?? 0}/{member.attendanceEligibleTimersSinceJoin ?? 0}
-              </strong>
-              <span>{formatPercent(member.attendancePercentSinceJoin ?? 0)}</span>
-            </div>
-
-            <div className="member-card-player">
-              {member.avatarUrl ? (
-                <img alt={member.displayName} className="user-avatar member-avatar" src={member.avatarUrl} />
-              ) : (
-                <div className="member-avatar-fallback">{member.displayName.slice(0, 1).toUpperCase()}</div>
-              )}
-              <div className="member-identity">
-                <strong>{member.displayName}</strong>
-                <span className="member-meta">{member.discordId}</span>
-                <span className="member-meta">
-                  Albion: {member.albionName?.trim() ? member.albionName : "Sin definir"}
+              <div
+                className="member-metric-chip"
+                title={`Finalizadas ${member.ctaSignupFinalizedCtas ?? 0} · Canceladas ${member.ctaSignupCanceledCtas ?? 0}`}
+              >
+                <span className="member-card-label">Signup CTA</span>
+                <strong>{member.ctaSignupCount ?? 0}</strong>
+                <span>
+                  {member.ctaSignupUniqueCtas ?? 0} CTAs · {formatPercent(member.ctaSignupPercentSinceJoin ?? 0)}
                 </span>
+              </div>
+              <div className="member-metric-chip">
+                <span className="member-card-label">Desde ingreso</span>
+                <strong>
+                  {member.attendanceTimersSinceJoin ?? 0}/{member.attendanceEligibleTimersSinceJoin ?? 0}
+                </strong>
+                <span>{formatPercent(member.attendancePercentSinceJoin ?? 0)}</span>
               </div>
             </div>
 
