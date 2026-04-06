@@ -618,28 +618,56 @@ export function createApiServices(
     const botToken = options.discordBotToken?.trim();
     const callerRoleIds = options.discordCallerRoleIds ?? [];
     if (!guildId || !botToken || callerRoleIds.length === 0) {
+      console.warn("[permissions] Caller role check skipped due missing Discord config", {
+        hasGuildId: Boolean(guildId),
+        hasBotToken: Boolean(botToken),
+        callerRoleIds: callerRoleIds.length
+      });
       return false;
     }
 
-    try {
-      const response = await fetch(
-        `https://discord.com/api/v10/guilds/${guildId}/members/${actor.discordId}`,
-        {
-          headers: {
-            authorization: `Bot ${botToken}`
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const response = await fetch(
+          `https://discord.com/api/v10/guilds/${guildId}/members/${actor.discordId}`,
+          {
+            headers: {
+              authorization: `Bot ${botToken}`
+            }
           }
-        }
-      );
-      if (!response.ok) {
-        return false;
-      }
+        );
 
-      const payload = (await response.json()) as { roles?: string[] };
-      const roleIds = payload.roles ?? [];
-      return callerRoleIds.some((roleId) => roleIds.includes(roleId));
-    } catch {
-      return false;
+        if (response.status === 429) {
+          const payload = (await response.json().catch(() => null)) as { retry_after?: number } | null;
+          const retryAfterMs = Math.max(250, Math.ceil((payload?.retry_after ?? 1) * 1000));
+          await wait(retryAfterMs);
+          continue;
+        }
+
+        if (!response.ok) {
+          console.warn("[permissions] Caller role lookup failed", {
+            discordId: actor.discordId,
+            status: response.status
+          });
+          return false;
+        }
+
+        const payload = (await response.json()) as { roles?: string[] };
+        const roleIds = payload.roles ?? [];
+        return callerRoleIds.some((roleId) => roleIds.includes(roleId));
+      } catch (error) {
+        if (attempt === 3) {
+          console.warn("[permissions] Caller role lookup failed after retries", {
+            discordId: actor.discordId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          return false;
+        }
+        await wait(400);
+      }
     }
+
+    return false;
   };
   const requireCtaManager = async (actor: User) => {
     const actorMember = await repository.getMemberByUserId(actor.id);
