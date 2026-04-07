@@ -602,13 +602,10 @@ export function CompsBuilder({
 
         if (field === "label") {
           const nextLabel = value;
-          const shouldSyncNotes =
-            slot.notes.trim().length === 0 || slot.notes.trim() === slot.label.trim();
-
           return {
             ...slot,
             label: nextLabel,
-            notes: shouldSyncNotes ? nextLabel : slot.notes,
+            notes: nextLabel,
           };
         }
 
@@ -834,7 +831,7 @@ export function CompsBuilder({
               weaponId: slot.weaponId,
               weaponName: slot.weaponName,
               buildId: slot.buildId,
-              notes: slot.notes,
+              notes: slot.notes?.trim() ? slot.notes : slot.label,
             })),
           })),
         }),

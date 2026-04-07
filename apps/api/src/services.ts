@@ -614,9 +614,11 @@ export function createApiServices(
   const compRoleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
   const bottledEnergyRoleId = "1484999230186721391";
   const ctaMissingPingChannelId = "1479151829832171731";
+  const isCouncilMember = (member: Awaited<ReturnType<DatabaseRepository["getMemberByUserId"]>>) =>
+    Boolean(member && !member.kickedAt && (member.discordRoleStatus === "COUNCIL" || member.status === "COUNCIL"));
   const requireStaffAccess = async (actor: User) => {
     const actorMember = await repository.getMemberByUserId(actor.id);
-    if (actorMember?.discordRoleStatus === "COUNCIL" && !actorMember.kickedAt) {
+    if (isCouncilMember(actorMember)) {
       return;
     }
 
@@ -680,7 +682,7 @@ export function createApiServices(
   };
   const requireCtaManager = async (actor: User) => {
     const actorMember = await repository.getMemberByUserId(actor.id);
-    if (actorMember?.discordRoleStatus === "COUNCIL" && !actorMember.kickedAt) {
+    if (isCouncilMember(actorMember)) {
       return;
     }
 
@@ -2956,7 +2958,7 @@ export function createApiServices(
     },
 
     async saveBuildTemplate(actor, input) {
-      await requireStaffAccess(actor);
+      await requireCtaManager(actor);
       const normalizedItems = input.items.map((item) => ({
         ...item,
         itemId: canonicalizeToT8PlainItemId(item.itemId)
@@ -2969,7 +2971,7 @@ export function createApiServices(
     },
 
     async deleteBuildTemplate(actor, buildId) {
-      await requireStaffAccess(actor);
+      await requireCtaManager(actor);
       const deleted = await repository.deleteBuildTemplate(buildId);
       if (!deleted) {
         throw new Error("Build not found");
