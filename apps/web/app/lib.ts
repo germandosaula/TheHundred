@@ -591,14 +591,18 @@ export async function getPrivateCtasData() {
     getJson<CompEntry[]>("/comps", sessionToken, discordId),
     getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId)
   ]);
+  const canManage = Boolean(manageProbe);
+  const assignablePlayers = canManage
+    ? await getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+    : null;
 
   return {
     me,
     ctas,
     comps: comps ?? [],
-    assignablePlayers: [],
-    canEditCompsAndCtas: Boolean(manageProbe),
-    canCancelCta: Boolean(manageProbe),
+    assignablePlayers: assignablePlayers ?? [],
+    canEditCompsAndCtas: canManage,
+    canCancelCta: canManage,
     builds: builds ?? []
   };
 }

@@ -107,7 +107,7 @@ function toUtcInputFromIso(value: string): string {
 }
 
 export function CtaBoard({
-  assignablePlayers: _assignablePlayers,
+  assignablePlayers,
   builds,
   canCancel,
   canEdit,
@@ -208,6 +208,29 @@ export function CtaBoard({
     }
     return [...byKey.values()].sort((left, right) => left.localeCompare(right, "es"));
   }, [parties]);
+  const nonSignedGuildMembers = useMemo(() => {
+    if (!canEdit) {
+      return [];
+    }
+
+    const signedUserIds = new Set<string>();
+    for (const party of parties) {
+      for (const slot of party.slots) {
+        if (slot.playerUserId) {
+          signedUserIds.add(slot.playerUserId);
+        }
+      }
+    }
+    for (const filler of fillers) {
+      if (filler.playerUserId) {
+        signedUserIds.add(filler.playerUserId);
+      }
+    }
+
+    return assignablePlayers
+      .filter((member) => !signedUserIds.has(member.userId))
+      .sort((left, right) => left.displayName.localeCompare(right.displayName, "es"));
+  }, [assignablePlayers, canEdit, fillers, parties]);
   const signupWeaponOptions = useMemo(
     () => (fillWeaponOptions.length > 0 ? ["FILL", ...fillWeaponOptions] : []),
     [fillWeaponOptions]
@@ -1152,6 +1175,25 @@ export function CtaBoard({
               ))}
               {fillers.length === 0 ? <p className="empty">Sin apuntados para fillear.</p> : null}
             </div>
+            {canEdit ? (
+              <div className="cta-missing-signups">
+                <div className="cta-missing-signups-head">
+                  <span className="card-label">No apuntados</span>
+                  <span className="status-badge">{nonSignedGuildMembers.length}</span>
+                </div>
+                <div className="cta-missing-signups-list">
+                  {nonSignedGuildMembers.length === 0 ? (
+                    <p className="empty">Todos los miembros elegibles están apuntados.</p>
+                  ) : (
+                    nonSignedGuildMembers.map((member) => (
+                      <span className="cta-missing-signups-item" key={member.userId}>
+                        {member.displayName}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : null}
           </aside>
         </div>
       ) : (
