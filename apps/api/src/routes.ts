@@ -244,7 +244,7 @@ export async function routeRequest(
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);
     const ctaId = url.pathname.split("/")[2];
-    const cta = (await services.listCtas()).find((entry) => entry.id === ctaId) ?? null;
+    const cta = await services.getCtaById(ctaId);
     if (!cta) {
       return json({ error: "CTA not found" }, 404);
     }

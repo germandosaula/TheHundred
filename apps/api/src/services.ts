@@ -11,6 +11,44 @@ import {
   type User
 } from "@thehundred/domain";
 
+type HydratedCta = CTA & {
+  compName?: string;
+  signupFillers: Array<{
+    memberId: string;
+    playerName: string;
+    playerUserId?: string;
+    preferredRoles: string[];
+    preferredWeapons: string[];
+  }>;
+  signupParties: Array<{
+    partyKey: string;
+    partyName: string;
+    slots: Array<{
+      slotKey: string;
+      role: string;
+      label: string;
+      weaponId: string;
+      weaponName: string;
+      buildId?: string;
+      notes?: string;
+      playerName?: string;
+      playerUserId?: string;
+      preferredRoles: string[];
+      preferredWeapons: string[];
+    }>;
+  }>;
+  signupCategories: Array<{
+    role: string;
+    slots: Array<{
+      slotKey: string;
+      label: string;
+      weaponName: string;
+      reactionEmoji?: string;
+      playerName?: string;
+    }>;
+  }>;
+};
+
 export interface ApiServices {
   getHealth(): Promise<{
     ok: true;
@@ -301,47 +339,8 @@ export interface ApiServices {
   listAssignableCompPlayers(actor: User): Promise<
     Array<GuildMember & { displayName: string; discordId: string; avatarUrl?: string }>
   >;
-  listCtas(): Promise<
-    Array<
-      CTA & {
-        compName?: string;
-        signupFillers: Array<{
-          memberId: string;
-          playerName: string;
-          playerUserId?: string;
-          preferredRoles: string[];
-          preferredWeapons: string[];
-        }>;
-        signupParties: Array<{
-          partyKey: string;
-          partyName: string;
-          slots: Array<{
-            slotKey: string;
-            role: string;
-            label: string;
-            weaponId: string;
-            weaponName: string;
-            buildId?: string;
-            notes?: string;
-            playerName?: string;
-            playerUserId?: string;
-            preferredRoles: string[];
-            preferredWeapons: string[];
-          }>;
-        }>;
-        signupCategories: Array<{
-          role: string;
-          slots: Array<{
-            slotKey: string;
-            label: string;
-            weaponName: string;
-            reactionEmoji?: string;
-            playerName?: string;
-          }>;
-        }>;
-      }
-    >
-  >;
+  listCtas(): Promise<HydratedCta[]>;
+  getCtaById(ctaId: string): Promise<HydratedCta | null>;
   signupForFill(
     actor: User,
     input: { ctaId: string; roles: string[] }
@@ -967,6 +966,110 @@ export function createApiServices(
         const preferred = (entry.preferredRoles ?? []).filter(Boolean).join(" · ");
         return `• ${entry.playerName}${preferred ? ` · ${preferred}` : ""}`;
       });
+  const roleValueSet = new Set(
+    ["tank", "healer", "support", "pierce", "melee", "ranged", "battlemount"].map((entry) =>
+      entry.toLowerCase()
+    )
+  );
+  const extractPreferredWeapons = (
+    preferredRoles: string[] | undefined,
+    fallbackWeaponName?: string
+  ): string[] => {
+    const normalized = (preferredRoles ?? [])
+      .map((entry) => entry?.trim())
+      .filter((entry): entry is string => Boolean(entry))
+      .filter((entry) => !roleValueSet.has(entry.toLowerCase()));
+    const unique = Array.from(new Set(normalized));
+    if (unique.length > 0) {
+      return unique;
+    }
+    const fallback = fallbackWeaponName?.trim();
+    return fallback ? [fallback] : [];
+  };
+  const hydrateCtas = (
+    ctas: CTA[],
+    comps: Awaited<ReturnType<DatabaseRepository["getComps"]>>,
+    members: Awaited<ReturnType<DatabaseRepository["getMembers"]>>,
+    signupsByCtaId: Map<string, Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>>
+  ): HydratedCta[] => {
+    const compsById = new Map(comps.map((comp) => [comp.id, comp]));
+    const membersById = new Map(members.map((member) => [member.id, member]));
+
+    return ctas.map((cta) => {
+      const comp = cta.compId ? compsById.get(cta.compId) : undefined;
+      const ctaSignups = signupsByCtaId.get(cta.id) ?? [];
+      const ctaFillers = ctaSignups.filter((entry) => entry.isFill || entry.slotKey === "__FILL__");
+      const signupParties = comp
+        ? comp.parties.map((party) => ({
+            partyKey: party.key,
+            partyName: party.name,
+            slots: party.slots.map((slot) => {
+              const slotKey = `${party.key}:${slot.position}`;
+              const signup = ctaSignups.find((entry) => entry.slotKey === slotKey);
+
+              return {
+                slotKey,
+                role: slot.role,
+                label: slot.label,
+                weaponId: slot.weaponId,
+                weaponName: slot.weaponName,
+                buildId: slot.buildId,
+                notes: slot.notes ?? "",
+                playerName: signup?.playerName,
+                playerUserId: signup ? membersById.get(signup.memberId)?.userId : undefined,
+                preferredRoles: signup?.preferredRoles ?? [],
+                preferredWeapons: extractPreferredWeapons(signup?.preferredRoles, signup?.weaponName)
+              };
+            })
+          }))
+        : [];
+      const signupCategories = comp
+        ? compRoleOrder
+            .map((role) => {
+              const slots = comp.parties.flatMap((party) =>
+                party.slots
+                  .filter((slot) => slot.role === role)
+                  .map((slot) => {
+                    const slotKey = `${party.key}:${slot.position}`;
+                    const signup = ctaSignups.find((entry) => entry.slotKey === slotKey);
+
+                    return {
+                      slotKey,
+                      label: slot.label,
+                      weaponName: slot.weaponName,
+                      reactionEmoji: signup?.reactionEmoji,
+                      playerName: signup?.playerName
+                    };
+                  })
+              );
+
+              if (slots.length === 0) {
+                return null;
+              }
+
+              return {
+                role,
+                slots
+              };
+            })
+            .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+        : [];
+
+      return {
+        ...cta,
+        compName: comp?.name,
+        signupFillers: ctaFillers.map((entry) => ({
+          memberId: entry.memberId,
+          playerName: entry.playerName,
+          playerUserId: membersById.get(entry.memberId)?.userId,
+          preferredRoles: entry.preferredRoles ?? [],
+          preferredWeapons: extractPreferredWeapons(entry.preferredRoles, entry.weaponName)
+        })),
+        signupParties,
+        signupCategories
+      };
+    });
+  };
   const publishOrUpdateCtaDiscordMessage = async (
     ctaId: string,
     input?: { announceEveryone?: boolean }
@@ -2150,116 +2253,37 @@ export function createApiServices(
     },
 
     async listCtas() {
-      const roleValueSet = new Set(
-        ["tank", "healer", "support", "pierce", "melee", "ranged", "battlemount"].map((entry) =>
-          entry.toLowerCase()
-        )
-      );
-      const extractPreferredWeapons = (
-        preferredRoles: string[] | undefined,
-        fallbackWeaponName?: string
-      ): string[] => {
-        const normalized = (preferredRoles ?? [])
-          .map((entry) => entry?.trim())
-          .filter((entry): entry is string => Boolean(entry))
-          .filter((entry) => !roleValueSet.has(entry.toLowerCase()));
-        const unique = Array.from(new Set(normalized));
-        if (unique.length > 0) {
-          return unique;
-        }
-        const fallback = fallbackWeaponName?.trim();
-        return fallback ? [fallback] : [];
-      };
-
       const ctas = await repository.getCtas();
-      const [comps, signups, members] = await Promise.all([
+      const activeCtas = ctas.filter((cta) => cta.status === "OPEN" || cta.status === "CREATED");
+      const [comps, activeSignups, members] = await Promise.all([
         repository.getComps(),
-        Promise.all(ctas.map((cta) => repository.getCtaSignups(cta.id))),
+        Promise.all(activeCtas.map((cta) => repository.getCtaSignups(cta.id))),
         repository.getMembers()
       ]);
-
-      const compsById = new Map(comps.map((comp) => [comp.id, comp]));
       const signupsByCtaId = new Map<string, Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>>();
-      const membersById = new Map(members.map((member) => [member.id, member]));
-
-      ctas.forEach((cta, index) => {
-        signupsByCtaId.set(cta.id, signups[index] ?? []);
+      activeCtas.forEach((cta, index) => {
+        signupsByCtaId.set(cta.id, activeSignups[index] ?? []);
       });
+      return hydrateCtas(ctas, comps, members, signupsByCtaId);
+    },
 
-      return ctas.map((cta) => {
-        const comp = cta.compId ? compsById.get(cta.compId) : undefined;
-        const ctaSignups = signupsByCtaId.get(cta.id) ?? [];
-        const ctaFillers = ctaSignups.filter((entry) => entry.isFill || entry.slotKey === "__FILL__");
-        const signupParties = comp
-          ? comp.parties.map((party) => ({
-              partyKey: party.key,
-              partyName: party.name,
-              slots: party.slots.map((slot) => {
-                const slotKey = `${party.key}:${slot.position}`;
-                const signup = ctaSignups.find((entry) => entry.slotKey === slotKey);
+    async getCtaById(ctaId) {
+      const cta = await repository.getCtaById(ctaId);
+      if (!cta) {
+        return null;
+      }
 
-                return {
-                  slotKey,
-                  role: slot.role,
-                  label: slot.label,
-                  weaponId: slot.weaponId,
-                  weaponName: slot.weaponName,
-                  buildId: slot.buildId,
-                  notes: slot.notes ?? "",
-                  playerName: signup?.playerName,
-                  playerUserId: signup ? membersById.get(signup.memberId)?.userId : undefined,
-                  preferredRoles: signup?.preferredRoles ?? [],
-                  preferredWeapons: extractPreferredWeapons(signup?.preferredRoles, signup?.weaponName)
-                };
-              })
-            }))
-          : [];
-        const signupCategories = comp
-          ? compRoleOrder
-              .map((role) => {
-                const slots = comp.parties.flatMap((party) =>
-                  party.slots
-                    .filter((slot) => slot.role === role)
-                    .map((slot) => {
-                      const slotKey = `${party.key}:${slot.position}`;
-                      const signup = ctaSignups.find((entry) => entry.slotKey === slotKey);
+      const [comps, members, signups] = await Promise.all([
+        repository.getComps(),
+        repository.getMembers(),
+        repository.getCtaSignups(cta.id)
+      ]);
 
-                      return {
-                        slotKey,
-                        label: slot.label,
-                        weaponName: slot.weaponName,
-                        reactionEmoji: signup?.reactionEmoji,
-                        playerName: signup?.playerName
-                      };
-                    })
-                );
+      const signupsByCtaId = new Map<string, Awaited<ReturnType<DatabaseRepository["getCtaSignups"]>>>([
+        [cta.id, signups]
+      ]);
 
-                if (slots.length === 0) {
-                  return null;
-                }
-
-                return {
-                  role,
-                  slots
-                };
-              })
-              .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
-          : [];
-
-        return {
-          ...cta,
-          compName: comp?.name,
-          signupFillers: ctaFillers.map((entry) => ({
-            memberId: entry.memberId,
-            playerName: entry.playerName,
-            playerUserId: membersById.get(entry.memberId)?.userId,
-            preferredRoles: entry.preferredRoles ?? [],
-            preferredWeapons: extractPreferredWeapons(entry.preferredRoles, entry.weaponName)
-          })),
-          signupParties,
-          signupCategories
-        };
-      });
+      return hydrateCtas([cta], comps, members, signupsByCtaId)[0] ?? null;
     },
 
     async signupForFill(actor, input) {
@@ -2581,7 +2605,7 @@ export function createApiServices(
       const nextTitle = input.title ?? cta.title;
       const nextDatetimeUtc = input.datetimeUtc ?? cta.datetimeUtc;
       if (nextTitle === cta.title && nextDatetimeUtc === cta.datetimeUtc) {
-        return (await this.listCtas()).find((entry) => entry.id === cta.id) ?? null;
+        return this.getCtaById(cta.id);
       }
 
       const updated = await repository.updateCtaDetails(cta.id, {
@@ -2600,7 +2624,7 @@ export function createApiServices(
         console.error("CTA Discord title/time update refresh failed", error);
       }
 
-      return (await this.listCtas()).find((entry) => entry.id === updated.id) ?? null;
+      return this.getCtaById(updated.id);
     },
 
     async updateCtaComp(actor, ctaId, compId) {
@@ -2624,7 +2648,7 @@ export function createApiServices(
       }
 
       if ((cta.compId ?? undefined) === resolvedCompId) {
-        return (await this.listCtas()).find((entry) => entry.id === cta.id) ?? null;
+        return this.getCtaById(cta.id);
       }
 
       const updated = await repository.updateCtaComp(cta.id, resolvedCompId);
@@ -2640,7 +2664,7 @@ export function createApiServices(
         console.error("CTA Discord comp change refresh failed", error);
       }
 
-      const hydrated = (await this.listCtas()).find((entry) => entry.id === updated.id) ?? null;
+      const hydrated = await this.getCtaById(updated.id);
       return hydrated;
     },
 

@@ -5,6 +5,11 @@ import { useEffect } from "react";
 
 export function CtasLiveRefresh() {
   const router = useRouter();
+  const liveRefreshEnabled = process.env.NEXT_PUBLIC_CTA_LIVE_REFRESH === "1";
+
+  if (!liveRefreshEnabled) {
+    return null;
+  }
 
   useEffect(() => {
     let isTicking = false;
@@ -18,7 +23,7 @@ export function CtasLiveRefresh() {
       window.setTimeout(() => {
         isTicking = false;
       }, 1200);
-    }, 15000);
+    }, 120000);
 
     return () => {
       window.clearInterval(intervalId);
