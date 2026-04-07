@@ -1171,19 +1171,22 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     }
 
     const buildIds = (builds ?? []).map((build) => build.id);
-    let items: BuildTemplateItemRow[] = [];
+    const items: BuildTemplateItemRow[] = [];
 
-    if (buildIds.length > 0) {
+    // Supabase/PostgREST can cap row counts per query; fetch in chunks so we never
+    // silently lose build items when there are many templates.
+    const buildIdChunks = chunkArray(buildIds, 50);
+    for (const buildIdChunk of buildIdChunks) {
       const { data: itemRows, error: itemsError } = await this.client
         .from("build_template_items")
         .select("id, build_id, slot, item_id, item_name, position")
-        .in("build_id", buildIds)
+        .in("build_id", buildIdChunk)
         .order("position", { ascending: true })
         .returns<BuildTemplateItemRow[]>();
       if (itemsError) {
         throw createSupabaseDomainError("Failed to load build template items from Supabase", itemsError);
       }
-      items = itemRows ?? [];
+      items.push(...(itemRows ?? []));
     }
 
     const itemsByBuildId = new Map<string, BuildTemplateRecord["items"]>();
