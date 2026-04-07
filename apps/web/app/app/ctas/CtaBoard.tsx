@@ -317,31 +317,6 @@ export function CtaBoard({
         return explicit;
       }
     }
-
-    const keys = new Set<string>();
-    const normalizedById = normalizeWeaponLookupKey(slot.weaponId, slot.role);
-    const normalizedByName = normalizeWeaponLookupKey(slot.weaponName, slot.role);
-    const resolvedIconById = normalizeWeaponLookupKey(getResolvedWeaponIconName(slot.weaponId) ?? undefined, slot.role);
-    const resolvedIconByName = normalizeWeaponLookupKey(
-      getResolvedWeaponIconName(slot.weaponName) ?? undefined,
-      slot.role
-    );
-    if (normalizedById) keys.add(normalizedById);
-    if (normalizedByName) keys.add(normalizedByName);
-    if (resolvedIconById) keys.add(resolvedIconById);
-    if (resolvedIconByName) keys.add(resolvedIconByName);
-
-    for (const key of keys) {
-      const candidates = buildByWeaponId.get(key) ?? [];
-      const roleMatch = candidates.find((entry) => entry.role === slot.role);
-      if (roleMatch) {
-        return roleMatch;
-      }
-      if (candidates[0]) {
-        return candidates[0];
-      }
-    }
-
     return null;
   }
 

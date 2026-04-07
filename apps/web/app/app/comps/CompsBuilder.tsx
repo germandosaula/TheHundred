@@ -590,13 +590,12 @@ export function CompsBuilder({
 
         if (field === "weaponId") {
           const nextWeapon = getWeaponById(value);
-          const preferredBuild = getPreferredBuildForWeapon(nextWeapon.id);
 
           return {
             ...slot,
             weaponId: nextWeapon.id,
             weaponName: nextWeapon.name,
-            buildId: preferredBuild?.id,
+            buildId: undefined,
           };
         }
 
@@ -637,7 +636,7 @@ export function CompsBuilder({
   ) {
     const selectedBuild = buildId
       ? builds.find((entry) => entry.id === buildId)
-      : getPreferredBuildForWeapon(slot.weaponId);
+      : null;
     setEditorContext(context);
     setEditorBuild(
       selectedBuild
@@ -668,7 +667,7 @@ export function CompsBuilder({
         return explicit;
       }
     }
-    return getPreferredBuildForWeapon(slot.weaponId);
+    return null;
   }
 
   function updateEditorItem(
