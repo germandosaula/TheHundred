@@ -937,6 +937,7 @@ export function CtaBoard({
       ) : null}
 
       {activeParty ? (
+        <>
         <div className="cta-board-layout">
           <div className="cta-party-grid">
             {[leftColumnSlots, rightColumnSlots].map((columnSlots, columnIndex) => (
@@ -1175,27 +1176,28 @@ export function CtaBoard({
               ))}
               {fillers.length === 0 ? <p className="empty">Sin apuntados para fillear.</p> : null}
             </div>
-            {canEdit ? (
-              <div className="cta-missing-signups">
-                <div className="cta-missing-signups-head">
-                  <span className="card-label">No apuntados</span>
-                  <span className="status-badge">{nonSignedGuildMembers.length}</span>
-                </div>
-                <div className="cta-missing-signups-list">
-                  {nonSignedGuildMembers.length === 0 ? (
-                    <p className="empty">Todos los miembros elegibles están apuntados.</p>
-                  ) : (
-                    nonSignedGuildMembers.map((member) => (
-                      <span className="cta-missing-signups-item" key={member.userId}>
-                        {member.displayName}
-                      </span>
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : null}
           </aside>
         </div>
+        {canEdit ? (
+          <div className="cta-missing-signups cta-missing-signups-full">
+            <div className="cta-missing-signups-head">
+              <span className="card-label">No apuntados</span>
+              <span className="status-badge">{nonSignedGuildMembers.length}</span>
+            </div>
+            <div className="cta-missing-signups-list">
+              {nonSignedGuildMembers.length === 0 ? (
+                <p className="empty">Todos los miembros elegibles están apuntados.</p>
+              ) : (
+                nonSignedGuildMembers.map((member) => (
+                  <span className="cta-missing-signups-item" key={member.userId}>
+                    {member.displayName}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
+        </>
       ) : (
         <p className="empty">Esta CTA aun no tiene composicion vinculada o no se ha publicado signup.</p>
       )}

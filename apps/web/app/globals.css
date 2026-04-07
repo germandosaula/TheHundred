@@ -4942,6 +4942,17 @@ li {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.cta-missing-signups-full {
+  width: 100%;
+  margin-top: 14px;
+  padding: 12px;
+  padding-top: 12px;
+  border-top: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(8, 14, 24, 0.5);
+}
+
 .cta-missing-signups-head {
   display: flex;
   align-items: center;
@@ -4953,9 +4964,9 @@ li {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-height: 180px;
+  max-height: 120px;
   overflow: auto;
-  padding-right: 2px;
+  padding-right: 4px;
 }
 
 .cta-missing-signups-item {
