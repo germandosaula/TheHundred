@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import { cache } from "react";
 
 const apiBaseUrl = process.env.API_BASE_URL ?? "http://localhost:3001";
 
@@ -420,11 +419,11 @@ export async function getDiscordId(): Promise<string | undefined> {
   return (await cookies()).get("th_discord_id")?.value;
 }
 
-const getJsonCached = cache(async (
+async function getJsonUncached(
   path: string,
   sessionToken?: string,
   discordId?: string
-): Promise<unknown | null> => {
+): Promise<unknown | null> {
   try {
     const response = await fetch(`${apiBaseUrl}${path}`, {
       cache: "no-store",
@@ -445,14 +444,14 @@ const getJsonCached = cache(async (
   } catch {
     return null;
   }
-});
+}
 
 export async function getJson<T>(
   path: string,
   sessionToken?: string,
   discordId?: string
 ): Promise<T | null> {
-  const payload = await getJsonCached(path, sessionToken, discordId);
+  const payload = await getJsonUncached(path, sessionToken, discordId);
   return payload as T | null;
 }
 
