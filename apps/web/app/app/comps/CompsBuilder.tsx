@@ -600,6 +600,18 @@ export function CompsBuilder({
           };
         }
 
+        if (field === "label") {
+          const nextLabel = value;
+          const shouldSyncNotes =
+            slot.notes.trim().length === 0 || slot.notes.trim() === slot.label.trim();
+
+          return {
+            ...slot,
+            label: nextLabel,
+            notes: shouldSyncNotes ? nextLabel : slot.notes,
+          };
+        }
+
         return {
           ...slot,
           [field]: value,
@@ -701,7 +713,7 @@ export function CompsBuilder({
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          id: undefined,
+          id: editorBuild.id,
           name: editorBuild.name,
           role: editorBuild.role,
           weaponId: editorBuild.weaponId,

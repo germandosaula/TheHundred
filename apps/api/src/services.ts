@@ -360,6 +360,15 @@ export interface ApiServices {
     ok: true;
     removed: boolean;
   }>;
+  pingCtaMissingMembers(
+    actor: User,
+    input: { ctaId: string; message?: string }
+  ): Promise<{
+    sent: true;
+    channelId: string;
+    mentioned: number;
+    messages: number;
+  }>;
   getRanking(input?: { month?: string }): Promise<{
     selectedMonth: string;
     selectedMonthLabel: string;
@@ -604,6 +613,7 @@ export function createApiServices(
 ): ApiServices {
   const compRoleOrder = ["Tank", "Healer", "Support", "Pierce", "Melee", "Ranged", "Battlemount"];
   const bottledEnergyRoleId = "1484999230186721391";
+  const ctaMissingPingChannelId = "1479151829832171731";
   const requireStaffAccess = async (actor: User) => {
     const actorMember = await repository.getMemberByUserId(actor.id);
     if (actorMember?.discordRoleStatus === "COUNCIL" && !actorMember.kickedAt) {
@@ -2383,6 +2393,118 @@ export function createApiServices(
       }
 
       return { ok: true, removed: true };
+    },
+
+    async pingCtaMissingMembers(actor, input) {
+      await requireCtaManager(actor);
+
+      const cta = await repository.getCtaById(input.ctaId);
+      if (!cta) {
+        throw new DomainError("CTA not found");
+      }
+
+      const [signups, members, users] = await Promise.all([
+        repository.getCtaSignups(cta.id),
+        repository.getMembers(),
+        repository.getUsers()
+      ]);
+
+      const signedMemberIds = new Set(signups.map((entry) => entry.memberId));
+      const usersById = new Map(users.map((user) => [user.id, user]));
+      const eligible = members
+        .filter(
+          (member) =>
+            !member.kickedAt &&
+            (member.status === "TRIAL" || member.status === "CORE" || member.status === "COUNCIL") &&
+            member.discordRoleStatus === member.status
+        )
+        .map((member) => {
+          const user = usersById.get(member.userId);
+          return {
+            memberId: member.id,
+            discordId: user?.discordId?.trim() ?? "",
+            displayName: user?.displayName ?? member.userId
+          };
+        })
+        .filter((entry) => entry.discordId.length > 0);
+
+      const missing = eligible.filter((entry) => !signedMemberIds.has(entry.memberId));
+      const mentions = missing.map((entry) => `<@${entry.discordId}>`);
+
+      const bodyText = input.message?.trim() || "Recordatorio de signup CTA.";
+      const embed = {
+        color: 0xf0c85a,
+        title: `Ping signup · ${cta.title}`,
+        description: bodyText.slice(0, 4000),
+        fields: [
+          {
+            name: "CTA",
+            value: `${cta.title}\n${formatCtaUtcDateTime(cta.datetimeUtc)}`,
+            inline: true
+          },
+          {
+            name: "No apuntados",
+            value: String(missing.length),
+            inline: true
+          }
+        ]
+      };
+
+      const mentionChunks: string[] = [];
+      let currentChunk = "";
+      for (const mention of mentions) {
+        const next = currentChunk ? `${currentChunk} ${mention}` : mention;
+        if (next.length > 1800) {
+          if (currentChunk) {
+            mentionChunks.push(currentChunk);
+          }
+          currentChunk = mention;
+        } else {
+          currentChunk = next;
+        }
+      }
+      if (currentChunk) {
+        mentionChunks.push(currentChunk);
+      }
+      if (mentionChunks.length === 0) {
+        mentionChunks.push("Sin menciones: todos están apuntados.");
+      }
+
+      const botToken = options.discordBotToken?.trim();
+      if (!botToken) {
+        throw new DomainError("DISCORD_BOT_TOKEN is not configured");
+      }
+
+      let sentMessages = 0;
+      for (let index = 0; index < mentionChunks.length; index += 1) {
+        const response = await fetch(`https://discord.com/api/v10/channels/${ctaMissingPingChannelId}/messages`, {
+          method: "POST",
+          headers: {
+            authorization: `Bot ${botToken}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            content: mentionChunks[index],
+            embeds: index === 0 ? [embed] : [],
+            allowed_mentions: {
+              parse: ["users"]
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const body = await response.text().catch(() => "");
+          throw new DomainError(`Discord error al pinguear CTA (${response.status}): ${body}`);
+        }
+        sentMessages += 1;
+      }
+
+      return {
+        sent: true,
+        channelId: ctaMissingPingChannelId,
+        mentioned: missing.length,
+        messages: sentMessages
+      };
     },
 
     async getRanking(input) {

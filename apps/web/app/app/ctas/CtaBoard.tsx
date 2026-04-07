@@ -165,6 +165,10 @@ export function CtaBoard({
   const [editTitle, setEditTitle] = useState(cta.title);
   const [editDatetimeUtcInput, setEditDatetimeUtcInput] = useState(toUtcInputFromIso(cta.datetimeUtc));
   const [savingDetails, setSavingDetails] = useState(false);
+  const [missingPingMessage, setMissingPingMessage] = useState("");
+  const [missingPingBusy, setMissingPingBusy] = useState(false);
+  const [missingPingFeedback, setMissingPingFeedback] = useState<string | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const activeParty = useMemo(
     () => parties.find((party) => party.partyKey === activePartyKey) ?? parties[0],
@@ -722,6 +726,18 @@ export function CtaBoard({
     hydrateBoardFromCta(payload);
   }
 
+  async function refreshCtaBoardManually() {
+    if (manualRefreshing) {
+      return;
+    }
+    setManualRefreshing(true);
+    try {
+      await refreshCtaBoard();
+    } finally {
+      setManualRefreshing(false);
+    }
+  }
+
   async function changeComp() {
     if (!canEdit || changingComp) {
       return;
@@ -839,6 +855,48 @@ export function CtaBoard({
     void refreshCtaBoard();
   }
 
+  async function pingMissingMembersOnDiscord() {
+    if (!canEdit || missingPingBusy) {
+      return;
+    }
+
+    setMissingPingBusy(true);
+    setMissingPingFeedback(null);
+    const response = await fetch(`/ctas/ping-missing?ctaId=${encodeURIComponent(cta.id)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        message: missingPingMessage.trim() || undefined
+      })
+    });
+
+    if (!response.ok) {
+      let reason = "No se pudo publicar el ping en Discord.";
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload?.error) {
+          reason = payload.error;
+        }
+      } catch {}
+      setMissingPingFeedback(reason);
+      setMissingPingBusy(false);
+      return;
+    }
+
+    const payload = (await response.json()) as {
+      sent: true;
+      channelId: string;
+      mentioned: number;
+      messages: number;
+    };
+    setMissingPingFeedback(
+      `Publicado en Discord (${payload.mentioned} menciones, ${payload.messages} mensaje${payload.messages === 1 ? "" : "s"}).`
+    );
+    setMissingPingBusy(false);
+  }
+
   if (ctaStatus === "CANCELED") {
     return null;
   }
@@ -861,6 +919,14 @@ export function CtaBoard({
           <span className="status-badge">
             {signedCount}/{totalSlots}
           </span>
+          <button
+            className="button ghost compact"
+            disabled={manualRefreshing}
+            onClick={() => void refreshCtaBoardManually()}
+            type="button"
+          >
+            {manualRefreshing ? "Actualizando..." : "Actualizar CTA"}
+          </button>
           {canCancel ? (
             <button
               className="button ghost compact"
@@ -1184,6 +1250,24 @@ export function CtaBoard({
               <span className="card-label">No apuntados</span>
               <span className="status-badge">{nonSignedGuildMembers.length}</span>
             </div>
+            <div className="cta-missing-signups-actions">
+              <input
+                className="input compact"
+                disabled={missingPingBusy}
+                onChange={(event) => setMissingPingMessage(event.currentTarget.value)}
+                placeholder='Mensaje para Discord (ej: "Me faltan 2 Infinity, 1 GA...")'
+                value={missingPingMessage}
+              />
+              <button
+                className="button ghost compact"
+                disabled={missingPingBusy}
+                onClick={() => void pingMissingMembersOnDiscord()}
+                type="button"
+              >
+                {missingPingBusy ? "Pingueando..." : "Pinguear en Discord"}
+              </button>
+            </div>
+            {missingPingFeedback ? <p className="cta-fill-hint">{missingPingFeedback}</p> : null}
             <div className="cta-missing-signups-list">
               {nonSignedGuildMembers.length === 0 ? (
                 <p className="empty">Todos los miembros elegibles están apuntados.</p>

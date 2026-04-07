@@ -531,6 +531,14 @@ export async function routeRequest(
     return json(await services.updateCtaDetails(currentUser, ctaId, payload));
   }
 
+  if (method === "POST" && url.pathname.match(/^\/ctas\/[^/]+\/ping-missing$/)) {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    const ctaId = url.pathname.split("/")[2];
+    const payload = (await parseBody<{ message?: string }>(request)) ?? {};
+    return json(await services.pingCtaMissingMembers(currentUser, { ctaId, message: payload.message }));
+  }
+
   if (method === "POST" && url.pathname.match(/^\/members\/[^/]+\/status$/)) {
     const currentUser = requireAuthenticatedUser(context.currentUser);
     await services.requirePrivateAccess(currentUser);

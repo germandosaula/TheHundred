@@ -4960,6 +4960,16 @@ li {
   gap: 8px;
 }
 
+.cta-missing-signups-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.cta-missing-signups-actions .button {
+  min-width: 180px;
+}
+
 .cta-missing-signups-list {
   display: flex;
   flex-wrap: wrap;
@@ -4979,6 +4989,17 @@ li {
   background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+@media (max-width: 900px) {
+  .cta-missing-signups-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cta-missing-signups-actions .button {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 .comps-overview-list {
