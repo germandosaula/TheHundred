@@ -106,6 +106,16 @@ const rolesAuditCommand = new SlashCommandBuilder()
   .setName("roles-audit")
   .setDescription("Audita desincronizaciones entre Discord y Web");
 
+const inactivityTestCommand = new SlashCommandBuilder()
+  .setName("test-inactividad")
+  .setDescription("Envía un DM de prueba de inactividad (solo Staff).")
+  .addUserOption((option) =>
+    option
+      .setName("usuario")
+      .setDescription("Usuario objetivo (si no, te lo envía a ti)")
+      .setRequired(false)
+  );
+
 const payoutLootCommand = new SlashCommandBuilder()
   .setName("pagar-loot")
   .setDescription("Procesa un reparto de lootsplit y acredita el monedero.")
@@ -751,6 +761,7 @@ client.once("clientReady", async () => {
     recruitCommand.toJSON(),
     syncMemberCommand.toJSON(),
     rolesAuditCommand.toJSON(),
+    inactivityTestCommand.toJSON(),
     payoutLootCommand.toJSON(),
     payoutNoBattleCommand.toJSON(),
     balanceCommand.toJSON(),
@@ -835,6 +846,11 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.commandName === "roles-audit") {
       await handleRolesAuditCommand(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "test-inactividad") {
+      await handleTestInactividadCommand(interaction);
       return;
     }
 
@@ -1313,6 +1329,57 @@ async function handleRolesAuditCommand(interaction: ChatInputCommandInteraction)
       error instanceof Error ? `roles-audit falló: ${error.message}` : "roles-audit falló."
     );
   }
+}
+
+async function handleTestInactividadCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (
+    !(await requireDiscordRoles(
+      interaction,
+      staffRoleIds,
+      "Solo Staff puede usar /test-inactividad."
+    ))
+  ) {
+    return;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const targetDiscordUser = interaction.options.getUser("usuario", false) ?? interaction.user;
+  const user = await repository.getUserByDiscordId(targetDiscordUser.id);
+  if (!user) {
+    await interaction.editReply("Ese usuario no está vinculado en la web.");
+    return;
+  }
+  const member = await repository.getMemberByUserId(user.id);
+  if (!member || member.kickedAt) {
+    await interaction.editReply("Ese usuario no tiene member activo en la web.");
+    return;
+  }
+
+  const existing = (await getMemberActivityNotificationsCompat()).find(
+    (entry) => entry.memberId === member.id
+  );
+  const sent = await sendInactivityDmAlert({
+    memberId: member.id,
+    discordId: targetDiscordUser.id,
+    inactiveDays: 0,
+    testMode: true
+  });
+  if (!sent) {
+    await interaction.editReply("No se pudo enviar el DM de prueba (DM cerrados o error de Discord).");
+    return;
+  }
+
+  await upsertMemberActivityNotificationCompat({
+    memberId: member.id,
+    lastNotifiedAt: new Date().toISOString(),
+    lastAckAt: existing?.lastAckAt,
+    notificationCount: (existing?.notificationCount ?? 0) + 1
+  });
+
+  await interaction.editReply(
+    `DM de prueba enviado a ${user.displayName} (${targetDiscordUser.id}). Solo se envía cuando ejecutas este comando.`
+  );
 }
 
 function parseCtaIdInput(input: string): string | null {
@@ -3005,36 +3072,12 @@ async function ensureInactivityDmAlerts(force = false) {
         continue;
       }
 
-      const dmTarget = await client.users.fetch(user.discordId).catch(() => null);
-      if (!dmTarget) {
-        continue;
-      }
-
-      const ackButton = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`${inactivityConfirmButtonPrefix}${member.id}`)
-          .setLabel("Confirmo actividad")
-          .setStyle(ButtonStyle.Success)
-      );
-
-      const dmEmbed = new EmbedBuilder()
-        .setColor(0xf2c94c)
-        .setTitle("Actividad en CTA")
-        .setDescription(
-          [
-            `Llevas **${inactiveDays}** día(s) sin actividad registrada en CTA/signup.`,
-            "Si sigues activo, pulsa el botón para confirmar actividad y limpiar el aviso automático."
-          ].join("\n")
-        )
-        .setFooter({ text: "TheHundred · alerta automática" })
-        .setTimestamp(new Date());
-
-      const sent = await dmTarget
-        .send({
-          embeds: [dmEmbed],
-          components: [ackButton]
-        })
-        .catch(() => null);
+      const sent = await sendInactivityDmAlert({
+        memberId: member.id,
+        discordId: user.discordId,
+        inactiveDays,
+        testMode: false
+      });
       if (!sent) {
         continue;
       }
@@ -3049,6 +3092,51 @@ async function ensureInactivityDmAlerts(force = false) {
   } catch (error) {
     console.error("Inactivity DM alerts failed", error);
   }
+}
+
+async function sendInactivityDmAlert(input: {
+  memberId: string;
+  discordId: string;
+  inactiveDays: number;
+  testMode: boolean;
+}): Promise<boolean> {
+  const dmTarget = await client.users.fetch(input.discordId).catch(() => null);
+  if (!dmTarget) {
+    return false;
+  }
+
+  const ackButton = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`${inactivityConfirmButtonPrefix}${input.memberId}`)
+      .setLabel("Confirmo actividad")
+      .setStyle(ButtonStyle.Success)
+  );
+
+  const dmEmbed = new EmbedBuilder()
+    .setColor(input.testMode ? 0x6ea7ff : 0xf2c94c)
+    .setTitle(input.testMode ? "Actividad en CTA (prueba)" : "Actividad en CTA")
+    .setDescription(
+      input.testMode
+        ? [
+            "Este es un **mensaje de prueba manual** del sistema de inactividad.",
+            "Pulsa el botón para confirmar actividad y validar que el flujo funciona."
+          ].join("\n")
+        : [
+            `Llevas **${input.inactiveDays}** día(s) sin actividad registrada en CTA/signup.`,
+            "Si sigues activo, pulsa el botón para confirmar actividad y limpiar el aviso automático."
+          ].join("\n")
+    )
+    .setFooter({ text: input.testMode ? "TheHundred · prueba manual" : "TheHundred · alerta automática" })
+    .setTimestamp(new Date());
+
+  const sent = await dmTarget
+    .send({
+      embeds: [dmEmbed],
+      components: [ackButton]
+    })
+    .catch(() => null);
+
+  return Boolean(sent);
 }
 
 async function handleInactivityConfirmButton(interaction: ButtonInteraction) {

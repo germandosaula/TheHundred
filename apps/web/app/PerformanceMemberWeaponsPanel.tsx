@@ -177,12 +177,18 @@ export function PerformanceMemberWeaponsPanel() {
             onBlur={() => {
               window.setTimeout(() => setShowSuggestions(false), 120);
             }}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setShowSuggestions(true);
+            }}
             onFocus={() => setShowSuggestions(true)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
                 handleSearchEnter();
+              }
+              if (event.key === "Escape") {
+                setShowSuggestions(false);
               }
             }}
             placeholder="Escribe nombre Discord o Albion"

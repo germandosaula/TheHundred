@@ -248,6 +248,9 @@ export interface MemberEntry {
   activityReason: string;
   activityThresholdDays: number;
   followupTaskId?: string;
+  activityDmLastNotifiedAt?: string;
+  activityDmLastAckAt?: string;
+  activityDmNotificationCount: number;
   activityExclusion?: {
     startsAt: string;
     endsAt: string;

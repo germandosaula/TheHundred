@@ -32,6 +32,9 @@ interface MemberRow {
   activityReason: string;
   activityThresholdDays: number;
   followupTaskId?: string;
+  activityDmLastNotifiedAt?: string;
+  activityDmLastAckAt?: string;
+  activityDmNotificationCount: number;
   activityExclusion?: {
     startsAt: string;
     endsAt: string;
@@ -559,6 +562,17 @@ export function MemberStatusManager({ members }: MemberStatusManagerProps) {
               </span>
               <span className="member-meta">
                 {getActivityReasonLabel(member)}
+              </span>
+              <span className="member-meta">
+                MD automático: {member.activityDmLastNotifiedAt ? "✅ Enviado" : "❌ No enviado"}
+                {member.activityDmLastNotifiedAt ? ` (${formatDateTime(member.activityDmLastNotifiedAt)})` : ""}
+              </span>
+              <span className="member-meta">
+                Confirmó actividad: {member.activityDmLastAckAt ? "✅ Sí" : "❌ No"}
+                {member.activityDmLastAckAt ? ` (${formatDateTime(member.activityDmLastAckAt)})` : ""}
+              </span>
+              <span className="member-meta">
+                Avisos enviados: {member.activityDmNotificationCount ?? 0}
               </span>
               {member.activityExclusion ? (
                 <span className="member-meta">

@@ -190,6 +190,9 @@ export interface ApiServices {
         activityReason: string;
         activityThresholdDays: number;
         followupTaskId?: string;
+        activityDmLastNotifiedAt?: string;
+        activityDmLastAckAt?: string;
+        activityDmNotificationCount: number;
         activityExclusion?: {
           startsAt: string;
           endsAt: string;
@@ -1896,7 +1899,19 @@ export function createApiServices(
       });
 
       const now = new Date();
-      const [members, users, snapshots, battleAttendances, ctas, manualAttendances, ctaSignups, signupEvents, exclusions, tasks] = await Promise.all([
+      const [
+        members,
+        users,
+        snapshots,
+        battleAttendances,
+        ctas,
+        manualAttendances,
+        ctaSignups,
+        signupEvents,
+        exclusions,
+        tasks,
+        notifications
+      ] = await Promise.all([
         repository.getMembers(),
         repository.getUsers(),
         repository.getBattlePerformanceSnapshots(),
@@ -1906,7 +1921,8 @@ export function createApiServices(
         repository.getAllCtaSignups(),
         repository.getCtaSignupEvents(),
         repository.getMemberActivityExclusions(),
-        repository.getCouncilTasks()
+        repository.getCouncilTasks(),
+        repository.getMemberActivityNotifications()
       ]);
       const usersById = new Map(users.map((user) => [user.id, user]));
       const ctaById = new Map(ctas.map((cta) => [cta.id, cta]));
@@ -1918,6 +1934,9 @@ export function createApiServices(
       const signupEventsByMember = new Map<string, Array<{ ctaId: string; createdAt: string }>>();
       const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
       const exclusionByMemberId = new Map(exclusions.map((exclusion) => [exclusion.memberId, exclusion]));
+      const notificationByMemberId = new Map(
+        notifications.map((notification) => [notification.memberId, notification])
+      );
       const followupTaskByMemberId = new Map<string, string>();
 
       for (const attendance of manualAttendances) {
@@ -2022,6 +2041,7 @@ export function createApiServices(
         });
         const threshold = getMemberInactivityThreshold(member);
         const exclusion = exclusionByMemberId.get(member.id);
+        const notification = notificationByMemberId.get(member.id);
         const activity = buildMemberActivityState({
           member,
           now,
@@ -2052,6 +2072,9 @@ export function createApiServices(
           activityReason: activity.reason,
           activityThresholdDays: threshold,
           followupTaskId: followupTaskByMemberId.get(member.id),
+          activityDmLastNotifiedAt: notification?.lastNotifiedAt,
+          activityDmLastAckAt: notification?.lastAckAt,
+          activityDmNotificationCount: notification?.notificationCount ?? 0,
           activityExclusion: exclusion
             ? {
                 startsAt: exclusion.startsAt,
