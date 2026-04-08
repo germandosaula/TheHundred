@@ -139,6 +139,7 @@ export interface ApiServices {
       signupPercent: number;
     };
     weapons: Array<{
+      weaponId: string;
       weaponName: string;
       kills: number;
       deaths: number;
@@ -1710,17 +1711,13 @@ export function createApiServices(
     async getMemberWeaponPerformance(actor, input) {
       await this.requirePrivateAccess(actor);
 
-      const [members, users, ctas, signups, signupEvents, snapshots, battleAttendances, weaponStats] =
-        await Promise.all([
-          repository.getMembers(),
-          repository.getUsers(),
-          repository.getCtas(),
-          repository.getAllCtaSignups(),
-          repository.getCtaSignupEvents(),
-          repository.getBattlePerformanceSnapshots(),
-          repository.getBattleMemberAttendances(),
-          repository.getBattleMemberWeaponStats()
-        ]);
+      const [members, users, ctas, signups, weaponStats] = await Promise.all([
+        repository.getMembers(),
+        repository.getUsers(),
+        repository.getCtas(),
+        repository.getAllCtaSignups(),
+        repository.getBattleMemberWeaponStats()
+      ]);
 
       const usersById = new Map(users.map((user) => [user.id, user]));
       const query = input?.query?.trim().toLowerCase();
@@ -1769,26 +1766,24 @@ export function createApiServices(
         throw new DomainError("Member not found");
       }
 
-      const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
-      const finalizedCtas = ctas.filter((cta) => cta.status === "FINALIZED");
-      const totalFinalizedTimers = new Set(finalizedCtas.map((cta) => formatCtaTimerKey(cta.datetimeUtc))).size;
-      const attendanceTimers = new Set<string>();
-      for (const attendance of battleAttendances) {
-        if (attendance.memberId !== selectedMemberId) {
-          continue;
-        }
-        const snapshot = snapshotByBattleId.get(attendance.battleId);
-        if (!snapshot) {
-          continue;
-        }
-        attendanceTimers.add(formatCtaTimerKey(snapshot.startTime));
-      }
-      const attendanceCount = attendanceTimers.size;
-      const attendancePercent = totalFinalizedTimers > 0 ? (attendanceCount / totalFinalizedTimers) * 100 : 0;
-
       const joinedAt = Date.parse(selectedMember.joinedAt);
       const joinedAtTime = Number.isFinite(joinedAt) ? joinedAt : 0;
       const now = Date.now();
+      const eligibleAttendanceCtaIds = new Set(
+        ctas
+          .filter((cta) => cta.status === "FINALIZED")
+          .filter((cta) => {
+            const ctaTime = Date.parse(cta.datetimeUtc);
+            return Number.isFinite(ctaTime) && ctaTime >= joinedAtTime && ctaTime <= now;
+          })
+          .map((cta) => cta.id)
+      );
+      const attendanceCtaIds = new Set(
+        signups
+          .filter((entry) => entry.memberId === selectedMemberId)
+          .map((entry) => entry.ctaId)
+          .filter((ctaId) => eligibleAttendanceCtaIds.has(ctaId))
+      );
       const eligibleSignupCtaIds = new Set(
         ctas
           .filter((cta) => cta.status === "FINALIZED" || cta.status === "CANCELED")
@@ -1798,17 +1793,19 @@ export function createApiServices(
           })
           .map((cta) => cta.id)
       );
-      const signupCount = signupEvents.filter(
-        (entry) => entry.memberId === selectedMemberId && entry.eventType === "SIGNUP"
-      ).length;
       const signupCtaIds = new Set(
         signups
           .filter((entry) => entry.memberId === selectedMemberId)
           .map((entry) => entry.ctaId)
           .filter((ctaId) => eligibleSignupCtaIds.has(ctaId))
       );
+      const signupCount = signupCtaIds.size;
       const signupPercent =
-        eligibleSignupCtaIds.size > 0 ? (signupCtaIds.size / eligibleSignupCtaIds.size) * 100 : 0;
+        eligibleSignupCtaIds.size > 0 ? (signupCount / eligibleSignupCtaIds.size) * 100 : 0;
+      const attendanceCount = attendanceCtaIds.size;
+      const attendanceEligibleTimers = eligibleAttendanceCtaIds.size;
+      const attendancePercent =
+        attendanceEligibleTimers > 0 ? (attendanceCount / attendanceEligibleTimers) * 100 : 0;
 
       const weaponSummaryMap = new Map<
         string,
@@ -1833,6 +1830,7 @@ export function createApiServices(
 
       const weapons = [...weaponSummaryMap.values()]
         .map((entry) => ({
+          weaponId: entry.weaponName,
           weaponName: entry.weaponName,
           kills: entry.kills,
           deaths: entry.deaths,
@@ -1846,7 +1844,7 @@ export function createApiServices(
         selectedMemberId,
         summary: {
           attendanceCount,
-          attendanceEligibleTimers: totalFinalizedTimers,
+          attendanceEligibleTimers,
           attendancePercent,
           signupCount,
           signupEligibleCtas: eligibleSignupCtaIds.size,

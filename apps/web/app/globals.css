@@ -4206,13 +4206,78 @@ li {
 
 .performance-member-controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: minmax(320px, 1fr);
   gap: 0.9rem;
   margin-bottom: 1rem;
 }
 
+.performance-member-controls .field {
+  position: relative;
+}
+
+.performance-member-suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 35;
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid rgba(96, 126, 186, 0.35);
+  border-radius: 14px;
+  background: rgba(6, 12, 26, 0.96);
+  box-shadow: 0 12px 28px rgba(2, 6, 16, 0.5);
+}
+
+.performance-member-suggestion {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #d6def2;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.performance-member-suggestion strong {
+  font-size: 0.96rem;
+}
+
+.performance-member-suggestion span {
+  color: #97a9cc;
+  font-size: 0.88rem;
+}
+
+.performance-member-suggestion:hover,
+.performance-member-suggestion.active {
+  border-color: rgba(110, 167, 255, 0.5);
+  background: rgba(36, 66, 125, 0.35);
+}
+
 .performance-member-summary-grid {
   margin: 0.6rem 0 1rem;
+}
+
+.performance-member-weapon-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.performance-member-weapon-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(132, 153, 197, 0.28);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .battle-table-head h3 {

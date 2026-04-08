@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { getWeaponIconUrl, resolveAlbionWeapon } from "./app/comps/catalog";
 
 type MemberOption = {
   memberId: string;
@@ -45,6 +46,8 @@ export function PerformanceMemberWeaponsPanel() {
   const [query, setQuery] = useState("");
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<string>("");
+  const [selectedMember, setSelectedMember] = useState<MemberOption | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [summary, setSummary] = useState<MemberWeaponStatsPayload["summary"]>();
   const [weapons, setWeapons] = useState<MemberWeaponStatsPayload["weapons"]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,15 +105,10 @@ export function PerformanceMemberWeaponsPanel() {
     void (async () => {
       try {
         setLoading(true);
-        const response = await fetch(
-          `/performance/member-weapons?memberId=${encodeURIComponent(selectedMemberId)}${
-            query.trim() ? `&query=${encodeURIComponent(query.trim())}` : ""
-          }`,
-          {
-            method: "GET",
-            cache: "no-store"
-          }
-        );
+        const response = await fetch(`/performance/member-weapons?memberId=${encodeURIComponent(selectedMemberId)}`, {
+          method: "GET",
+          cache: "no-store"
+        });
         const payload = (await response.json()) as MemberWeaponStatsPayload | { error?: string };
         if (!response.ok || "error" in payload) {
           throw new Error(("error" in payload ? payload.error : undefined) ?? "No se pudo cargar stats");
@@ -119,9 +117,11 @@ export function PerformanceMemberWeaponsPanel() {
           return;
         }
         const data = payload as MemberWeaponStatsPayload;
-        setMembers(data.members ?? []);
+        const nextMembers = data.members ?? [];
+        setMembers(nextMembers);
         setSummary(data.summary);
         setWeapons(data.weapons ?? []);
+        setSelectedMember((previous) => nextMembers.find((entry) => entry.memberId === selectedMemberId) ?? previous);
         setError(null);
       } catch (err) {
         if (!cancelled) {
@@ -137,12 +137,29 @@ export function PerformanceMemberWeaponsPanel() {
     return () => {
       cancelled = true;
     };
-  }, [selectedMemberId, query]);
+  }, [selectedMemberId]);
 
-  const selectedMember = useMemo(
-    () => members.find((entry) => entry.memberId === selectedMemberId),
-    [members, selectedMemberId]
-  );
+  const handleSelectMember = (member: MemberOption) => {
+    setSelectedMemberId(member.memberId);
+    setSelectedMember(member);
+    setQuery(member.displayName);
+    setShowSuggestions(false);
+  };
+
+  const handleSearchEnter = () => {
+    const exact = members.find(
+      (member) =>
+        member.displayName.toLowerCase() === query.trim().toLowerCase() ||
+        member.albionName?.toLowerCase() === query.trim().toLowerCase()
+    );
+    if (exact) {
+      handleSelectMember(exact);
+      return;
+    }
+    if (members[0]) {
+      handleSelectMember(members[0]);
+    }
+  };
 
   return (
     <article className="dashboard-card battle-table-card">
@@ -157,25 +174,40 @@ export function PerformanceMemberWeaponsPanel() {
         <label className="field">
           <span>Buscar miembro</span>
           <input
+            onBlur={() => {
+              window.setTimeout(() => setShowSuggestions(false), 120);
+            }}
             onChange={(event) => setQuery(event.target.value)}
+            onFocus={() => setShowSuggestions(true)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                handleSearchEnter();
+              }
+            }}
             placeholder="Escribe nombre Discord o Albion"
             value={query}
           />
-        </label>
-        <label className="field">
-          <span>Seleccionar miembro</span>
-          <select
-            onChange={(event) => setSelectedMemberId(event.target.value)}
-            value={selectedMemberId}
-          >
-            <option value="">Selecciona un miembro</option>
-            {members.map((member) => (
-              <option key={member.memberId} value={member.memberId}>
-                {member.displayName}
-                {member.albionName ? ` (${member.albionName})` : ""}
-              </option>
-            ))}
-          </select>
+          {showSuggestions && members.length > 0 ? (
+            <div className="performance-member-suggestions">
+              {members.map((member) => (
+                <button
+                  className={`performance-member-suggestion ${
+                    selectedMemberId === member.memberId ? "active" : ""
+                  }`}
+                  key={member.memberId}
+                  onClick={() => handleSelectMember(member)}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
+                  type="button"
+                >
+                  <strong>{member.displayName}</strong>
+                  <span>{member.albionName ?? "Sin albion_name"}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </label>
       </div>
 
@@ -189,16 +221,16 @@ export function PerformanceMemberWeaponsPanel() {
             <strong>
               {summary.attendanceCount}/{summary.attendanceEligibleTimers}
             </strong>
+            <p>CTAs finalizadas con signup</p>
             <p>{formatPercent(summary.attendancePercent)}</p>
           </article>
           <article className="dashboard-card metric-card">
             <span className="card-label">Signup CTA</span>
-            <strong>
-              {summary.signupCount} eventos
-            </strong>
+            <strong>{summary.signupCount} CTAs</strong>
             <p>
-              {summary.signupEligibleCtas} CTAs elegibles · {formatPercent(summary.signupPercent)}
+              {summary.signupEligibleCtas} CTAs elegibles (finalizadas + canceladas)
             </p>
+            <p>{formatPercent(summary.signupPercent)}</p>
           </article>
           <article className="dashboard-card metric-card">
             <span className="card-label">Jugador</span>
@@ -226,7 +258,26 @@ export function PerformanceMemberWeaponsPanel() {
             {weapons.map((weapon) => (
               <Fragment key={weapon.weaponName}>
                 <div className="battle-table-cell battle-name-cell">
-                  {weapon.weaponName}
+                  {(() => {
+                    const resolved = resolveAlbionWeapon(weapon.weaponName);
+                    const label = resolved?.name ?? formatWeaponLabel(weapon.weaponName);
+                    const iconUrl = getWeaponIconUrl(weapon.weaponName);
+                    return (
+                      <div className="performance-member-weapon-cell">
+                        {iconUrl ? (
+                          <img
+                            alt={label}
+                            className="performance-member-weapon-icon"
+                            loading="lazy"
+                            src={iconUrl}
+                          />
+                        ) : (
+                          <div aria-hidden className="performance-member-weapon-icon" />
+                        )}
+                        <span>{label}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="battle-table-cell">
                   <span className="battle-value red">{formatCompact(weapon.kills)}</span>
@@ -247,8 +298,24 @@ export function PerformanceMemberWeaponsPanel() {
           <p className="empty">Sin datos de armas para este miembro todavía.</p>
         )
       ) : (
-        <p className="empty">Busca y selecciona un miembro para ver su historial por arma.</p>
+        <p className="empty">Escribe un nombre y pulsa Enter para ver su historial por arma.</p>
       )}
     </article>
   );
+}
+
+function formatWeaponLabel(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Unknown";
+  }
+  return trimmed
+    .replace(/^T\d+_/, "")
+    .replace(/^2H_/, "")
+    .replace(/^MAIN_/, "")
+    .replace(/^OFF_/, "")
+    .replace(/@.*$/, "")
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

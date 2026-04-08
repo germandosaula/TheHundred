@@ -345,6 +345,32 @@ type ScheduledEventsRepositoryCompat = {
   deleteScheduledEvent?: (eventId: string) => Promise<boolean>;
 };
 
+type InactivityRepositoryCompat = {
+  getAllCtaSignups?: () => ReturnType<typeof repository.getCtaSignups>;
+  getAttendances?: () => Promise<
+    Array<{ id: string; ctaId: string; memberId: string; decision: string; state: string }>
+  >;
+  getAttendanceByCtaId?: (ctaId: string) => Promise<
+    Array<{ id: string; ctaId: string; memberId: string; decision: string; state: string }>
+  >;
+  getMemberActivityExclusions?: () => Promise<Array<{ memberId: string; startsAt: string; endsAt: string }>>;
+  getMemberActivityNotifications?: () => Promise<
+    Array<{
+      memberId: string;
+      lastNotifiedAt?: string;
+      lastAckAt?: string;
+      notificationCount: number;
+      updatedAt: string;
+    }>
+  >;
+  upsertMemberActivityNotification?: (input: {
+    memberId: string;
+    lastNotifiedAt?: string;
+    lastAckAt?: string;
+    notificationCount?: number;
+  }) => Promise<unknown>;
+};
+
 function formatCtaCountdownLabel(targetUtc: string): string {
   const diffMs = new Date(targetUtc).getTime() - Date.now();
   if (!Number.isFinite(diffMs) || diffMs <= 0) {
@@ -381,6 +407,10 @@ async function sendCtaReminderMessage(title: string, label: string): Promise<voi
 
 function getRepositoryWithScheduledEventsCompat() {
   return repository as typeof repository & ScheduledEventsRepositoryCompat;
+}
+
+function getRepositoryWithInactivityCompat() {
+  return repository as typeof repository & InactivityRepositoryCompat;
 }
 
 function hasNativeScheduledEventsRepositoryMethods(): boolean {
@@ -446,6 +476,58 @@ async function getScheduledEventsCompat(): Promise<ScheduledEventRecord[]> {
     createdByDisplayName: entry.created_by_display_name,
     createdAt: entry.created_at
   }));
+}
+
+async function getAllCtaSignupsCompat() {
+  const compat = getRepositoryWithInactivityCompat();
+  if (typeof compat.getAllCtaSignups === "function") {
+    return compat.getAllCtaSignups();
+  }
+
+  const ctas = await repository.getCtas();
+  const chunks = await Promise.all(ctas.map((cta) => repository.getCtaSignups(cta.id)));
+  return chunks.flat();
+}
+
+async function getAttendancesCompat() {
+  const compat = getRepositoryWithInactivityCompat();
+  if (typeof compat.getAttendances === "function") {
+    return compat.getAttendances();
+  }
+  if (typeof compat.getAttendanceByCtaId === "function") {
+    const ctas = await repository.getCtas();
+    const chunks = await Promise.all(ctas.map((cta) => compat.getAttendanceByCtaId!(cta.id)));
+    return chunks.flat();
+  }
+  return [];
+}
+
+async function getMemberActivityExclusionsCompat() {
+  const compat = getRepositoryWithInactivityCompat();
+  if (typeof compat.getMemberActivityExclusions === "function") {
+    return compat.getMemberActivityExclusions();
+  }
+  return [];
+}
+
+async function getMemberActivityNotificationsCompat() {
+  const compat = getRepositoryWithInactivityCompat();
+  if (typeof compat.getMemberActivityNotifications === "function") {
+    return compat.getMemberActivityNotifications();
+  }
+  return [];
+}
+
+async function upsertMemberActivityNotificationCompat(input: {
+  memberId: string;
+  lastNotifiedAt?: string;
+  lastAckAt?: string;
+  notificationCount?: number;
+}) {
+  const compat = getRepositoryWithInactivityCompat();
+  if (typeof compat.upsertMemberActivityNotification === "function") {
+    await compat.upsertMemberActivityNotification(input);
+  }
 }
 
 async function createScheduledEventCompat(input: {
@@ -2566,7 +2648,21 @@ async function syncDiscordGuildRole(discordId: string, member: { id: string; sta
   }
 
   const guild = await client.guilds.fetch(guildId);
-  const guildMember = await guild.members.fetch(discordId);
+  const guildMember = await guild.members.fetch(discordId).catch(async (error) => {
+    const code =
+      typeof error === "object" && error && "code" in error
+        ? Number((error as { code?: unknown }).code)
+        : Number.NaN;
+    if (code === 10007) {
+      // User is no longer in guild; clear sync marker and continue without hard error.
+      await repository.setMemberDiscordRoleStatus(member.id, undefined);
+      return null;
+    }
+    throw error;
+  });
+  if (!guildMember) {
+    return;
+  }
   const nextRoleId = getDiscordRoleIdForStatus(member.status);
 
   if (member.status === "COUNCIL" && !nextRoleId) {
@@ -2849,12 +2945,12 @@ async function ensureInactivityDmAlerts(force = false) {
         repository.getMembers(),
         repository.getUsers(),
         repository.getCtas(),
-        repository.getAllCtaSignups(),
-        repository.getAttendances(),
+        getAllCtaSignupsCompat(),
+        getAttendancesCompat(),
         repository.getBattleMemberAttendances(),
         repository.getBattlePerformanceSnapshots(),
-        repository.getMemberActivityExclusions(),
-        repository.getMemberActivityNotifications()
+        getMemberActivityExclusionsCompat(),
+        getMemberActivityNotificationsCompat()
       ]);
 
     const now = Date.now();
@@ -2943,7 +3039,7 @@ async function ensureInactivityDmAlerts(force = false) {
         continue;
       }
 
-      await repository.upsertMemberActivityNotification({
+      await upsertMemberActivityNotificationCompat({
         memberId: member.id,
         lastNotifiedAt: new Date().toISOString(),
         lastAckAt: notification?.lastAckAt,
@@ -2974,8 +3070,8 @@ async function handleInactivityConfirmButton(interaction: ButtonInteraction) {
   }
 
   const nowIso = new Date().toISOString();
-  const existing = (await repository.getMemberActivityNotifications()).find((entry) => entry.memberId === member.id);
-  await repository.upsertMemberActivityNotification({
+  const existing = (await getMemberActivityNotificationsCompat()).find((entry) => entry.memberId === member.id);
+  await upsertMemberActivityNotificationCompat({
     memberId: member.id,
     lastAckAt: nowIso,
     lastNotifiedAt: existing?.lastNotifiedAt,
