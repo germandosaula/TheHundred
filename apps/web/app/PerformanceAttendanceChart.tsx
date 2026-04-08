@@ -107,7 +107,7 @@ export function PerformanceAttendanceChart({
                   setTooltip({
                     x: Math.min(point.x + 12, CHART_WIDTH - 180),
                     y: Math.max(point.y - 56, 18),
-                    ctaLabel: `${formatDayLabel(point.dateKey)} · ${point.battleCount} battles`,
+                    ctaLabel: `${formatDayLabel(point.dateKey)} · ${point.battleCount} CTAs`,
                     attendanceLabel: `${point.memberCount.toFixed(1).replace(".", ",")} (${point.attendancePercent.toFixed(1).replace(".", ",")}%)`,
                   })
                 }

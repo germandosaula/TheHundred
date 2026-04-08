@@ -1600,15 +1600,35 @@ export function createApiServices(
         limit: options.albionBattlesLimit
       });
 
-      const [snapshots, bombs, members] = await Promise.all([
+      const [snapshots, bombs, members, ctas, ctaSignups] = await Promise.all([
         repository.getBattlePerformanceSnapshots(),
         repository.getBattlePerformanceBombs(),
-        repository.getMembers()
+        repository.getMembers(),
+        repository.getCtas(),
+        repository.getAllCtaSignups()
       ]);
       const selectedMonth = resolveSelectedMonth(input?.month);
       const selectedMonthLabel = formatSelectedMonthLabel(selectedMonth);
       const monthRange = getMonthRange(selectedMonth);
       const totalMembers = members.length;
+      const finalizedCtasInMonth = ctas.filter((cta) => {
+        if (cta.status !== "FINALIZED") {
+          return false;
+        }
+        const time = new Date(cta.datetimeUtc).getTime();
+        return time >= monthRange.start.getTime() && time < monthRange.end.getTime();
+      });
+      const finalizedCtaById = new Map(finalizedCtasInMonth.map((cta) => [cta.id, cta]));
+      const signupMembersByCtaId = new Map<string, Set<string>>();
+      for (const signup of ctaSignups) {
+        const cta = finalizedCtaById.get(signup.ctaId);
+        if (!cta) {
+          continue;
+        }
+        const existing = signupMembersByCtaId.get(cta.id) ?? new Set<string>();
+        existing.add(signup.memberId);
+        signupMembersByCtaId.set(cta.id, existing);
+      }
       const dailyBuckets = new Map<
         number,
         {
@@ -1616,27 +1636,25 @@ export function createApiServices(
           day: number;
           totalMembers: number;
           totalPercent: number;
-          battleCount: number;
+          ctaCount: number;
         }
       >();
 
-      for (const snapshot of snapshots.filter((entry) => {
-        const time = new Date(entry.startTime).getTime();
-        return time >= monthRange.start.getTime() && time < monthRange.end.getTime();
-      })) {
-        const day = Math.min(new Date(snapshot.startTime).getUTCDate(), 30);
-        const dateKey = formatUtcDayKey(snapshot.startTime, day);
+      for (const cta of finalizedCtasInMonth) {
+        const day = Math.min(new Date(cta.datetimeUtc).getUTCDate(), 30);
+        const dateKey = formatUtcDayKey(cta.datetimeUtc, day);
         const existing = dailyBuckets.get(day) ?? {
           dateKey,
           day,
           totalMembers: 0,
           totalPercent: 0,
-          battleCount: 0
+          ctaCount: 0
         };
-        const attendancePercent = totalMembers > 0 ? (snapshot.guildPlayers / totalMembers) * 100 : 0;
-        existing.totalMembers += snapshot.guildPlayers;
+        const signedMembers = signupMembersByCtaId.get(cta.id)?.size ?? 0;
+        const attendancePercent = totalMembers > 0 ? (signedMembers / totalMembers) * 100 : 0;
+        existing.totalMembers += signedMembers;
         existing.totalPercent += attendancePercent;
-        existing.battleCount += 1;
+        existing.ctaCount += 1;
         dailyBuckets.set(day, existing);
       }
 
@@ -1645,15 +1663,17 @@ export function createApiServices(
         .map((entry) => ({
           dateKey: entry.dateKey,
           label: String(entry.day).padStart(2, "0"),
-          memberCount: entry.battleCount > 0 ? entry.totalMembers / entry.battleCount : 0,
-          attendancePercent: entry.battleCount > 0 ? entry.totalPercent / entry.battleCount : 0,
-          battleCount: entry.battleCount
+          memberCount: entry.ctaCount > 0 ? entry.totalMembers / entry.ctaCount : 0,
+          attendancePercent: entry.ctaCount > 0 ? entry.totalPercent / entry.ctaCount : 0,
+          battleCount: entry.ctaCount
         }));
 
+      const totalSignupMembers = finalizedCtasInMonth.reduce(
+        (sum, cta) => sum + (signupMembersByCtaId.get(cta.id)?.size ?? 0),
+        0
+      );
       const averageAttendanceCount =
-        snapshots.length > 0
-          ? snapshots.reduce((sum, snapshot) => sum + snapshot.guildPlayers, 0) / snapshots.length
-          : 0;
+        finalizedCtasInMonth.length > 0 ? totalSignupMembers / finalizedCtasInMonth.length : 0;
       const averageAttendancePercent =
         totalMembers > 0 ? (averageAttendanceCount / totalMembers) * 100 : 0;
 
@@ -1679,13 +1699,13 @@ export function createApiServices(
       }
 
       return {
-        trackedBattles: snapshots.length,
+        trackedBattles: finalizedCtasInMonth.length,
         selectedMonth,
         selectedMonthLabel,
         attendance: {
           averageCount: averageAttendanceCount,
           averagePercent: averageAttendancePercent,
-          ctaCount: snapshots.length,
+          ctaCount: finalizedCtasInMonth.length,
           history: attendanceHistory
         },
         main: {
@@ -1889,35 +1909,13 @@ export function createApiServices(
 
     async listMembers(actor) {
       await requireStaffAccess(actor);
-      await syncLatestBattlePerformanceSnapshots({
-        repository,
-        killboard,
-        guildId: options.albionBattlesGuildId?.trim() || undefined,
-        guildName: options.albionBattlesGuildName?.trim() || undefined,
-        minGuildPlayers: options.albionBattlesMinGuildPlayers,
-        limit: options.albionBattlesLimit
-      });
 
       const now = new Date();
-      const [
-        members,
-        users,
-        snapshots,
-        battleAttendances,
-        ctas,
-        manualAttendances,
-        ctaSignups,
-        signupEvents,
-        exclusions,
-        tasks,
-        notifications
-      ] = await Promise.all([
+      const [members, users, ctas, ctaSignups, signupEvents, exclusions, tasks, notifications] =
+        await Promise.all([
         repository.getMembers(),
         repository.getUsers(),
-        repository.getBattlePerformanceSnapshots(),
-        repository.getBattleMemberAttendances(),
         repository.getCtas(),
-        repository.getAttendances(),
         repository.getAllCtaSignups(),
         repository.getCtaSignupEvents(),
         repository.getMemberActivityExclusions(),
@@ -1932,28 +1930,24 @@ export function createApiServices(
       const attendanceByMemberTimer = new Map<string, Set<string>>();
       const attendanceFinalizedEntriesByMember = new Map<string, Array<{ datetimeUtc: string; timerKey: string }>>();
       const signupEventsByMember = new Map<string, Array<{ ctaId: string; createdAt: string }>>();
-      const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
       const exclusionByMemberId = new Map(exclusions.map((exclusion) => [exclusion.memberId, exclusion]));
       const notificationByMemberId = new Map(
         notifications.map((notification) => [notification.memberId, notification])
       );
       const followupTaskByMemberId = new Map<string, string>();
 
-      for (const attendance of manualAttendances) {
-        if (attendance.decision !== "YES") {
-          continue;
-        }
-        const cta = finalizedCtaById.get(attendance.ctaId);
+      for (const signup of ctaSignups) {
+        const cta = finalizedCtaById.get(signup.ctaId);
         if (!cta) {
           continue;
         }
         const timerKey = formatCtaTimerKey(cta.datetimeUtc);
-        const current = attendanceByMemberTimer.get(attendance.memberId) ?? new Set<string>();
+        const current = attendanceByMemberTimer.get(signup.memberId) ?? new Set<string>();
         current.add(timerKey);
-        attendanceByMemberTimer.set(attendance.memberId, current);
-        const attendanceEntries = attendanceFinalizedEntriesByMember.get(attendance.memberId) ?? [];
+        attendanceByMemberTimer.set(signup.memberId, current);
+        const attendanceEntries = attendanceFinalizedEntriesByMember.get(signup.memberId) ?? [];
         attendanceEntries.push({ datetimeUtc: cta.datetimeUtc, timerKey });
-        attendanceFinalizedEntriesByMember.set(attendance.memberId, attendanceEntries);
+        attendanceFinalizedEntriesByMember.set(signup.memberId, attendanceEntries);
       }
 
       for (const event of signupEvents) {
@@ -2033,10 +2027,6 @@ export function createApiServices(
             : 0;
         const lastActivityAt = getMemberLastActivityAt({
           memberId: member.id,
-          battleAttendances,
-          snapshotByBattleId,
-          manualAttendances,
-          ctaById,
           ctaSignups
         });
         const threshold = getMemberInactivityThreshold(member);
@@ -2088,15 +2078,11 @@ export function createApiServices(
 
     async openMemberActivityFollowup(actor, memberId) {
       await requireStaffAccess(actor);
-      const [member, users, tasks, snapshots, battleAttendances, ctas, manualAttendances, ctaSignups, exclusions] =
+      const [member, users, tasks, ctaSignups, exclusions] =
         await Promise.all([
           repository.getMemberById(memberId),
           repository.getUsers(),
           repository.getCouncilTasks(),
-          repository.getBattlePerformanceSnapshots(),
-          repository.getBattleMemberAttendances(),
-          repository.getCtas(),
-          repository.getAttendances(),
           repository.getAllCtaSignups(),
           repository.getMemberActivityExclusions()
         ]);
@@ -2115,16 +2101,10 @@ export function createApiServices(
       }
 
       const user = users.find((entry) => entry.id === member.userId);
-      const ctaById = new Map(ctas.map((cta) => [cta.id, cta]));
-      const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
       const exclusion = exclusions.find((entry) => entry.memberId === memberId);
       const threshold = getMemberInactivityThreshold(member);
       const lastActivityAt = getMemberLastActivityAt({
         memberId,
-        battleAttendances,
-        snapshotByBattleId,
-        manualAttendances,
-        ctaById,
         ctaSignups
       });
       const activity = buildMemberActivityState({
@@ -2760,11 +2740,11 @@ export function createApiServices(
     },
 
     async getRanking(input) {
-      const [members, users, ctas, attendances] = await Promise.all([
+      const [members, users, ctas, signups] = await Promise.all([
         repository.getMembers(),
         repository.getUsers(),
         repository.getCtas(),
-        repository.getAttendances()
+        repository.getAllCtaSignups()
       ]);
       const selectedMonth = resolveSelectedMonth(input?.month);
       const selectedMonthLabel = formatSelectedMonthLabel(selectedMonth);
@@ -2782,18 +2762,15 @@ export function createApiServices(
       const timerKeys = new Set(ctasInMonth.map((cta) => formatCtaTimerKey(cta.datetimeUtc)));
       const attendanceByMemberTimer = new Map<string, Set<string>>();
 
-      for (const attendance of attendances) {
-        if (attendance.decision !== "YES") {
-          continue;
-        }
-        const cta = ctaById.get(attendance.ctaId);
+      for (const signup of signups) {
+        const cta = ctaById.get(signup.ctaId);
         if (!cta) {
           continue;
         }
         const timerKey = formatCtaTimerKey(cta.datetimeUtc);
-        const current = attendanceByMemberTimer.get(attendance.memberId) ?? new Set<string>();
+        const current = attendanceByMemberTimer.get(signup.memberId) ?? new Set<string>();
         current.add(timerKey);
-        attendanceByMemberTimer.set(attendance.memberId, current);
+        attendanceByMemberTimer.set(signup.memberId, current);
       }
 
       const totalTimers = timerKeys.size;
@@ -4378,10 +4355,6 @@ function formatMemberStatusLabel(status: GuildMember["status"]): string {
 
 function getMemberLastActivityAt(args: {
   memberId: string;
-  battleAttendances: Awaited<ReturnType<DatabaseRepository["getBattleMemberAttendances"]>>;
-  snapshotByBattleId: Map<string, Awaited<ReturnType<DatabaseRepository["getBattlePerformanceSnapshots"]>>[number]>;
-  manualAttendances: Awaited<ReturnType<DatabaseRepository["getAttendances"]>>;
-  ctaById: Map<string, Awaited<ReturnType<DatabaseRepository["getCtas"]>>[number]>;
   ctaSignups: Awaited<ReturnType<DatabaseRepository["getAllCtaSignups"]>>;
 }): string | undefined {
   let latest: string | undefined;
@@ -4391,26 +4364,6 @@ function getMemberLastActivityAt(args: {
       continue;
     }
     latest = pickLatestIso(latest, signup.reactedAt);
-  }
-
-  for (const attendance of args.manualAttendances) {
-    if (attendance.memberId !== args.memberId) {
-      continue;
-    }
-    const cta = args.ctaById.get(attendance.ctaId);
-    if (cta) {
-      latest = pickLatestIso(latest, cta.datetimeUtc);
-    }
-  }
-
-  for (const attendance of args.battleAttendances) {
-    if (attendance.memberId !== args.memberId) {
-      continue;
-    }
-    const snapshot = args.snapshotByBattleId.get(attendance.battleId);
-    if (snapshot) {
-      latest = pickLatestIso(latest, snapshot.startTime);
-    }
   }
 
   return latest;

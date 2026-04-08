@@ -29,7 +29,7 @@ export function PerformanceView({
           {performance ? (
             <div className="actions">
               <span className="status-badge">
-                {performance.trackedBattles} battles
+                {performance.trackedBattles} CTAs
               </span>
               {performance.lastUpdatedAt ? (
                 <span className="status-badge">
@@ -41,8 +41,8 @@ export function PerformanceView({
           ) : null}
         </div>
         <p className="lede">
-          Acumulación de Battles de la guild para medir rendimiento de partys y
-          attendance general.
+          El attendance se calcula únicamente por signup de CTA finalizada.
+          Las kills de Main/Bomb siguen viniendo de battles.
         </p>
       </article>
 
@@ -62,7 +62,7 @@ export function PerformanceView({
               </strong>
               <p>
                 {formatPercent(performance.attendance.averagePercent)} sobre
-                miembros totales en {performance.attendance.ctaCount} battles.
+                miembros totales en {performance.attendance.ctaCount} CTAs.
               </p>
             </article>
             <article className="dashboard-card metric-card">
