@@ -181,6 +181,17 @@ export async function routeRequest(
     return json(await services.getPublicPerformance({ month: url.searchParams.get("month") ?? undefined }));
   }
 
+  if (method === "GET" && url.pathname === "/performance/member-weapons") {
+    const currentUser = requireAuthenticatedUser(context.currentUser);
+    await services.requirePrivateAccess(currentUser);
+    return json(
+      await services.getMemberWeaponPerformance(currentUser, {
+        memberId: url.searchParams.get("memberId") ?? undefined,
+        query: url.searchParams.get("query") ?? undefined
+      })
+    );
+  }
+
   if (method === "GET" && url.pathname === "/public/events") {
     return json(await services.getPublicScheduledEvents());
   }

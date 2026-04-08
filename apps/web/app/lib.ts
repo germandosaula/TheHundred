@@ -491,20 +491,23 @@ export async function getPrivateDashboardData(month?: string) {
   const discordId = await getDiscordId();
   const rankingPath = month ? `/ranking?month=${encodeURIComponent(month)}` : "/ranking";
 
-  const [me, ranking, ctas, slots, builds] = await Promise.all([
+  const [me, ranking, ctas, slots, builds, manageProbe] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<RankingData>(rankingPath, sessionToken, discordId),
     getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
     getJson<SlotsData>("/public/slots"),
-    getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId)
+    getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId),
+    getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId)
   ]);
 
+  const canEditCompsAndCtas = Boolean(manageProbe);
   const [members, assignablePlayers] = await Promise.all([
     getJson<MemberEntry[]>("/members", sessionToken, discordId),
-    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+    canEditCompsAndCtas
+      ? getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+      : Promise.resolve(null)
   ]);
   const canManageCouncil = Boolean(members);
-  const canEditCompsAndCtas = Boolean(assignablePlayers);
 
   return {
     sessionToken,
@@ -525,19 +528,23 @@ export async function getPrivateCompsData() {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
 
-  const [me, comps, assignablePlayers, builds] = await Promise.all([
+  const [me, comps, builds, manageProbe] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<CompEntry[]>("/comps", sessionToken, discordId),
-    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId),
-    getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId)
+    getJson<BuildTemplateEntry[]>("/builds", sessionToken, discordId),
+    getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId)
   ]);
+  const canEditCompsAndCtas = Boolean(manageProbe);
+  const assignablePlayers = canEditCompsAndCtas
+    ? await getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+    : null;
 
   return {
     sessionToken,
     me,
     comps: comps ?? [],
     assignablePlayers: assignablePlayers ?? [],
-    canEditCompsAndCtas: Boolean(assignablePlayers),
+    canEditCompsAndCtas,
     builds: builds ?? []
   };
 }
@@ -550,7 +557,7 @@ export async function getPrivateOverviewData() {
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<CtaEntry[]>("/ctas", sessionToken, discordId),
     getJson<SlotsData>("/public/slots"),
-    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId),
+    getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId),
     getJson<OverviewAnnouncementEntry[]>("/overview/announcements", sessionToken, discordId)
   ]);
 
@@ -628,7 +635,7 @@ export async function getPrivateScoutingData() {
 
   const [me, managementProbe] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
-    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+    getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId)
   ]);
 
   return {
@@ -674,16 +681,16 @@ export async function getPrivateCompsOverviewData() {
   const sessionToken = await getSessionToken();
   const discordId = await getDiscordId();
 
-  const [me, comps, assignablePlayers] = await Promise.all([
+  const [me, comps, manageProbe] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<CompEntry[]>("/comps", sessionToken, discordId),
-    getJson<AssignableCompPlayerEntry[]>("/comps/assignable-players", sessionToken, discordId)
+    getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId)
   ]);
 
   return {
     me,
     comps: comps ?? [],
-    canEditCompsAndCtas: Boolean(assignablePlayers)
+    canEditCompsAndCtas: Boolean(manageProbe)
   };
 }
 

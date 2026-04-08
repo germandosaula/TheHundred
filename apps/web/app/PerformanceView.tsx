@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { PerformanceAttendanceSection } from "./PerformanceAttendanceSection";
+import { PerformanceMemberWeaponsPanel } from "./PerformanceMemberWeaponsPanel";
 import type { PublicPerformanceData } from "./lib";
 
 function formatCompact(value: number) {
@@ -135,6 +136,7 @@ export function PerformanceView({
               attendance: performance.attendance,
             }}
           />
+          <PerformanceMemberWeaponsPanel />
         </>
       )}
     </section>

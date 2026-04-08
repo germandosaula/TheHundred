@@ -9,7 +9,7 @@ export default async function PrivateLayout({ children }: Readonly<{ children: R
   const [me, privateAccessProbe, managementProbe, councilProbe] = await Promise.all([
     getJson<MeData>("/me", sessionToken, discordId),
     getJson<{ ok: true }>("/private/access", sessionToken, discordId),
-    getJson<unknown[]>("/comps/assignable-players", sessionToken, discordId),
+    getJson<{ ok: true }>("/ctas/manage-access", sessionToken, discordId),
     getJson<unknown[]>("/council/members", sessionToken, discordId)
   ]);
 

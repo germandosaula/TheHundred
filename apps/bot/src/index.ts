@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
   Client,
   EmbedBuilder,
@@ -14,6 +16,7 @@ import {
 } from "discord.js";
 import type {
   AutocompleteInteraction,
+  ButtonInteraction,
   ChatInputCommandInteraction,
   Guild,
   GuildMember,
@@ -310,6 +313,11 @@ const ctaReminderChannelId = "1479151829832171731";
 const scheduledEventsReminderChannelId = process.env.DISCORD_EVENTS_CHANNEL_ID ?? ctaReminderChannelId;
 const sentCtaReminders = new Set<string>();
 let lastScheduledEventsReminderHour = "";
+const inactivityDmThresholdDays = Number(process.env.DISCORD_INACTIVITY_DM_THRESHOLD_DAYS ?? "3");
+const inactivityDmRunIntervalMs = Number(process.env.DISCORD_INACTIVITY_DM_INTERVAL_MS ?? "21600000");
+const inactivityDmRenotifyIntervalMs = Number(process.env.DISCORD_INACTIVITY_DM_RENOTIFY_MS ?? "86400000");
+let lastInactivityDmRunAt = 0;
+const inactivityConfirmButtonPrefix = "activity-confirm:";
 const allowMockLootSplit =
   process.env.LOOTSPLIT_ALLOW_MOCK === "1" ||
   process.env.NODE_ENV !== "production";
@@ -689,6 +697,7 @@ client.once("clientReady", async () => {
     void ensureCtaReminders();
     void ensurePromotionVotes();
     void ensureScheduledEventsReminder(true);
+    void ensureInactivityDmAlerts(true);
     setInterval(() => {
       void ensureRecruitmentTickets();
       void reconcileGuildRoleSync();
@@ -696,6 +705,7 @@ client.once("clientReady", async () => {
       void ensureCtaReminders();
       void ensurePromotionVotes();
       void ensureScheduledEventsReminder();
+      void ensureInactivityDmAlerts();
     }, syncIntervalMs);
   }
 });
@@ -710,6 +720,13 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId.startsWith("cta-signup:")) {
         await handleCtaSignupSelect(interaction);
+      }
+      return;
+    }
+
+    if (interaction.isButton()) {
+      if (interaction.customId.startsWith(inactivityConfirmButtonPrefix)) {
+        await handleInactivityConfirmButton(interaction);
       }
       return;
     }
@@ -2751,6 +2768,223 @@ async function ensureScheduledEventsReminder(force = false) {
   } catch (error) {
     console.error("Scheduled events reminders failed", error);
   }
+}
+
+function pickLatestIso(current?: string, candidate?: string): string | undefined {
+  if (!candidate) {
+    return current;
+  }
+  if (!current) {
+    return candidate;
+  }
+  return Date.parse(candidate) > Date.parse(current) ? candidate : current;
+}
+
+function isExclusionActive(
+  nowMs: number,
+  exclusion?: { startsAt: string; endsAt: string }
+): boolean {
+  if (!exclusion) {
+    return false;
+  }
+  const startsAt = Date.parse(exclusion.startsAt);
+  const endsAt = Date.parse(exclusion.endsAt);
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)) {
+    return false;
+  }
+  return startsAt <= nowMs && endsAt >= nowMs;
+}
+
+function getMemberLastActivityAtForBot(args: {
+  memberId: string;
+  ctaSignups: Awaited<ReturnType<typeof repository.getAllCtaSignups>>;
+  attendances: Awaited<ReturnType<typeof repository.getAttendances>>;
+  ctaById: Map<string, Awaited<ReturnType<typeof repository.getCtas>>[number]>;
+  battleAttendances: Awaited<ReturnType<typeof repository.getBattleMemberAttendances>>;
+  snapshotByBattleId: Map<string, Awaited<ReturnType<typeof repository.getBattlePerformanceSnapshots>>[number]>;
+  lastAckAt?: string;
+}): string | undefined {
+  let latest: string | undefined;
+
+  for (const signup of args.ctaSignups) {
+    if (signup.memberId !== args.memberId) {
+      continue;
+    }
+    latest = pickLatestIso(latest, signup.reactedAt);
+  }
+
+  for (const attendance of args.attendances) {
+    if (attendance.memberId !== args.memberId) {
+      continue;
+    }
+    const cta = args.ctaById.get(attendance.ctaId);
+    if (cta) {
+      latest = pickLatestIso(latest, cta.datetimeUtc);
+    }
+  }
+
+  for (const attendance of args.battleAttendances) {
+    if (attendance.memberId !== args.memberId) {
+      continue;
+    }
+    const snapshot = args.snapshotByBattleId.get(attendance.battleId);
+    if (snapshot) {
+      latest = pickLatestIso(latest, snapshot.startTime);
+    }
+  }
+
+  latest = pickLatestIso(latest, args.lastAckAt);
+  return latest;
+}
+
+async function ensureInactivityDmAlerts(force = false) {
+  try {
+    if (!force && Date.now() - lastInactivityDmRunAt < inactivityDmRunIntervalMs) {
+      return;
+    }
+    lastInactivityDmRunAt = Date.now();
+
+    const [members, users, ctas, signups, attendances, battleAttendances, snapshots, exclusions, notifications] =
+      await Promise.all([
+        repository.getMembers(),
+        repository.getUsers(),
+        repository.getCtas(),
+        repository.getAllCtaSignups(),
+        repository.getAttendances(),
+        repository.getBattleMemberAttendances(),
+        repository.getBattlePerformanceSnapshots(),
+        repository.getMemberActivityExclusions(),
+        repository.getMemberActivityNotifications()
+      ]);
+
+    const now = Date.now();
+    const usersById = new Map(users.map((user) => [user.id, user]));
+    const ctaById = new Map(ctas.map((cta) => [cta.id, cta]));
+    const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
+    const exclusionByMemberId = new Map(exclusions.map((entry) => [entry.memberId, entry]));
+    const notificationByMemberId = new Map(notifications.map((entry) => [entry.memberId, entry]));
+
+    for (const member of members) {
+      if (member.kickedAt) {
+        continue;
+      }
+      if (member.status !== "TRIAL" && member.status !== "CORE" && member.status !== "BENCHED") {
+        continue;
+      }
+      const exclusion = exclusionByMemberId.get(member.id);
+      if (
+        exclusion &&
+        isExclusionActive(now, { startsAt: exclusion.startsAt, endsAt: exclusion.endsAt })
+      ) {
+        continue;
+      }
+
+      const notification = notificationByMemberId.get(member.id);
+      const lastActivityAt = getMemberLastActivityAtForBot({
+        memberId: member.id,
+        ctaSignups: signups,
+        attendances,
+        ctaById,
+        battleAttendances,
+        snapshotByBattleId,
+        lastAckAt: notification?.lastAckAt
+      });
+      const inactiveDays = lastActivityAt
+        ? Math.max(0, Math.floor((now - Date.parse(lastActivityAt)) / 86400000))
+        : inactivityDmThresholdDays + 1;
+
+      if (inactiveDays < inactivityDmThresholdDays) {
+        continue;
+      }
+
+      if (notification?.lastNotifiedAt) {
+        const lastNotifiedMs = Date.parse(notification.lastNotifiedAt);
+        if (Number.isFinite(lastNotifiedMs) && now - lastNotifiedMs < inactivityDmRenotifyIntervalMs) {
+          continue;
+        }
+      }
+
+      const user = usersById.get(member.userId);
+      if (!user?.discordId) {
+        continue;
+      }
+
+      const dmTarget = await client.users.fetch(user.discordId).catch(() => null);
+      if (!dmTarget) {
+        continue;
+      }
+
+      const ackButton = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${inactivityConfirmButtonPrefix}${member.id}`)
+          .setLabel("Confirmo actividad")
+          .setStyle(ButtonStyle.Success)
+      );
+
+      const dmEmbed = new EmbedBuilder()
+        .setColor(0xf2c94c)
+        .setTitle("Actividad en CTA")
+        .setDescription(
+          [
+            `Llevas **${inactiveDays}** día(s) sin actividad registrada en CTA/signup.`,
+            "Si sigues activo, pulsa el botón para confirmar actividad y limpiar el aviso automático."
+          ].join("\n")
+        )
+        .setFooter({ text: "TheHundred · alerta automática" })
+        .setTimestamp(new Date());
+
+      const sent = await dmTarget
+        .send({
+          embeds: [dmEmbed],
+          components: [ackButton]
+        })
+        .catch(() => null);
+      if (!sent) {
+        continue;
+      }
+
+      await repository.upsertMemberActivityNotification({
+        memberId: member.id,
+        lastNotifiedAt: new Date().toISOString(),
+        lastAckAt: notification?.lastAckAt,
+        notificationCount: (notification?.notificationCount ?? 0) + 1
+      });
+    }
+  } catch (error) {
+    console.error("Inactivity DM alerts failed", error);
+  }
+}
+
+async function handleInactivityConfirmButton(interaction: ButtonInteraction) {
+  const memberId = interaction.customId.slice(inactivityConfirmButtonPrefix.length).trim();
+  if (!memberId) {
+    await interaction.reply({ content: "Acción inválida." });
+    return;
+  }
+
+  const user = await repository.getUserByDiscordId(interaction.user.id);
+  if (!user) {
+    await interaction.reply({ content: "No estás vinculado a la web." });
+    return;
+  }
+  const member = await repository.getMemberByUserId(user.id);
+  if (!member || member.id !== memberId) {
+    await interaction.reply({ content: "Este botón no corresponde a tu perfil." });
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const existing = (await repository.getMemberActivityNotifications()).find((entry) => entry.memberId === member.id);
+  await repository.upsertMemberActivityNotification({
+    memberId: member.id,
+    lastAckAt: nowIso,
+    lastNotifiedAt: existing?.lastNotifiedAt,
+    notificationCount: existing?.notificationCount ?? 0
+  });
+
+  await interaction.reply({
+    content: "Actividad confirmada. Gracias, se limpió el aviso automático."
+  });
 }
 
 async function reconcileGuildRoleSync() {

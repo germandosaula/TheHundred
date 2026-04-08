@@ -304,6 +304,22 @@ export interface BattleMemberAttendanceRecord {
   memberId: string;
 }
 
+export interface BattleMemberWeaponStatRecord {
+  battleId: string;
+  memberId: string;
+  weaponName: string;
+  kills: number;
+  deaths: number;
+}
+
+export interface MemberActivityNotificationRecord {
+  memberId: string;
+  lastNotifiedAt?: string;
+  lastAckAt?: string;
+  notificationCount: number;
+  updatedAt: string;
+}
+
 export interface WalletAccountRecord {
   userId: string;
   cashBalance: number;
@@ -438,6 +454,7 @@ export interface DatabaseRepository {
   getBattlePerformanceSnapshots(): Promise<BattlePerformanceSnapshotRecord[]>;
   getBattlePerformanceBombs(): Promise<BattlePerformanceBombRecord[]>;
   getBattleMemberAttendances(): Promise<BattleMemberAttendanceRecord[]>;
+  getBattleMemberWeaponStats(): Promise<BattleMemberWeaponStatRecord[]>;
   saveBattlePerformanceSnapshot(input: {
     battleId: string;
     startTime: string;
@@ -455,6 +472,12 @@ export interface DatabaseRepository {
     }>;
     memberAttendances: Array<{
       memberId: string;
+    }>;
+    memberWeaponStats: Array<{
+      memberId: string;
+      weaponName: string;
+      kills: number;
+      deaths: number;
     }>;
   }): Promise<BattlePerformanceSnapshotRecord>;
   getComps(): Promise<CompRecord[]>;
@@ -551,6 +574,13 @@ export interface DatabaseRepository {
     createdBy: string;
   }): Promise<MemberActivityExclusionRecord>;
   clearMemberActivityExclusion(memberId: string): Promise<boolean>;
+  getMemberActivityNotifications(): Promise<MemberActivityNotificationRecord[]>;
+  upsertMemberActivityNotification(input: {
+    memberId: string;
+    lastNotifiedAt?: string;
+    lastAckAt?: string;
+    notificationCount?: number;
+  }): Promise<MemberActivityNotificationRecord>;
   getAttendances(): Promise<Attendance[]>;
   getAllCtaSignups(): Promise<CtaSignupRecord[]>;
 }

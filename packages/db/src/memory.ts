@@ -20,6 +20,7 @@ import type {
   BottledEnergyUnmatchedBalanceRecord,
   BuildTemplateRecord,
   BattleMemberAttendanceRecord,
+  BattleMemberWeaponStatRecord,
   BattlePerformanceBombRecord,
   BattlePerformanceSnapshotRecord,
   CouncilTaskRecord,
@@ -32,6 +33,7 @@ import type {
   OverviewAnnouncementRecord,
   ScheduledEventRecord,
   MemberActivityExclusionRecord,
+  MemberActivityNotificationRecord,
   CreateScheduledEventInput,
   CreateCouncilTaskInput,
   CreateCtaInput,
@@ -60,12 +62,14 @@ export interface RepositoryState {
   battlePerformanceSnapshots: BattlePerformanceSnapshotRecord[];
   battlePerformanceBombs: BattlePerformanceBombRecord[];
   battleMemberAttendances: BattleMemberAttendanceRecord[];
+  battleMemberWeaponStats: BattleMemberWeaponStatRecord[];
   comps: CompRecord[];
   buildTemplates: BuildTemplateRecord[];
   councilTasks: CouncilTaskRecord[];
   overviewAnnouncements: OverviewAnnouncementRecord[];
   scheduledEvents: ScheduledEventRecord[];
   memberActivityExclusions: MemberActivityExclusionRecord[];
+  memberActivityNotifications: MemberActivityNotificationRecord[];
   recruitmentApplications: RecruitmentApplicationRecord[];
   invites: InviteRecord[];
   walletAccounts: WalletAccountRecord[];
@@ -419,6 +423,10 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     return this.state.battleMemberAttendances;
   }
 
+  async getBattleMemberWeaponStats(): Promise<BattleMemberWeaponStatRecord[]> {
+    return this.state.battleMemberWeaponStats;
+  }
+
   async saveBattlePerformanceSnapshot(input: {
     battleId: string;
     startTime: string;
@@ -436,6 +444,12 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     }>;
     memberAttendances: Array<{
       memberId: string;
+    }>;
+    memberWeaponStats: Array<{
+      memberId: string;
+      weaponName: string;
+      kills: number;
+      deaths: number;
     }>;
   }): Promise<BattlePerformanceSnapshotRecord> {
     const now = new Date().toISOString();
@@ -476,6 +490,19 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
       ...input.memberAttendances.map((entry) => ({
         battleId: input.battleId,
         memberId: entry.memberId
+      }))
+    );
+
+    this.state.battleMemberWeaponStats = this.state.battleMemberWeaponStats.filter(
+      (entry) => entry.battleId !== input.battleId
+    );
+    this.state.battleMemberWeaponStats.push(
+      ...input.memberWeaponStats.map((entry) => ({
+        battleId: input.battleId,
+        memberId: entry.memberId,
+        weaponName: entry.weaponName,
+        kills: entry.kills,
+        deaths: entry.deaths
       }))
     );
 
@@ -735,6 +762,38 @@ export class InMemoryDatabaseRepository implements DatabaseRepository {
     const deleted = next.length !== this.state.memberActivityExclusions.length;
     this.state.memberActivityExclusions = next;
     return deleted;
+  }
+
+  async getMemberActivityNotifications(): Promise<MemberActivityNotificationRecord[]> {
+    return this.state.memberActivityNotifications;
+  }
+
+  async upsertMemberActivityNotification(input: {
+    memberId: string;
+    lastNotifiedAt?: string;
+    lastAckAt?: string;
+    notificationCount?: number;
+  }): Promise<MemberActivityNotificationRecord> {
+    const now = new Date().toISOString();
+    const existing =
+      this.state.memberActivityNotifications.find((entry) => entry.memberId === input.memberId) ?? null;
+    if (existing) {
+      existing.lastNotifiedAt = input.lastNotifiedAt ?? existing.lastNotifiedAt;
+      existing.lastAckAt = input.lastAckAt ?? existing.lastAckAt;
+      existing.notificationCount = input.notificationCount ?? existing.notificationCount;
+      existing.updatedAt = now;
+      return existing;
+    }
+
+    const created: MemberActivityNotificationRecord = {
+      memberId: input.memberId,
+      lastNotifiedAt: input.lastNotifiedAt,
+      lastAckAt: input.lastAckAt,
+      notificationCount: input.notificationCount ?? 0,
+      updatedAt: now
+    };
+    this.state.memberActivityNotifications.push(created);
+    return created;
   }
 
   async replaceOverviewAnnouncements(
@@ -1284,6 +1343,7 @@ export function createSeedState(): RepositoryState {
     battlePerformanceSnapshots: [],
     battlePerformanceBombs: [],
     battleMemberAttendances: [],
+    battleMemberWeaponStats: [],
     comps: [],
     buildTemplates: [],
     councilTasks: [],
@@ -1307,6 +1367,7 @@ export function createSeedState(): RepositoryState {
     ],
     scheduledEvents: [],
     memberActivityExclusions: [],
+    memberActivityNotifications: [],
     recruitmentApplications: [],
     invites: [],
     walletAccounts: [],

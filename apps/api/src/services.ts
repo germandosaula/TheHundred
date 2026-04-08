@@ -117,6 +117,35 @@ export interface ApiServices {
     };
     lastUpdatedAt?: string;
   }>;
+  getMemberWeaponPerformance(
+    actor: User,
+    input?: { memberId?: string; query?: string }
+  ): Promise<{
+    members: Array<{
+      memberId: string;
+      userId: string;
+      displayName: string;
+      albionName?: string;
+      avatarUrl?: string;
+      status: "TRIAL" | "CORE" | "BENCHED" | "COUNCIL";
+    }>;
+    selectedMemberId?: string;
+    summary?: {
+      attendanceCount: number;
+      attendanceEligibleTimers: number;
+      attendancePercent: number;
+      signupCount: number;
+      signupEligibleCtas: number;
+      signupPercent: number;
+    };
+    weapons: Array<{
+      weaponName: string;
+      kills: number;
+      deaths: number;
+      kd: number;
+      battles: number;
+    }>;
+  }>;
   getOverviewAnnouncements(actor: User): Promise<
     Array<{
       id: string;
@@ -624,7 +653,41 @@ export function createApiServices(
 
     throw new DomainError("Staff role required");
   };
+  let callerRoleCache:
+    | Map<
+        string,
+        {
+          isCaller: boolean;
+          expiresAt: number;
+        }
+      >
+    | undefined;
+  const callerRoleCacheTtlMs = 5 * 60 * 1000;
+  const getCachedCallerRole = (discordId: string): boolean | undefined => {
+    const cached = callerRoleCache?.get(discordId);
+    if (!cached) {
+      return undefined;
+    }
+    if (cached.expiresAt > Date.now()) {
+      return cached.isCaller;
+    }
+    return undefined;
+  };
+  const setCachedCallerRole = (discordId: string, isCaller: boolean): void => {
+    if (!callerRoleCache) {
+      callerRoleCache = new Map();
+    }
+    callerRoleCache.set(discordId, {
+      isCaller,
+      expiresAt: Date.now() + callerRoleCacheTtlMs
+    });
+  };
   const actorHasCallerRole = async (actor: User): Promise<boolean> => {
+    const cached = getCachedCallerRole(actor.discordId);
+    if (typeof cached === "boolean") {
+      return cached;
+    }
+
     const guildId = options.discordGuildId?.trim();
     const botToken = options.discordBotToken?.trim();
     const callerRoleIds = options.discordCallerRoleIds ?? [];
@@ -634,6 +697,7 @@ export function createApiServices(
         hasBotToken: Boolean(botToken),
         callerRoleIds: callerRoleIds.length
       });
+      setCachedCallerRole(actor.discordId, false);
       return false;
     }
 
@@ -660,24 +724,34 @@ export function createApiServices(
             discordId: actor.discordId,
             status: response.status
           });
+          setCachedCallerRole(actor.discordId, false);
           return false;
         }
 
         const payload = (await response.json()) as { roles?: string[] };
         const roleIds = payload.roles ?? [];
-        return callerRoleIds.some((roleId) => roleIds.includes(roleId));
+        const hasCallerRole = callerRoleIds.some((roleId) => roleIds.includes(roleId));
+        setCachedCallerRole(actor.discordId, hasCallerRole);
+        return hasCallerRole;
       } catch (error) {
         if (attempt === 3) {
           console.warn("[permissions] Caller role lookup failed after retries", {
             discordId: actor.discordId,
             error: error instanceof Error ? error.message : String(error)
           });
+          const stale = callerRoleCache?.get(actor.discordId);
+          if (stale?.isCaller) {
+            // Soft fallback: preserve recently known Caller access on transient Discord failures.
+            return true;
+          }
+          setCachedCallerRole(actor.discordId, false);
           return false;
         }
         await wait(400);
       }
     }
 
+    setCachedCallerRole(actor.discordId, false);
     return false;
   };
   const requireCtaManager = async (actor: User) => {
@@ -1633,6 +1707,155 @@ export function createApiServices(
       };
     },
 
+    async getMemberWeaponPerformance(actor, input) {
+      await this.requirePrivateAccess(actor);
+
+      const [members, users, ctas, signups, signupEvents, snapshots, battleAttendances, weaponStats] =
+        await Promise.all([
+          repository.getMembers(),
+          repository.getUsers(),
+          repository.getCtas(),
+          repository.getAllCtaSignups(),
+          repository.getCtaSignupEvents(),
+          repository.getBattlePerformanceSnapshots(),
+          repository.getBattleMemberAttendances(),
+          repository.getBattleMemberWeaponStats()
+        ]);
+
+      const usersById = new Map(users.map((user) => [user.id, user]));
+      const query = input?.query?.trim().toLowerCase();
+      const membersFiltered = members
+        .filter((member) => !member.kickedAt)
+        .filter(
+          (member) =>
+            member.status === "TRIAL" ||
+            member.status === "CORE" ||
+            member.status === "BENCHED" ||
+            member.status === "COUNCIL"
+        )
+        .map((member) => {
+          const user = usersById.get(member.userId);
+          return {
+            memberId: member.id,
+            userId: member.userId,
+            displayName: user?.displayName ?? member.userId,
+            albionName: user?.albionName,
+            avatarUrl: user?.avatarUrl,
+            status: member.status as "TRIAL" | "CORE" | "BENCHED" | "COUNCIL"
+          };
+        })
+        .filter((member) => {
+          if (!query) {
+            return true;
+          }
+          return (
+            member.displayName.toLowerCase().includes(query) ||
+            member.albionName?.toLowerCase().includes(query)
+          );
+        })
+        .sort((left, right) => left.displayName.localeCompare(right.displayName, "es"))
+        .slice(0, 30);
+
+      const selectedMemberId = input?.memberId?.trim();
+      if (!selectedMemberId) {
+        return {
+          members: membersFiltered,
+          weapons: []
+        };
+      }
+
+      const selectedMember = members.find((member) => member.id === selectedMemberId && !member.kickedAt);
+      if (!selectedMember) {
+        throw new DomainError("Member not found");
+      }
+
+      const snapshotByBattleId = new Map(snapshots.map((snapshot) => [snapshot.battleId, snapshot]));
+      const finalizedCtas = ctas.filter((cta) => cta.status === "FINALIZED");
+      const totalFinalizedTimers = new Set(finalizedCtas.map((cta) => formatCtaTimerKey(cta.datetimeUtc))).size;
+      const attendanceTimers = new Set<string>();
+      for (const attendance of battleAttendances) {
+        if (attendance.memberId !== selectedMemberId) {
+          continue;
+        }
+        const snapshot = snapshotByBattleId.get(attendance.battleId);
+        if (!snapshot) {
+          continue;
+        }
+        attendanceTimers.add(formatCtaTimerKey(snapshot.startTime));
+      }
+      const attendanceCount = attendanceTimers.size;
+      const attendancePercent = totalFinalizedTimers > 0 ? (attendanceCount / totalFinalizedTimers) * 100 : 0;
+
+      const joinedAt = Date.parse(selectedMember.joinedAt);
+      const joinedAtTime = Number.isFinite(joinedAt) ? joinedAt : 0;
+      const now = Date.now();
+      const eligibleSignupCtaIds = new Set(
+        ctas
+          .filter((cta) => cta.status === "FINALIZED" || cta.status === "CANCELED")
+          .filter((cta) => {
+            const ctaTime = Date.parse(cta.datetimeUtc);
+            return Number.isFinite(ctaTime) && ctaTime >= joinedAtTime && ctaTime <= now;
+          })
+          .map((cta) => cta.id)
+      );
+      const signupCount = signupEvents.filter(
+        (entry) => entry.memberId === selectedMemberId && entry.eventType === "SIGNUP"
+      ).length;
+      const signupCtaIds = new Set(
+        signups
+          .filter((entry) => entry.memberId === selectedMemberId)
+          .map((entry) => entry.ctaId)
+          .filter((ctaId) => eligibleSignupCtaIds.has(ctaId))
+      );
+      const signupPercent =
+        eligibleSignupCtaIds.size > 0 ? (signupCtaIds.size / eligibleSignupCtaIds.size) * 100 : 0;
+
+      const weaponSummaryMap = new Map<
+        string,
+        { weaponName: string; kills: number; deaths: number; battles: Set<string> }
+      >();
+      for (const entry of weaponStats) {
+        if (entry.memberId !== selectedMemberId) {
+          continue;
+        }
+        const key = entry.weaponName.trim().toLowerCase() || "unknown";
+        const summary = weaponSummaryMap.get(key) ?? {
+          weaponName: entry.weaponName || "Unknown",
+          kills: 0,
+          deaths: 0,
+          battles: new Set<string>()
+        };
+        summary.kills += entry.kills;
+        summary.deaths += entry.deaths;
+        summary.battles.add(entry.battleId);
+        weaponSummaryMap.set(key, summary);
+      }
+
+      const weapons = [...weaponSummaryMap.values()]
+        .map((entry) => ({
+          weaponName: entry.weaponName,
+          kills: entry.kills,
+          deaths: entry.deaths,
+          kd: entry.deaths > 0 ? entry.kills / entry.deaths : entry.kills,
+          battles: entry.battles.size
+        }))
+        .sort((left, right) => right.kills - left.kills || right.battles - left.battles);
+
+      return {
+        members: membersFiltered,
+        selectedMemberId,
+        summary: {
+          attendanceCount,
+          attendanceEligibleTimers: totalFinalizedTimers,
+          attendancePercent,
+          signupCount,
+          signupEligibleCtas: eligibleSignupCtaIds.size,
+          signupPercent
+        },
+        weapons
+      };
+    },
+
     async getOverviewAnnouncements(actor) {
       await this.requirePrivateAccess(actor);
       const existing = await repository.getOverviewAnnouncements();
@@ -2434,6 +2657,7 @@ export function createApiServices(
       const mentions = missing.map((entry) => `<@${entry.discordId}>`);
 
       const bodyText = input.message?.trim() || "Recordatorio de signup CTA.";
+      const ctaWebUrl = buildCtaWebUrl(cta.id);
       const embed = {
         color: 0xf0c85a,
         title: `Ping signup · ${cta.title}`,
@@ -2443,6 +2667,11 @@ export function createApiServices(
             name: "CTA",
             value: `${cta.title}\n${formatCtaUtcDateTime(cta.datetimeUtc)}`,
             inline: true
+          },
+          {
+            name: "Link CTA",
+            value: ctaWebUrl,
+            inline: false
           },
           {
             name: "No apuntados",
@@ -4285,6 +4514,15 @@ function buildRosterAnalysis(args: {
     }
   >();
   const matchedMemberIds = new Set<string>();
+  const memberWeaponStatsByKey = new Map<
+    string,
+    {
+      memberId: string;
+      weaponName: string;
+      kills: number;
+      deaths: number;
+    }
+  >();
 
   for (const player of guildPlayers) {
     const normalizedPlayerName = normalizeRosterPlayerName(player.name) ?? "";
@@ -4307,6 +4545,17 @@ function buildRosterAnalysis(args: {
 
     if (matchedMemberId) {
       matchedMemberIds.add(matchedMemberId);
+      const weaponName = player.weaponName?.trim() || "Unknown";
+      const statKey = `${matchedMemberId}:${weaponName.toLowerCase()}`;
+      const existingStat = memberWeaponStatsByKey.get(statKey) ?? {
+        memberId: matchedMemberId,
+        weaponName,
+        kills: 0,
+        deaths: 0
+      };
+      existingStat.kills += player.kills;
+      existingStat.deaths += player.deaths;
+      memberWeaponStatsByKey.set(statKey, existingStat);
     }
   }
 
@@ -4317,7 +4566,8 @@ function buildRosterAnalysis(args: {
       }
       return left.label.localeCompare(right.label, "es");
     }),
-    matchedMemberIds: [...matchedMemberIds]
+    matchedMemberIds: [...matchedMemberIds],
+    memberWeaponStats: [...memberWeaponStatsByKey.values()]
   };
 }
 
@@ -4415,7 +4665,8 @@ async function syncBattlesWithRosterSplit(args: {
         })),
         memberAttendances: rosterAnalysis.matchedMemberIds.map((memberId) => ({
           memberId
-        }))
+        })),
+        memberWeaponStats: rosterAnalysis.memberWeaponStats
       });
 
       return {

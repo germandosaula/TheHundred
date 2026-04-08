@@ -22,6 +22,7 @@ import type {
   BottledEnergyUnmatchedBalanceRecord,
   BuildTemplateRecord,
   BattleMemberAttendanceRecord,
+  BattleMemberWeaponStatRecord,
   BattlePerformanceBombRecord,
   BattlePerformanceSnapshotRecord,
   BuildTemplateItemSlot,
@@ -39,6 +40,7 @@ import type {
   InviteRecord,
   LootSplitPayoutRecord,
   MemberActivityExclusionRecord,
+  MemberActivityNotificationRecord,
   OverviewAnnouncementRecord,
   ScheduledEventRecord,
   CreateScheduledEventInput,
@@ -293,6 +295,22 @@ type BattlePerformanceBombRow = {
 type BattleMemberAttendanceRow = {
   battle_id: string;
   member_id: string;
+};
+
+type BattleMemberWeaponStatRow = {
+  battle_id: string;
+  member_id: string;
+  weapon_name: string;
+  kills: number;
+  deaths: number;
+};
+
+type MemberActivityNotificationRow = {
+  member_id: string;
+  last_notified_at: string | null;
+  last_ack_at: string | null;
+  notification_count: number;
+  updated_at: string;
 };
 
 type WalletAccountRow = {
@@ -897,6 +915,18 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     return (data ?? []).map(mapBattleMemberAttendance);
   }
 
+  async getBattleMemberWeaponStats(): Promise<BattleMemberWeaponStatRecord[]> {
+    const { data, error } = await this.client
+      .from("battle_member_weapon_stats")
+      .select("battle_id, member_id, weapon_name, kills, deaths")
+      .returns<BattleMemberWeaponStatRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load member weapon performance from Supabase", error);
+    }
+
+    return (data ?? []).map(mapBattleMemberWeaponStat);
+  }
+
   async saveBattlePerformanceSnapshot(input: {
     battleId: string;
     startTime: string;
@@ -914,6 +944,12 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     }>;
     memberAttendances: Array<{
       memberId: string;
+    }>;
+    memberWeaponStats: Array<{
+      memberId: string;
+      weaponName: string;
+      kills: number;
+      deaths: number;
     }>;
   }): Promise<BattlePerformanceSnapshotRecord> {
     const now = new Date().toISOString();
@@ -983,6 +1019,31 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
         );
       if (insertAttendanceError) {
         throw createSupabaseDomainError("Failed to save member battle attendance in Supabase", insertAttendanceError);
+      }
+    }
+
+    const { error: deleteWeaponStatsError } = await this.client
+      .from("battle_member_weapon_stats")
+      .delete()
+      .eq("battle_id", input.battleId);
+    if (deleteWeaponStatsError) {
+      throw createSupabaseDomainError("Failed to replace member weapon performance in Supabase", deleteWeaponStatsError);
+    }
+
+    if (input.memberWeaponStats.length > 0) {
+      const { error: insertWeaponStatsError } = await this.client
+        .from("battle_member_weapon_stats")
+        .insert(
+          input.memberWeaponStats.map((entry) => ({
+            battle_id: input.battleId,
+            member_id: entry.memberId,
+            weapon_name: entry.weaponName,
+            kills: entry.kills,
+            deaths: entry.deaths
+          }))
+        );
+      if (insertWeaponStatsError) {
+        throw createSupabaseDomainError("Failed to save member weapon performance in Supabase", insertWeaponStatsError);
       }
     }
 
@@ -1526,6 +1587,45 @@ export class SupabaseDatabaseRepository implements DatabaseRepository {
     }
 
     return Boolean(data?.member_id);
+  }
+
+  async getMemberActivityNotifications(): Promise<MemberActivityNotificationRecord[]> {
+    const { data, error } = await this.client
+      .from("member_activity_notifications")
+      .select("member_id, last_notified_at, last_ack_at, notification_count, updated_at")
+      .returns<MemberActivityNotificationRow[]>();
+    if (error) {
+      throw createSupabaseDomainError("Failed to load member activity notifications from Supabase", error);
+    }
+
+    return (data ?? []).map(mapMemberActivityNotification);
+  }
+
+  async upsertMemberActivityNotification(input: {
+    memberId: string;
+    lastNotifiedAt?: string;
+    lastAckAt?: string;
+    notificationCount?: number;
+  }): Promise<MemberActivityNotificationRecord> {
+    const { data, error } = await this.client
+      .from("member_activity_notifications")
+      .upsert(
+        {
+          member_id: input.memberId,
+          last_notified_at: input.lastNotifiedAt ?? null,
+          last_ack_at: input.lastAckAt ?? null,
+          notification_count: input.notificationCount ?? 0,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "member_id" }
+      )
+      .select("member_id, last_notified_at, last_ack_at, notification_count, updated_at")
+      .single<MemberActivityNotificationRow>();
+    if (error || !data) {
+      throw createSupabaseDomainError("Failed to save member activity notification in Supabase", error);
+    }
+
+    return mapMemberActivityNotification(data);
   }
 
   async replaceOverviewAnnouncements(
@@ -2355,6 +2455,16 @@ function mapBattleMemberAttendance(row: BattleMemberAttendanceRow): BattleMember
   };
 }
 
+function mapBattleMemberWeaponStat(row: BattleMemberWeaponStatRow): BattleMemberWeaponStatRecord {
+  return {
+    battleId: row.battle_id,
+    memberId: row.member_id,
+    weaponName: row.weapon_name,
+    kills: row.kills,
+    deaths: row.deaths
+  };
+}
+
 function mapGuildConfig(row: GuildConfigRow): GuildConfig {
   return {
     attendancePoints: row.attendance_points,
@@ -2471,6 +2581,18 @@ function mapMemberActivityExclusion(
     endsAt: row.ends_at,
     reason: row.reason ?? undefined,
     createdBy: row.created_by,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapMemberActivityNotification(
+  row: MemberActivityNotificationRow
+): MemberActivityNotificationRecord {
+  return {
+    memberId: row.member_id,
+    lastNotifiedAt: row.last_notified_at ?? undefined,
+    lastAckAt: row.last_ack_at ?? undefined,
+    notificationCount: row.notification_count,
     updatedAt: row.updated_at
   };
 }
